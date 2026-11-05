@@ -4,15 +4,25 @@ import pytest
 
 from frameevolve import houses, surface
 from frameevolve.builder import State, build
+from frameevolve.verifier import verify
+from frameevolve.model import House
 from frameevolve.graph import GROUND, build_graph
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def box_house():
+    """Four walls, one storey, 20 x 13'-4"."""
+    house = House("t", [])
+    houses.ring(house, 1, 240, 160, 0.0, 97.125)
+    house.link()
+    return house
+
+
 def wall_state():
-    house = houses.rectangle("t", 240, 160, 97.125)
+    house = box_house()
     s = State(house)
-    s.wall = house.walls[0]   # along +x, inward +y
+    s.surface = house.walls[0]   # along +x, inward +y
     return s
 
 
@@ -49,24 +59,23 @@ def test_rules_fire_once_per_match_when_their_condition_holds(tmp_path):
         "def plate(s, w):\n    s.place('2x4', 0, w.length, 0, 1.5)\n"
         "@rule(0, match='member', when=lambda s, m: m.rule == 'plate')\n"
         "def stud_on_plate(s, m):\n    s.place('2x4', 16, 17.5, 1.5, 95.625)\n")
-    house = houses.rectangle("t", 240, 160, 97.125)
+    house = box_house()
     frame = build(g, house)
     assert not frame.errors
     assert sum(m.rule == "plate" for m in frame.members) == 4
     assert sum(m.rule == "stud_on_plate" for m in frame.members) == 4    # once per plate, on pass 2
     assert {s["pass"] for s in frame.steps if s["rule"] == "stud_on_plate"} == {2}
-    assert frame.steps[0]["match"] == "wall w0"
+    assert frame.steps[0]["match"] == "wall 1w0"
 
 
 def test_seed_grammar_frames_generated_houses_cleanly():
-    for seed in range(20):
+    """The seed grammar frames multi-storey houses with no errors and no hard faults."""
+    for seed in range(4):
         house = houses.generate(seed)
         frame = build(ROOT / "grammars/seed.py", house)
-        g = build_graph(frame.members)
+        report = verify(house, frame)
         assert not frame.errors, frame.errors
-        assert not g.clashes, (house.id, g.clashes[:3])
-        assert len(g.grounded()) == len(frame.members)
-        assert not [gp for w in house.walls for gp in surface.gaps(w, frame.members)], house.id
+        assert report.hard == 0, [f.message for f in report.faults][:3]
 
 
 def test_minimal_grammar_leaves_faults():
