@@ -167,11 +167,13 @@ Pareto search keeps the grammars that do well across many houses.
 - Next: roofs over L, T, ell and U houses (planes clipped where they meet, valleys), hips, sheds and
   dormers; then angled bays, turrets and porches. See the reference photos in `reference_houses/`.
 
-## MVP scope
+## Scope now
 
-- One storey, rectangular plan, 8 or 9 ft walls, exterior walls with doors and windows. Corners in 3D.
-- Verifier: a simplified placeholder of the codes (support, clashes, sheathing backing, spans, cost).
-- Search: Pareto set over houses with a Claude proposer.
+- Houses: two or three storeys; box, L, T, ell and U plans; partitions, stairs, doors and windows; gable
+  roofs on box houses. Twenty training houses, h000 to h019 in `data/houses`.
+- Verifier: a simplified placeholder of the codes (support, clashes, backing, spans, thrust, cost).
+- Search: Pareto set over houses with a Claude proposer. The runs so far (`runs/first`, `runs/atomic`)
+  were on the earlier one-storey houses.
 
 ## Workbench
 
