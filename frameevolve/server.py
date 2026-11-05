@@ -218,7 +218,9 @@ def grammar_rules(source: str) -> list[dict]:
 
 
 def frame_payload(house: House, frame: Frame, source: str) -> dict:
+    t = time.perf_counter()
     report = verify(house, frame)
+    verify_s = time.perf_counter() - t
     g = report.graph
     gone = {m.id for m in frame.removed}
     members = []
@@ -267,6 +269,7 @@ def frame_payload(house: House, frame: Frame, source: str) -> dict:
         "house": house.id, **out, "members": members, "rules": grammar_rules(source),
         "steps": frame.steps, "errors": frame.errors,
         "faults": [asdict(f) for f in report.faults], "checks": CHECKS, "report": report.text(),
+        "timing": {"verify": verify_s},
         "stats": {"members": m["members"], "hard": report.hard, "soft": report.soft, "cost": m["cost"],
                   "bought_ft": m["bought_ft"], "waste_pct": m["waste_pct"], "steps": len(frame.steps),
                   "by_section": m["by_section"]},
@@ -505,8 +508,12 @@ class Handler(BaseHTTPRequestHandler):
                 source = b.get("source")
                 if source is None:
                     source = grammar_file(name).read_text()
+                t = time.perf_counter()
                 frame = build_source(name, source, house)
-                return self.send(200, frame_payload(house, frame, source))
+                build_s = time.perf_counter() - t
+                out = frame_payload(house, frame, source)
+                out["timing"]["build"] = build_s
+                return self.send(200, out)
             if path == "/api/jobs":
                 try:
                     return self.send(200, JOBS.start(str(b.get("kind", "")), b.get("settings") or {}))

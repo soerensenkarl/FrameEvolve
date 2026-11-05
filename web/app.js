@@ -145,7 +145,9 @@ async function build(keepStep = false) {
   index();
   if (keepStep && was != null) st.at = Math.min(was, 2 * st.data.steps.length);
   renderAll();
-  status(`built in ${Math.round(performance.now() - t0)} ms${dirty() ? ", from unsaved edits" : ""}`);
+  const ms = (s) => `${Math.round(1000 * s)} ms`, tm = st.data.timing || {};
+  status(`framed from scratch in ${ms(tm.build || 0)}, verified in ${ms(tm.verify || 0)}, ` +
+         `${ms((performance.now() - t0) / 1000)} in all${dirty() ? ", from unsaved edits" : ""}`);
   return true;
 }
 
