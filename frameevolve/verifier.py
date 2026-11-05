@@ -230,6 +230,10 @@ def verify(house: House, frame: Frame) -> Report:
             continue
         a0, a1 = m.box.lo[k], m.box.hi[k]
         sup = sorted((max(a0, by_id[s].box.lo[k]), min(a1, by_id[s].box.hi[k]), s) for s in g.bears[m.id])
+        if floor:   # a joist end butting into the side of a header or rim hangs from it (a hanger)
+            sup += [(x, x, n) for n in g.side.get(m.id, {}) for x in (a0, a1) if n in grounded
+                    and abs(by_id[n].box.lo[k] - x) <= EPS or abs(by_id[n].box.hi[k] - x) <= EPS]
+            sup.sort()
         if not sup:
             continue
         flat = abs(m.box.size[2] - m.width) <= EPS
@@ -242,7 +246,7 @@ def verify(house: House, frame: Frame) -> Report:
             return tuple(p)
 
         for s0, s1, s in sup:
-            if s1 - s0 < MIN_BEARING - EPS:
+            if s0 < s1 and s1 - s0 < MIN_BEARING - EPS:
                 faults.append(at_wall(m, point((s0 + s1) / 2), "bearing", True,
                                       f"{_name(m)} bears only {inches(s1 - s0)} on {_name(by_id[s])}, minimum {inches(MIN_BEARING)}",
                                       [by_id[s]]))

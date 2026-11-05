@@ -86,3 +86,18 @@ Minimal grammar, 10 iterations (crashed after 4 on a parent-draw bug, fixed, res
 - Lesson: a backing check that assumed a wall's face always stops at the wall it meets was wrong where the
   other wall's framing lies beyond; it now uses the same "in the way" test the grammar uses.
 - Old runs (first, atomic) were scored on the earlier one-storey houses and 2x4 rules; not comparable.
+
+## 2026-11-05 Plans: L, T, ell and U houses
+
+- Houses are now composed of blocks (box, L, T, ell, U; weighted toward simpler ones), with wings of their own
+  storey counts, junction walls where blocks meet, spines only in blocks deeper than 16 ft, and a 3 x 10 ft
+  stair opening through every floor. Floors are polygons.
+- Seed: rims along any outline, joists clipped to the outline and cut over walls that cross them, stair
+  openings with doubled trimmers and headers. Verifier: a joist end butting into a header or rim counts as
+  hung (a hanger).
+- Seed results on 16 houses: boxes clean; L, T, ell and U houses keep 1 to 5 hard faults, almost all at
+  inside corners (the corner details assume outside corners). Left on purpose: a systematic gap the loop
+  should find and fix.
+- Lesson: collinear walls (an exterior wall continuing past a junction) were treated as meeting, so a
+  junction wall did not stop short. Parallel walls no longer meet.
+- Tests now take about two minutes; multi-storey houses are slow to build and verify.

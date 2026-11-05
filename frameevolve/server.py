@@ -7,6 +7,7 @@ Standard library only. The page talks to a small JSON API; every build is comput
 from __future__ import annotations
 
 import ast
+import inspect
 import json
 import os
 import random
@@ -18,10 +19,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from frameevolve import houses, jobs as jobs_mod, surface
+from frameevolve import houses, jobs as jobs_mod, model, surface, verifier
 from frameevolve.builder import build
 from frameevolve.geometry import EPS
-from frameevolve.model import Frame, House
+from frameevolve.model import SECTIONS, Floor, Frame, House, Wall
 from frameevolve.verifier import CHECKS, verify
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -105,7 +106,8 @@ def run_payload(p: Path) -> dict:
             house_ids.append(Path(h).stem)
             continue
         house_ids.append(house.id)
-        footprints[house.id] = [[*w.start, *w.end, w.role == "interior"] for w in house.walls]
+        ground = min(w.base for w in house.walls)
+        footprints[house.id] = [[*w.start, *w.end, w.role == "interior"] for w in house.walls if w.base == ground]
     cands = jsonl(p / "candidates.jsonl")
     for c in cands:
         c["total"] = total(c["scores"], house_ids)
@@ -230,35 +232,111 @@ def frame_payload(house: House, frame: Frame, source: str) -> dict:
             "bears": list(g.bears.get(m.id, {})), "carries": list(g.carries.get(m.id, {})),
             "side": list(g.side.get(m.id, {})),
         })
-    walls = []
-    by_id = {w.id: w for w in house.walls}
-    for w in house.walls:
-        face = []
-        for m in frame.members:
-            if m.surface == w.id:
-                continue
-            b = w.local_box(m.box)
-            if abs(b.lo[2]) <= EPS and b.hi[0] > EPS and b.lo[0] < w.length - EPS:
-                face.append({"id": m.id, "lo": b.lo, "hi": b.hi})
+    walls = {w.id: w for w in house.walls}
+    level = storeys(house)
+    out = {"walls": [], "floors": []}
+    for x in house.surfaces:
+        d = surface.depth(x, frame.members) or 0.0
         gaps = []
         for side in ("outer", "inner"):
-            # drawn just off the face: outside the outer face, inside the inner one
-            off = -0.2 if side == "outer" else (surface.depth(w, frame.members) or 0.0) + 0.2
-            for gp in surface.gaps(w, frame.members, face=side, walls=by_id):
-                corners = [w.world(u, v, off) for u, v in ((gp.u0, gp.v0), (gp.u1, gp.v0), (gp.u1, gp.v1), (gp.u0, gp.v1))]
-                gaps.append({**asdict(gp), "face": side, "world": corners})
-        walls.append({"id": w.id, "length": w.length, "height": w.height, "base": w.base, "start": w.start,
-                      "end": w.end, "role": w.role, "start_meets": w.start_meets, "end_meets": w.end_meets,
-                      "tees": [asdict(t) for t in w.tees],
-                      "openings": [asdict(o) for o in w.openings], "neighbours": face, "gaps": gaps})
+            off = -0.2 if side == "outer" else d + 0.2   # drawn just off the face, outside the framing
+            for gp in surface.gaps(x, frame.members, face=side, walls=walls):
+                corners = [x.world(u, v, off) for u, v in ((gp.u0, gp.v0), (gp.u1, gp.v0), (gp.u1, gp.v1), (gp.u0, gp.v1))]
+                gaps.append({**asdict(gp), "world": corners})
+        item = {"id": x.id, "role": x.role, "size": x.size, "outline": outline_uv(x), "storey": level[x.id], "depth": d,
+                "origin": x.origin, "eu": x.eu, "ev": x.ev, "ew": x.ew, "openings": [asdict(o) for o in x.openings],
+                "gaps": gaps}
+        if isinstance(x, Wall):
+            face = []   # other walls' members against this wall's face, drawn grey in its elevation
+            for m in frame.members:
+                if m.surface != x.id and isinstance(house.surface(m.surface), Wall):
+                    b = x.local_box(m.box)
+                    if abs(b.lo[2]) <= EPS and b.hi[0] > EPS and b.lo[0] < x.length - EPS and b.hi[1] > EPS and b.lo[1] < x.height - EPS:
+                        face.append({"id": m.id, "lo": b.lo, "hi": b.hi})
+            item.update({"kind": "wall", "length": x.length, "height": x.height, "base": x.base, "start": x.start,
+                         "end": x.end, "start_meets": x.start_meets, "end_meets": x.end_meets, "above": x.above,
+                         "below": x.below, "tees": [asdict(t) for t in x.tees], "neighbours": face})
+            out["walls"].append(item)
+        else:
+            item.update({"kind": "floor", "z": x.z,
+                         **{k: [{**asdict(b), "along_u": b.along_u, "depth": surface.depth(walls[b.wall], frame.members) or 0.0}
+                                for b in getattr(x, k)] for k in ("bearers", "loads")}})
+            out["floors"].append(item)
     m = report.metrics
     return {
-        "house": house.id, "walls": walls, "members": members, "rules": grammar_rules(source),
+        "house": house.id, **out, "members": members, "rules": grammar_rules(source),
         "steps": frame.steps, "errors": frame.errors,
         "faults": [asdict(f) for f in report.faults], "checks": CHECKS, "report": report.text(),
         "stats": {"members": m["members"], "hard": report.hard, "soft": report.soft, "cost": m["cost"],
-                  "bought_ft": m["bought_ft"], "waste_pct": m["waste_pct"], "steps": len(frame.steps)},
+                  "bought_ft": m["bought_ft"], "waste_pct": m["waste_pct"], "steps": len(frame.steps),
+                  "by_section": m["by_section"]},
     }
+
+
+def outline_uv(x) -> list:
+    """A surface's outline in its own u, v: a floor's polygon, or the rectangle of a wall."""
+    pts = getattr(x, "outline_uv", None)
+    return [list(p) for p in pts] if pts else [[0, 0], [x.size[0], 0], [x.size[0], x.size[1]], [0, x.size[1]]]
+
+
+def storeys(house: House) -> dict[str, int]:
+    """Each surface's storey, from 1: walls by their base, a floor with the walls that stand on it."""
+    bases = sorted({round(w.base, 3) for w in house.walls})
+    out = {w.id: bases.index(round(w.base, 3)) + 1 for w in house.walls}
+    for f in house.floors:
+        out[f.id] = next((i + 1 for i, b in enumerate(bases) if abs(b - f.z) <= EPS), len(bases) + 1)
+    return out
+
+
+# which limits each check uses: the constants are read from the source with their comments
+CHECK_LIMITS = {"span": ["MAX_CLEAR_FLAT", "HEADER_CLEAR", "JOIST_CLEAR"], "overhang": ["MAX_OVERHANG"],
+                "bearing": ["MIN_BEARING"], "backing": ["MAX_CLEAR", "MAX_EDGE"], "insulation": ["MIN_EXTERIOR_DEPTH"],
+                "too long": ["STOCK"]}
+COST_LIMITS = ["STOCK", "KERF", "PIECE_COST"]
+CODE = re.compile(r"IRC (?:Table )?R[\d.]+(?:\(\d\))?|WFCM|energy code")
+
+
+def constants() -> dict:
+    """The limits at the top of verifier.py, surface.py and model.py: value, module, and the comment beside or
+    above each, which says what it means and which code it approximates."""
+    wanted = {n for ns in CHECK_LIMITS.values() for n in ns} | set(COST_LIMITS)
+    out = {}
+    for mod in (verifier, surface, model):
+        lines = inspect.getsource(mod).splitlines()
+        for node in ast.parse("\n".join(lines)).body:
+            name = node.targets[0].id if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name) else None
+            if name not in wanted:
+                continue
+            note = lines[node.lineno - 1].split("#", 1)[1].strip() if "#" in lines[node.lineno - 1] else ""
+            if not note:   # a block comment above instead
+                i, above = node.lineno - 2, []
+                while i >= 0 and lines[i].lstrip().startswith("#"):
+                    above.insert(0, lines[i].strip()[1:].strip())
+                    i -= 1
+                note = " ".join(above)
+            value = getattr(mod, name)
+            out[name] = {"value": list(value) if isinstance(value, tuple) else value, "note": note,
+                         "module": mod.__name__.split(".")[-1]}
+    return out
+
+
+def verifier_info() -> dict:
+    """Every check (its meaning, hard or soft, its limits and the code it approximates) and how a frame is scored."""
+    hard = {}   # read from the verifier's own calls: Fault(check, hard, ...) and at_wall(m, p, check, hard, ...)
+    for node in ast.walk(ast.parse(inspect.getsource(verifier))):
+        if isinstance(node, ast.Call) and getattr(node.func, "id", "") in ("Fault", "at_wall"):
+            i = 0 if node.func.id == "Fault" else 2
+            if len(node.args) > i + 1 and all(isinstance(a, ast.Constant) for a in node.args[i:i + 2]):
+                hard[node.args[i].value] = node.args[i + 1].value
+    consts = constants()
+    checks = []
+    for name, meaning in CHECKS.items():
+        limits = CHECK_LIMITS.get(name, [])
+        text = " ".join([meaning] + [consts[n]["note"] for n in limits if n in consts])
+        checks.append({"name": name, "meaning": meaning, "hard": hard.get(name, True), "limits": limits,
+                       "code": sorted(set(CODE.findall(text)))})
+    return {"checks": checks, "constants": consts, "cost": COST_LIMITS,
+            "sections": {k: v[1] for k, v in SECTIONS.items()}, "about": inspect.getdoc(verifier)}
 
 
 def build_source(name: str, source: str, house: House) -> Frame:
@@ -276,8 +354,7 @@ def rule_demo(name: str, source: str, rule: str, firing: int | None = None) -> d
     doc = next((r.get("doc", "") for r in grammar_rules(source) if r.get("name") == rule), "")
     steps = frame.steps
     fired = [i for i, s in enumerate(steps) if s["rule"] == rule]
-    out = {"rule": rule, "doc": doc, "house": house.id, "fired": len(fired), "errors": frame.errors[:3],
-           "span": [max(w.length for w in house.walls), max(w.height for w in house.walls)]}  # one scale for every wall
+    out = {"rule": rule, "doc": doc, "house": house.id, "fired": len(fired), "errors": frame.errors[:3]}
     if not fired:
         out["message"] = "This rule did nothing on the toy house."
         return out
@@ -287,6 +364,8 @@ def rule_demo(name: str, source: str, rule: str, firing: int | None = None) -> d
     i = fired[firing]
     step = steps[i]
     w = house.surface(step["wall"])
+    same = [x for x in house.surfaces if type(x) is type(w)]
+    out["span"] = [max(x.size[0] for x in same), max(x.size[1] for x in same)]   # one scale for every wall, or floor
     placed_at, removed_at = {}, {}
     for k, s in enumerate(steps):
         for mid in s["placed"]:
@@ -303,16 +382,19 @@ def rule_demo(name: str, source: str, rule: str, firing: int | None = None) -> d
     before = [m for m in allm.values() if placed_at.get(m.id, -1) < i and removed_at.get(m.id, 10**9) >= i]
     own = [box(m) for m in before if m.surface == w.id]
     near = []
-    for m in before:
+    for m in before if isinstance(w, Wall) else []:
         if m.surface == w.id:
             continue
         b = box(m)
         if abs(b["w0"]) <= EPS and b["u1"] > EPS and b["u0"] < w.length - EPS:
             near.append(b)
+    shape = {"id": w.id, "kind": "wall" if isinstance(w, Wall) else "floor", "size": w.size, "outline": outline_uv(w),
+             "openings": [asdict(o) for o in w.openings], "tees": [asdict(t) for t in getattr(w, "tees", [])],
+             "bearers": [{**asdict(b), "depth": surface.depth(house.wall(b.wall), frame.members) or 0.0}
+                         for b in getattr(w, "bearers", [])]}
     out.update({
         "firing": firing, "pass": step["pass"], "match": step.get("match"), "target": step.get("target"),
-        "wall": {"id": w.id, "length": w.length, "height": w.height, "openings": [asdict(o) for o in w.openings],
-                 "tees": [asdict(t) for t in w.tees]},
+        "wall": shape,
         "firings": [{"wall": steps[k]["wall"], "pass": steps[k]["pass"]} for k in fired],
         "before": own, "neighbours": near,
         "placed": [box(allm[mid]) for mid in step["placed"] if mid in allm],
@@ -352,10 +434,14 @@ class Handler(BaseHTTPRequestHandler):
                 out = []
                 for p in sorted(HOUSES.glob("*.json")):
                     h = House.load(p)
-                    out.append({"id": h.id, "walls": len(h.walls),
-                                "openings": sum(len(w.openings) for w in h.walls),
-                                "size": [round(max(w.end[0] for w in h.walls)), round(max(w.end[1] for w in h.walls))]})
+                    xs = [p[0] for w in h.walls for p in (w.start, w.end)]
+                    ys = [p[1] for w in h.walls for p in (w.start, w.end)]
+                    out.append({"id": h.id, "walls": len(h.walls), "storeys": len({round(w.base, 3) for w in h.walls}),
+                                "openings": sum(len(x.openings) for x in h.surfaces),
+                                "size": [round(max(xs) - min(xs)), round(max(ys) - min(ys))]})
                 return self.send(200, out)
+            if path == "/api/verifier":
+                return self.send(200, verifier_info())
             if path == "/api/grammars":
                 return self.send(200, grammar_names())
             if path.startswith("/api/grammar/"):

@@ -34,9 +34,10 @@
   <section id="center">
     <nav class="tabs">
       <button data-tab="view3d" class="on">3D</button>
-      <button data-tab="elev">Elevations</button>
+      <button data-tab="elev" title="Every wall in elevation and every floor in plan, by storey">Surfaces</button>
       <button data-tab="runs" title="The search: runs, grammars it kept, what the proposer did">Runs <span id="runDot"></span></button>
       <span class="spacer"></span>
+      <span class="seg2 viewopt" id="storeys" title="Look at one storey at a time"></span>
       <label class="chk viewopt" title="The input: each wall is the plane of its outer face, with its openings"><input type="checkbox" id="showSurfaces" checked> wall surfaces</label>
       <label class="chk viewopt" title="Fault markers on the finished frame"><input type="checkbox" id="showFaults" checked> faults</label>
       <button id="measureBtn" class="viewopt tool" title="Click two points to measure; snaps to member corners and edge midpoints. Esc ends.">Measure</button>
@@ -65,7 +66,7 @@
   <aside id="right">
     <nav class="tabs">
       <button data-tab="inspect" class="on">Inspect</button>
-      <button data-tab="faults">Faults <span id="faultCount"></span></button>
+      <button data-tab="faults" title="The checks, the score, and every fault with its evidence">Verifier <span id="faultCount"></span></button>
       <button data-tab="editor">Grammar <span id="dirty"></span></button>
       <button data-tab="report">Report</button>
       <button data-tab="live" title="A running search, as it happens">Live <span id="liveDot"></span></button>

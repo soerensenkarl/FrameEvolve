@@ -4,10 +4,12 @@ Exterior walls 2x6 and partitions 2x4, studs at 24" on one grid from the house's
 line up. Single bottom and top plates. Two-stud corners and ladder junctions: blocking every 24" catches the
 drywall. Jacks and headers only in bearing walls (exterior walls, and any wall under a floor), single-ply
 headers on the outside; elsewhere a flat head nailed between the kings. Cripples only on the layout.
-Floors: 2x12 joists at 24", cut over the spine, a rim all round, and a joist along any partition above or
-below that runs with the joists. Inches.
+Floors: a 2x12 rim along the outline, joists at 24" cut over walls below that cross them, a joist along any
+partition above or below that runs with them, and stair openings trimmed and headed with doubled 2x12s.
+Inches.
 """
 from frameevolve.builder import rule
+from frameevolve.geometry import scan
 
 T = 1.5
 SPACING = 24
@@ -23,6 +25,10 @@ def section(w):
 
 def depth(w):
     return DEPTH[section(w)]
+
+
+def in_wall(s):
+    return s.surface.role != "floor"
 
 
 def bearing(w):
@@ -139,14 +145,14 @@ def studs(s, w):
         s.place(section(w), c - T / 2, c + T / 2, T, top(s) - T, role="stud")
 
 
-@rule(40, match="opening", when=lambda s, o: bearing(s.surface))
+@rule(40, match="opening", when=lambda s, o: in_wall(s) and bearing(s.surface))
 def jacks(s, o):
     """In a bearing wall, a jack each side of the opening, carrying the header."""
     s.place(section(s.surface), o.u0 - T, o.u0, T, o.v1, role="jack")
     s.place(section(s.surface), o.u1, o.u1 + T, T, o.v1, role="jack")
 
 
-@rule(41, match="opening")
+@rule(41, match="opening", when=lambda s, o: in_wall(s))
 def kings(s, o):
     """A full-height king each side: outside the jack in a bearing wall, at the opening's edge otherwise."""
     k = 2 * T if bearing(s.surface) else T
@@ -154,14 +160,14 @@ def kings(s, o):
     s.place(section(s.surface), o.u1 + k - T, o.u1 + k, T, top(s) - T, role="king")
 
 
-@rule(42, match="opening", when=lambda s, o: bearing(s.surface))
+@rule(42, match="opening", when=lambda s, o: in_wall(s) and bearing(s.surface))
 def header(s, o):
     """A single-ply header on edge on the outside face, on the jacks; insulation fills behind it."""
     sec, d = header_for(o.width)
     s.place(sec, o.u0 - T, o.u1 + T, o.v1, o.v1 + d, w0=0, role="header")
 
 
-@rule(43, match="opening", when=lambda s, o: not bearing(s.surface))
+@rule(43, match="opening", when=lambda s, o: in_wall(s) and not bearing(s.surface))
 def flat_head(s, o):
     """In a wall that bears nothing, a flat piece across the top of the opening, nailed between the kings."""
     s.place(section(s.surface), o.u0, o.u1, o.v1, o.v1 + T, role="head")
@@ -172,7 +178,7 @@ def sill(s, o):
     s.place(section(s.surface), o.u0, o.u1, o.v0 - T, o.v0, role="sill")
 
 
-@rule(45, match="opening")
+@rule(45, match="opening", when=lambda s, o: in_wall(s))
 def cripples(s, o):
     """Short studs on the 24" layout above the head and under the sill."""
     over = T if bearing(s.surface) else 0.0
@@ -197,10 +203,35 @@ def partition_ladder(s, t):
     ladder(s, lo, hi, "ladder block")
 
 
-def splits(s, f):
-    """Where joists are cut: over the middle of each wall under the floor that runs the long way (the spine)."""
-    return sorted(b.a[1] + b.side[1] * depth(s.house.wall(b.wall)) / 2
-                  for b in f.bearers if b.role == "interior" and b.along_u)
+def minus(runs, cuts):
+    """The parts of runs outside every cut."""
+    for c0, c1 in cuts:
+        runs = [r for a, b in runs for r in ((a, min(b, c0)), (max(a, c1), b)) if r[1] - r[0] > 0.1]
+    return runs
+
+
+def runs_at(s, f, c):
+    """Where a joist at u = c can run: inside the rim, cut over interior walls below that cross it, and
+    stopped at the headers of any floor opening it would cross."""
+    runs = [(a + T, b - T) for a, b in scan([(v, u) for u, v in f.outline_uv], c)]
+    cuts = sorted(b.a[1] + b.side[1] * depth(s.house.wall(b.wall)) / 2 for b in f.bearers
+                  if b.role == "interior" and b.along_u and min(b.a[0], b.b[0]) < c < max(b.a[0], b.b[0]))
+    runs = [r for v0, v1 in runs for r in zip([v0, *[x for x in cuts if v0 < x < v1]],
+                                              [*[x for x in cuts if v0 < x < v1], v1])]
+    rims = [(min(a[1], b[1]), max(a[1], b[1])) for a, b in edges_v(f) if abs(a[0] - c) < 2 * T]
+    return minus(runs, rims + [(o.v0 - 2 * T, o.v1 + 2 * T) for o in f.openings if o.u0 < c < o.u1])
+
+
+def edges_v(f):
+    """The outline's edges that run along v, where rims stand."""
+    pts = f.outline_uv
+    return [(a, b) for a, b in zip(pts, pts[1:] + pts[:1]) if a[0] == b[0]]
+
+
+def joist(s, f, c, role="joist"):
+    """A joist centred at u = c, in every run the floor allows there."""
+    for v0, v1 in runs_at(s, f, c):
+        s.place(JOIST, c - T / 2, c + T / 2, v0, v1, role=role)
 
 
 def along(s, f):
@@ -209,32 +240,38 @@ def along(s, f):
     return sorted({round(b.a[0] + b.side[0] * depth(s.house.wall(b.wall)) / 2, 3) for b in walls})
 
 
-def joist(s, f, c):
-    """A joist centred at u = c, from rim to rim, cut over the spine."""
-    edges = [T, *splits(s, f), f.width - T]
-    for v0, v1 in zip(edges, edges[1:]):
-        s.place(JOIST, c - T / 2, c + T / 2, v0, v1, role="joist")
+def kept_clear(f, c):
+    """True where a layout joist would crowd a rim along v, a trimmer, or a joist along a partition."""
+    return (any(abs(c - a[0]) < 2.5 * T for a, _ in edges_v(f))
+            or any(o.u0 - 3 * T < c < o.u0 + T / 2 or o.u1 - T / 2 < c < o.u1 + 3 * T for o in f.openings))
+
+
+def stock(a, b):
+    """a to b in equal pieces no longer than the stock."""
+    n = int((b - a - 0.01) // MAX_PIECE) + 1
+    return [(a + (b - a) * i / n, a + (b - a) * (i + 1) / n) for i in range(n)]
 
 
 @rule(60, match="floor")
 def rim(s, f):
-    """A rim joist all round the floor's edge, on the exterior walls' top plates."""
-    n = int(f.length // MAX_PIECE) + 1          # it bears all along, so joints can go anywhere
-    for v0 in (0.0, f.width - T):
-        for i in range(n):
-            s.place(JOIST, f.length * i / n, f.length * (i + 1) / n, v0, v0 + T, role="rim")
-    m = int((f.width - 2 * T) // MAX_PIECE) + 1
-    for u0 in (0.0, f.length - T):
-        for i in range(m):
-            v0 = T + (f.width - 2 * T) * i / m
-            s.place(JOIST, u0, u0 + T, v0, v0 + (f.width - 2 * T) / m, role="rim")
+    """A rim joist along every edge of the floor's outline, on the walls below; those along v fit between."""
+    pts = f.outline_uv
+    for (u0, v0), (u1, v1) in zip(pts, pts[1:] + pts[:1]):
+        inward = 1 if (u1 > u0 or v1 < v0) else -1       # the floor lies left of each counter-clockwise edge
+        if v0 == v1:
+            for a, b in stock(min(u0, u1), max(u0, u1)):
+                s.place(JOIST, a, b, v0, v0 + inward * T, role="rim")
+        else:
+            for a, b in stock(min(v0, v1) + T, max(v0, v1) - T):
+                s.place(JOIST, u0, u0 + inward * T, a, b, role="rim")
 
 
 @rule(61, match="floor")
 def joists(s, f):
-    """Joists at 24" across the floor, on the same grid as the studs, clear of the joists along partitions."""
-    for c in range(SPACING, int(f.length - T), SPACING):
-        if c + T / 2 <= f.length - T and all(abs(c - a) >= 2 * T for a in along(s, f)):
+    """Joists at 24" across the floor, on the same grid as the studs, clear of rims, trimmers and the
+    joists along partitions."""
+    for c in range(SPACING, int(f.length), SPACING):
+        if not kept_clear(f, c) and all(abs(c - a) >= 2 * T for a in along(s, f)):
             joist(s, f, c)
 
 
@@ -243,6 +280,21 @@ def joists_along_partitions(s, f):
     """A joist along every partition above or below that runs with the joists: something for its plates."""
     for c in along(s, f):
         joist(s, f, c)
+
+
+@rule(64, match="opening", when=lambda s, o: s.surface.role == "floor")
+def trimmers(s, o):
+    """Doubled joists each side of a floor opening."""
+    for c in (o.u0 - T / 2, o.u0 - 1.5 * T, o.u1 + T / 2, o.u1 + 1.5 * T):
+        joist(s, s.surface, c, role="trimmer")
+
+
+@rule(65, match="opening", when=lambda s, o: s.surface.role == "floor")
+def opening_headers(s, o):
+    """Doubled headers across each end of a floor opening, nailed between the trimmers; the cut joists hang
+    from them."""
+    for v in (o.v0 - 2 * T, o.v0 - T, o.v1, o.v1 + T):
+        s.place(JOIST, o.u0, o.u1, v, v + T, role="header")
 
 
 @rule(95, match="load", when=lambda s, b: b.role == "interior" and b.along_u)

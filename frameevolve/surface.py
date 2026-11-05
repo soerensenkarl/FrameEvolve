@@ -13,7 +13,7 @@ from collections import Counter
 
 from dataclasses import dataclass
 
-from frameevolve.geometry import EPS
+from frameevolve.geometry import EPS, scan
 from frameevolve.model import Member, Wall
 
 MAX_CLEAR = 22.5  # 24" stud centres less one 1 1/2" stud
@@ -85,7 +85,7 @@ def gaps(wall: Wall, members: list[Member], max_clear: float = MAX_CLEAR, face: 
             backing.append(b)
         elif is_wall and m.surface != wall.id and (b.lo[2] < f - EPS <= b.hi[2] if out else b.lo[2] <= f + EPS < b.hi[2]):
             covered.append(b)        # another wall's framing against or through this face: no board there
-    levels = {0.0, H} | {o.v0 for o in wall.openings} | {o.v1 for o in wall.openings}
+    levels = {0.0, H} | {o.v0 for o in wall.openings} | {o.v1 for o in wall.openings} | {v for _, v in wall.outline_uv}
     levels |= {min(max(v, 0.0), H) for b in backing + covered for v in (b.lo[1], b.hi[1])}
     levels = sorted(levels)
     found: list[Gap] = []
@@ -93,7 +93,8 @@ def gaps(wall: Wall, members: list[Member], max_clear: float = MAX_CLEAR, face: 
         if h1 - h0 <= EPS:
             continue
         vm = (h0 + h1) / 2
-        solid = subtract([(first, last)], [(o.u0, o.u1) for o in wall.openings if o.v0 < vm < o.v1]
+        inside = [(max(a, first), min(b, last)) for a, b in scan(wall.outline_uv, vm) if min(b, last) > max(a, first)]
+        solid = subtract(inside, [(o.u0, o.u1) for o in wall.openings if o.v0 < vm < o.v1]
                          + [(b.lo[0], b.hi[0]) for b in covered if b.lo[1] < vm < b.hi[1]])
         backed = [(b.lo[0], b.hi[0]) for b in backing if b.lo[1] < vm < b.hi[1]]
         for s0, s1 in solid:

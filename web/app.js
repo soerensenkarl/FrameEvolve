@@ -66,6 +66,12 @@ const st = {
   at: 0,                // half-steps shown: 2k-1 is step k's trigger (before it fires), 2k its output
   placedAt: {}, removedAt: {}, playing: null, builds: 0,
   demo: new Map(), demoFor: null,
+  surf: {}, level: {},  // surfaces by id, and each one's storey
+  storey: 0,            // the storey filter: 0 for all
+  vinfo: null,          // the verifier's checks and limits
+  only: null,           // show only this check's faults
+  fault: null,          // the fault chosen in the Verifier tab, an index into data.faults
+  openChecks: new Set(),
 };
 const finished = () => !st.data || st.at >= 2 * st.data.steps.length;
 const applied = () => Math.floor(st.at / 2);           // steps whose output is shown
@@ -76,7 +82,6 @@ const current = () => (st.data && !finished() && st.at > 0 ? st.data.steps[stepN
 const placedNow = (id) => !finished() && !trigger() && st.placedAt[id] === applied() - 1;
 const goneNow = (id) => !finished() && !trigger() && st.removedAt[id] === applied() - 1;
 const matchedMember = (id) => { const t = current()?.target; return t?.kind === "member" && t.member === id; };
-const wallById = (id) => st.data.walls.find((w) => w.id === id);
 const runsMode = () => document.body.classList.contains("runs-mode");
 
 // ---------------------------------------------------------------- server
@@ -148,6 +153,10 @@ function index() {
   const d = st.data;
   st.builds++;
   st.byId = Object.fromEntries(d.members.map((m) => [m.id, m]));
+  st.surf = Object.fromEntries([...d.walls, ...d.floors].map((x) => [x.id, x]));
+  st.level = Object.fromEntries([...d.walls, ...d.floors].map((x) => [x.id, x.storey]));
+  st.fault = null;
+  if (st.only && !d.faults.some((f) => f.check === st.only)) st.only = null;
   const names = d.rules.filter((r) => r.name).map((r) => r.name);
   for (const m of d.members) if (!names.includes(m.rule)) names.push(m.rule);
   st.colors = Object.fromEntries(names.map((n, i) => [n, PALETTE[i % PALETTE.length]]));
@@ -174,8 +183,9 @@ function renderAll() {
   renderRules();
   render3d();
   renderElev();
+  renderStoreys();
   renderInspect();
-  renderFaults();
+  renderVerifier();
   renderReport();
   renderTimeline();
   renderCaption();
@@ -184,6 +194,7 @@ function renderAll() {
 // selection changes repaint only what depends on it
 function select(sel) {
   st.sel = sel;
+  if (st.fault != null) { st.fault = null; renderVerifier(); }   // a selection replaces the fault being explained
   renderRules();
   look3d();
   renderElev();
@@ -265,7 +276,7 @@ $("#rules").addEventListener("click", (e) => {
 
 // ---------------------------------------------------------------- 3D
 
-let renderer, labeler, scene, camera, controls, group, gapGroup, markGroup, surfGroup, targetGroup;
+let renderer, labeler, scene, camera, controls, group, gapGroup, markGroup, surfGroup, targetGroup, evGroup;
 const meshes = new Map();
 let surfs = [];   // per wall: {wall, mesh, line, label, opLabels}
 
@@ -304,7 +315,8 @@ function setup3d() {
   markGroup = new THREE.Group();
   surfGroup = new THREE.Group();
   targetGroup = new THREE.Group();
-  scene.add(group, gapGroup, markGroup, surfGroup, targetGroup);
+  evGroup = new THREE.Group();
+  scene.add(group, gapGroup, markGroup, surfGroup, targetGroup, evGroup);
 
   new ResizeObserver(resize).observe(el);
   const canvas = renderer.domElement;
@@ -497,56 +509,101 @@ function clear(g) {
   }
 }
 
-function wallMatrix(w, out = 0) {
-  // wall coordinates (u, v, w) in metres to world; `out` pushes the plane outward, in metres
-  const dir = new THREE.Vector3(w.end[0] - w.start[0], w.end[1] - w.start[1], 0).normalize();
-  const nrm = new THREE.Vector3(-dir.y, dir.x, 0);
-  return new THREE.Matrix4().makeBasis(dir, new THREE.Vector3(0, 0, 1), nrm)
-    .setPosition(w.start[0] * S - nrm.x * out, w.start[1] * S - nrm.y * out, (w.base || 0) * S);
+// every surface, wall or floor, maps its (u, v, w) to the world through its own axes
+function surfMatrix(s, out = 0) {
+  // `out` pushes the plane out of the framing (outside a wall, above a floor), in metres
+  const [eu, ev, ew] = [s.eu, s.ev, s.ew].map((a) => new THREE.Vector3(...a));
+  const o = new THREE.Vector3(...s.origin).multiplyScalar(S).addScaledVector(ew, -out);
+  return new THREE.Matrix4().makeBasis(eu, ev, ew).setPosition(o);
 }
 
-function label(text, cls, pos) {
+function toLocal(s, p) {
+  // a world point (inches) in a surface's u, v, w
+  const q = [0, 1, 2].map((k) => p[k] - s.origin[k]);
+  return [s.eu, s.ev, s.ew].map((a) => a[0] * q[0] + a[1] * q[1] + a[2] * q[2]);
+}
+
+const surfaceList = () => [...st.data.walls, ...st.data.floors];
+const isFloor = (s) => s.kind === "floor";
+const faceName = (s, face) => (isFloor(s) ? { outer: "subfloor (top)", inner: "ceiling (underside)" }
+  : { outer: s.role === "interior" ? "face side" : "outside face", inner: s.role === "interior" ? "back side" : "inside face" })[face];
+const storeyOf = (id) => st.level[id] ?? 1;
+const shown3d = (id) => !st.storey || storeyOf(id) <= st.storey;        // 3D: this storey and the ones below
+const listed = (id) => !st.storey || storeyOf(id) === st.storey;         // surfaces list: this storey only
+
+function label(text, cls, pos, groupTo = surfGroup) {
   const div = document.createElement("div");
   div.className = "lbl " + cls;
   div.innerHTML = text;
   const o = new CSS2DObject(div);
   o.position.copy(pos);
-  surfGroup.add(o);
+  groupTo.add(o);
   return o;
 }
+
+const v2 = (u, v) => new THREE.Vector2(u * S, v * S);
 
 function renderSurfaces() {
   clear(surfGroup);
   surfs = [];
-  for (const w of st.data.walls) {
-    const L = w.length * S, H = w.height * S;
-    const M = wallMatrix(w, 0.004);
-    const shape = new THREE.Shape([[0, 0], [L, 0], [L, H], [0, H]].map(([x, y]) => new THREE.Vector2(x, y)));
-    const pts = [[0, 0, L, 0], [L, 0, L, H], [L, H, 0, H], [0, H, 0, 0]];
-    for (const o of w.openings) {
-      const [a, b, c, d] = [o.u0 * S, o.v0 * S, o.u1 * S, o.v1 * S];
-      shape.holes.push(new THREE.Path([[a, b], [c, b], [c, d], [a, d]].map(([x, y]) => new THREE.Vector2(x, y))));
-      pts.push([a, b, c, b], [c, b, c, d], [c, d, a, d], [a, d, a, b]);
+  for (const s of surfaceList()) {
+    const M = surfMatrix(s, 0.004);
+    const shape = new THREE.Shape(s.outline.map(([u, v]) => v2(u, v)));
+    const pts = s.outline.map((p, i) => [p, s.outline[(i + 1) % s.outline.length]]);
+    for (const o of s.openings) {
+      const r = [[o.u0, o.v0], [o.u1, o.v0], [o.u1, o.v1], [o.u0, o.v1]];
+      shape.holes.push(new THREE.Path(r.map(([u, v]) => v2(u, v))));
+      pts.push(...r.map((p, i) => [p, r[(i + 1) % 4]]));
     }
     const mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape),
       new THREE.MeshBasicMaterial({ color: SURF, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false }));
     mesh.applyMatrix4(M);
     mesh.renderOrder = -1;
-    const lineGeo = new THREE.BufferGeometry().setFromPoints(pts.flatMap(([a, b, c, d]) => [new THREE.Vector3(a, b, 0), new THREE.Vector3(c, d, 0)]));
-    const line = new THREE.LineSegments(lineGeo, new THREE.LineBasicMaterial({ color: 0x4d6780, transparent: true, opacity: 0.8 }));
+    const line = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts.flatMap(([a, b]) =>
+      [new THREE.Vector3(a[0] * S, a[1] * S, 0), new THREE.Vector3(b[0] * S, b[1] * S, 0)])),
+      new THREE.LineBasicMaterial({ color: 0x4d6780, transparent: true, opacity: 0.8 }));
     line.applyMatrix4(M);
     surfGroup.add(mesh, line);
-    const wl = label(`${esc(w.id)} <i>${w.role === "interior" ? "partition, " : ""}${ftin(w.length)}</i>`, "wall", new THREE.Vector3(L / 2, H + 0.25, 0).applyMatrix4(M));
-    const ol = w.openings.map((o) => label(`${esc(o.kind)} ${ftin(o.u1 - o.u0)} x ${ftin(o.v1 - o.v0)}`, "op",
+    const [U, V] = s.size;
+    const at = isFloor(s) ? new THREE.Vector3(U * S * 0.08, V * S * 0.08, 0) : new THREE.Vector3(U * S / 2, V * S + 0.25, 0);
+    const name = isFloor(s) ? "floor" : s.role === "interior" ? "partition" : "";
+    const lbl = label(`${esc(s.id)} <i>${name ? name + ", " : ""}${ftin(U)}${isFloor(s) ? ` x ${ftin(V)}` : ""}</i>`, "wall", at.applyMatrix4(M));
+    const ol = s.openings.map((o) => label(`${esc(o.kind)} ${ftin(o.u1 - o.u0)} x ${ftin(o.v1 - o.v0)}`, "op",
       new THREE.Vector3(((o.u0 + o.u1) / 2) * S, ((o.v0 + o.v1) / 2) * S, 0).applyMatrix4(M)));
-    surfs.push({ wall: w.id, mesh, line, label: wl, opLabels: ol });
+    surfs.push({ wall: s.id, mesh, line, label: lbl, opLabels: ol });
+  }
+}
+
+function renderMarks() {
+  // fault markers, and backing gaps, for every check or only the one chosen in the Verifier tab
+  clear(gapGroup);
+  clear(markGroup);
+  const only = st.only;
+  for (const s of surfaceList()) {
+    if (only && only !== "backing") break;
+    for (const g of s.gaps) {
+      const p = g.world.map((c) => new THREE.Vector3(...c.map((x) => x * S)));
+      const mesh = new THREE.Mesh(new THREE.BufferGeometry().setFromPoints([p[0], p[1], p[2], p[0], p[2], p[3]]),
+        new THREE.MeshBasicMaterial({ color: FACE[g.face], transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false }));
+      mesh.userData.surface = s.id;
+      gapGroup.add(mesh);
+    }
+  }
+  const hardMat = new THREE.MeshBasicMaterial({ color: 0xd8342c, depthTest: false, transparent: true });
+  const softMat = new THREE.MeshBasicMaterial({ color: 0xe08a00, depthTest: false, transparent: true });
+  const ball = new THREE.SphereGeometry(0.06, 16, 12);
+  for (const f of st.data.faults) {
+    if (!f.at || f.check === "backing" || (only && f.check !== only)) continue;
+    const s = new THREE.Mesh(ball, f.hard ? hardMat : softMat);
+    s.position.set(...f.at.map((x) => x * S));
+    s.userData.surface = f.wall;
+    s.renderOrder = 10;
+    markGroup.add(s);
   }
 }
 
 function render3d() {
   clear(group);
-  clear(gapGroup);
-  clear(markGroup);
   meshes.clear();
   const edgeMat = new THREE.LineBasicMaterial({ color: 0x1d1d1b, transparent: true, opacity: 0.35 });
   for (const m of st.data.members) {
@@ -559,24 +616,7 @@ function render3d() {
     group.add(mesh);
     meshes.set(m.id, mesh);
   }
-  for (const w of st.data.walls) {
-    for (const g of w.gaps) {
-      const p = g.world.map((c) => new THREE.Vector3(...c.map((x) => x * S)));
-      const geo = new THREE.BufferGeometry().setFromPoints([p[0], p[1], p[2], p[0], p[2], p[3]]);
-      gapGroup.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: FACE[g.face], transparent: true, opacity: 0.32,
-        side: THREE.DoubleSide, depthWrite: false })));
-    }
-  }
-  const hardMat = new THREE.MeshBasicMaterial({ color: 0xd8342c, depthTest: false, transparent: true });
-  const softMat = new THREE.MeshBasicMaterial({ color: 0xe08a00, depthTest: false, transparent: true });
-  const ball = new THREE.SphereGeometry(0.06, 16, 12);
-  for (const f of st.data.faults) {
-    if (!f.at || f.check === "backing") continue;
-    const s = new THREE.Mesh(ball, f.hard ? hardMat : softMat);
-    s.position.set(...f.at.map((x) => x * S));
-    s.renderOrder = 10;
-    markGroup.add(s);
-  }
+  renderMarks();
   renderSurfaces();
   if (st.fitFor !== st.data.house) {
     st.fitFor = st.data.house;
@@ -604,11 +644,17 @@ function fit() {
 }
 
 function related() {
-  // id -> relation to the selection: "self", "bears", "carries", "side", "rule"; null when nothing is selected
-  const sel = st.sel;
-  if (!sel) return null;
+  // id -> relation to the selection: "self", "bears", "carries", "side", "rule"; null when nothing is selected.
+  // A fault chosen in the Verifier tab works like a selection: its members, and what holds them.
+  const sel = st.sel, f = st.fault != null ? st.data.faults[st.fault] : null;
+  if (!sel && !f) return null;
   const rel = new Map();
-  if (sel.kind === "member") {
+  if (f) {
+    const ev = evidence(f);
+    for (const id of ev.supports) rel.set(id, "bears");
+    for (const id of f.members) if (st.byId[id]) rel.set(id, "self");
+    if (!rel.size) return null;   // nothing placed there: the evidence alone shows it
+  } else if (sel.kind === "member") {
     const m = st.byId[sel.id];
     rel.set(m.id, "self");
     for (const k of ["bears", "carries", "side"]) for (const id of m[k]) if (st.byId[id]) rel.set(id, k);
@@ -627,7 +673,7 @@ function look3d() {
     const m = st.byId[id];
     const r = rel?.get(id);
     const gone = goneNow(id);
-    mesh.visible = !st.hidden.has(m.rule) && (present(id) || gone);
+    mesh.visible = !st.hidden.has(m.rule) && (present(id) || gone) && shown3d(m.surface);
     const mat = mesh.material;
     const isNow = placedNow(id);
     const hit = matchedMember(id);
@@ -640,167 +686,194 @@ function look3d() {
     mat.opacity = rel && !r ? 0.12 : gone ? 0.35 : 1;
     mat.depthWrite = mat.opacity === 1;
   }
-  const show = $("#showFaults").checked && done;
-  gapGroup.visible = show;
-  markGroup.visible = show;
+  const show = $("#showFaults").checked && done && st.fault == null;   // a chosen fault shows its own evidence instead
+  gapGroup.visible = markGroup.visible = show;
+  for (const o of [...gapGroup.children, ...markGroup.children]) o.visible = shown3d(o.userData.surface);
   // the house's surfaces: strong on the bare house, faint once framing exists
   const on = $("#showSurfaces").checked;
   for (const s of surfs) {
     const active = cur?.wall === s.wall || cur?.target?.other === s.wall;
-    s.mesh.visible = s.line.visible = s.label.visible = on;
+    const vis = on && shown3d(s.wall);
+    s.mesh.visible = s.line.visible = s.label.visible = vis;
     s.mesh.material.opacity = st.at === 0 ? 0.32 : active ? 0.2 : done ? 0.06 : 0.1;
     s.line.material.opacity = st.at === 0 ? 0.9 : active ? 0.8 : done ? 0.3 : 0.45;
     s.label.element.classList.toggle("active", active);
     s.label.element.classList.toggle("faint", done && st.at > 0);
     for (const o of s.opLabels) {
-      o.visible = on && (st.at === 0 || active || done);
+      o.visible = vis && (st.at === 0 || active || done);
       o.element.classList.toggle("faint", st.at > 0 && !active);
     }
   }
   renderTarget3d();
+  renderEvidence3d();
 }
 
-function depthOf(wall) {
-  // how far a wall's framing reaches in from its surface: the commonest reach of its members
+function depthOf(id) {
+  // how far a surface's framing reaches in from it: the commonest reach of its members
   const n = {};
-  for (const m of st.data.members) if (m.surface === wall && m.local && present(m.id)) n[m.local[1][2]] = (n[m.local[1][2]] || 0) + 1;
+  for (const m of st.data.members) if (m.surface === id && m.local && present(m.id)) n[m.local[1][2]] = (n[m.local[1][2]] || 0) + 1;
   const best = Object.entries(n).sort((a, b) => b[1] - a[1])[0];
-  return best ? +best[0] : 3.5;
+  return best ? +best[0] : st.surf[id]?.depth || 3.5;
 }
 
 function otherEnd(t) {
   // where the other wall of a corner or tee meets this one, in its own coordinates
-  const o = wallById(t.other);
-  return o && { wall: o.id, u: o.end_meets === t.wall ? o.length : 0, v0: 0, v1: o.height };
+  const o = (t.kind === "corner" || t.kind === "tee") && st.surf[t.other];
+  return o ? { wall: o.id, u0: o.end_meets === t.wall ? o.length : 0, u1: o.end_meets === t.wall ? o.length : 0, v0: 0, v1: o.height } : null;
+}
+
+const isLine = (t) => t.u1 - t.u0 < 1e-6 || t.v1 - t.v0 < 1e-6;
+
+function markOn(groupTo, sid, t, c, strong, face) {
+  // a rectangle or a line in a surface's u, v, on its outer face or (face "inner") at its framing depth
+  const s = st.surf[sid];
+  if (!s) return;
+  const M = surfMatrix(s, face === "inner" ? -(depthOf(sid) + 0.3) * S : 0.008);
+  if (isLine(t)) {
+    const a = new THREE.Vector3(t.u0 * S, t.v0 * S, 0), b = new THREE.Vector3(t.u1 * S, t.v1 * S, 0);
+    const len = a.distanceTo(b);
+    const post = new THREE.Mesh(new THREE.BoxGeometry(2.5 * S, len || 2.5 * S, 2.5 * S),
+      new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: strong ? 0.9 : 0.4, depthTest: !strong }));
+    post.position.copy(a.clone().add(b).multiplyScalar(0.5));
+    post.position.z = -1.5 * S;
+    if (len) post.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+    post.applyMatrix4(M);
+    post.renderOrder = 5;
+    groupTo.add(post);
+    return;
+  }
+  const pts = [[t.u0, t.v0], [t.u1, t.v0], [t.u1, t.v1], [t.u0, t.v1]].map(([u, v]) => new THREE.Vector3(u * S, v * S, 0));
+  if (strong) {
+    const plane = new THREE.Mesh(new THREE.ShapeGeometry(new THREE.Shape(pts.map((p) => new THREE.Vector2(p.x, p.y)))),
+      new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false }));
+    plane.applyMatrix4(M);
+    groupTo.add(plane);
+  }
+  const loop = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({ color: c, transparent: true, opacity: strong ? 1 : 0.6, depthTest: false }));
+  loop.applyMatrix4(M);
+  loop.renderOrder = 5;
+  groupTo.add(loop);
+  if (face === "inner") label(faceName(s, "inner"), "target", new THREE.Vector3(((t.u0 + t.u1) / 2) * S, ((t.v0 + t.v1) / 2) * S, 0).applyMatrix4(M), groupTo);
 }
 
 function renderTarget3d() {
-  // what the current step's rule matched, on the wall's surface: strong at the trigger, an outline at the output
+  // what the current step's rule matched: strong at the trigger, an outline at the output
   clear(targetGroup);
   const s = current();
   const t = s?.target;
   if (!t || t.kind === "member") return;
   const c = st.colors[s.rule], trig = trigger();
-  const mark = (wid, u0, u1, v0, v1, face) => {
-    const w = wallById(wid);
-    if (!w) return;
-    const M = wallMatrix(w, face === "inner" ? -(depthOf(wid) + 0.3) * S : 0.008);
-    if (u1 - u0 > 1e-6) {
-      const pts = [[u0, v0], [u1, v0], [u1, v1], [u0, v1]].map(([u, v]) => new THREE.Vector3(u * S, v * S, 0));
-      if (trig) {
-        const plane = new THREE.Mesh(new THREE.ShapeGeometry(new THREE.Shape(pts.map((p) => new THREE.Vector2(p.x, p.y)))),
-          new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false }));
-        plane.applyMatrix4(M);
-        targetGroup.add(plane);
-      }
-      const loop = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts),
-        new THREE.LineBasicMaterial({ color: c, transparent: true, opacity: trig ? 1 : 0.6, depthTest: false }));
-      loop.applyMatrix4(M);
-      loop.renderOrder = 5;
-      targetGroup.add(loop);
-      if (face === "inner") {
-        const l = new CSS2DObject(Object.assign(document.createElement("div"), { className: "lbl target", textContent: "inside face" }));
-        l.position.copy(new THREE.Vector3(((u0 + u1) / 2) * S, ((v0 + v1) / 2) * S, 0).applyMatrix4(M));
-        targetGroup.add(l);
-      }
-    } else {
-      const post = new THREE.Mesh(new THREE.BoxGeometry(2.5 * S, (v1 - v0) * S, 2.5 * S),
-        new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: trig ? 0.9 : 0.4, depthTest: !trig }));
-      post.position.set(u0 * S, ((v0 + v1) / 2) * S, -1.5 * S);
-      post.applyMatrix4(M);
-      post.renderOrder = 5;
-      targetGroup.add(post);
-    }
-  };
-  mark(t.wall, t.u0, t.u1, t.v0, t.v1, t.face);
-  if (t.other) {
-    const o = otherEnd(t);
-    if (o) mark(o.wall, o.u, o.u, o.v0, o.v1);
-  }
+  markOn(targetGroup, t.wall, t, c, trig, t.face);
+  const o = otherEnd(t);
+  if (o) markOn(targetGroup, o.wall, o, c, trig);
 }
 
-// ---------------------------------------------------------------- elevations
+// ---------------------------------------------------------------- surfaces: wall elevations and floor plans, by storey
+
+function surfaceSvg(s, span, rel) {
+  // one surface drawn in its own u (right) and v (up): an elevation of a wall, a plan of a floor from above
+  const [U, V] = s.size;
+  const k = span / 1000;   // drawing unit: sizes below scale with the drawing
+  const pad = 20 * k;
+  const done = finished();
+  const cur = current();
+  const showFaults = $("#showFaults").checked && done && st.fault == null;
+  const surfOp = st.at === 0 ? 0.42 : done ? 0.12 : 0.2;
+  const active = cur && (cur.wall === s.id || cur.target?.other === s.id);
+  const own = st.data.members.filter((m) => m.surface === s.id && !st.hidden.has(m.rule) && (present(m.id) || goneNow(m.id)));
+  const rects = own.map((m) => {
+    const [lo, hi] = m.local;
+    const r = rel?.get(m.id);
+    const gone = goneNow(m.id);
+    const isNow = placedNow(m.id);
+    const hit = matchedMember(m.id);
+    const cls = ["m", rel && !r ? "dim" : "", r === "self" ? "sel" : "", showFaults && st.faulty.has(m.id) ? "fault" : "",
+      isNow || (hit && trigger()) ? "now" : "", gone ? "gone" : ""].join(" ");
+    const fillc = r && REL[r] ? REL[r] : gone ? "none" : hit ? st.colors[cur.rule] : done || isNow || r === "rule" ? st.colors[m.rule] : PAST;
+    return `<rect class="${cls}" data-id="${m.id}" x="${lo[0]}" y="${-hi[1]}" width="${hi[0] - lo[0]}" height="${hi[1] - lo[1]}" fill="${fillc}"><title>${m.id} ${esc(m.role || "")}, ${esc(m.rule)}, ${esc(m.section)}${gone ? ", removed at this step" : ""}</title></rect>`;
+  }).join("");
+  // around it: other walls' members at a wall's face; the walls under a floor (faint) and on it (dashed)
+  const nbs = isFloor(s) ? ["bearers", "loads"].map((key) => s[key].map((b) => {
+    const [sx, sy] = b.side, d = b.depth || 3.5;
+    const pts = [b.a, b.b, [b.b[0] + sx * d, b.b[1] + sy * d], [b.a[0] + sx * d, b.a[1] + sy * d]];
+    return `<polygon class="${key === "bearers" ? "under" : "onit"}" points="${pts.map(([u, v]) => `${u},${-v}`).join(" ")}"><title>${esc(b.wall)} ${key === "bearers" ? "under" : "on"} this floor</title></polygon>`;
+  }).join("")).join("") : s.neighbours.filter((b) => present(b.id)).map((b) =>
+    `<rect class="nb" data-id="${b.id}" x="${b.lo[0]}" y="${-b.hi[1]}" width="${b.hi[0] - b.lo[0]}" height="${b.hi[1] - b.lo[1]}"><title>${b.id}, on another wall</title></rect>`).join("");
+  const outline = `M${s.outline.map(([u, v]) => `${u} ${-v}`).join("L")}z`;
+  const holes = s.openings.map((o) => `M${o.u0} ${-o.v1}h${o.u1 - o.u0}v${o.v1 - o.v0}h${o.u0 - o.u1}z`).join("");
+  const surf = $("#showSurfaces").checked ? `<path class="surf" d="${outline}${holes}" fill="${SURF}" fill-opacity="${surfOp}" fill-rule="evenodd"/>` : "";
+  const ops = s.openings.map((o) =>
+    `<rect class="op" x="${o.u0}" y="${-o.v1}" width="${o.u1 - o.u0}" height="${o.v1 - o.v0}"/>` +
+    `<text x="${(o.u0 + o.u1) / 2}" y="${-(o.v0 + o.v1) / 2}" text-anchor="middle" font-size="${17 * k}">${esc(o.id)} ${esc(o.kind)}</text>` +
+    `<text x="${(o.u0 + o.u1) / 2}" y="${-(o.v0 + o.v1) / 2 + 20 * k}" text-anchor="middle" font-size="${15 * k}">${ftin(o.u1 - o.u0)} x ${ftin(o.v1 - o.v0)}</text>`).join("");
+  const a = 7 * k;
+  const only = st.only;
+  const marks = showFaults ? st.data.faults.filter((f) => f.wall === s.id && f.u != null && f.check !== "backing" && (!only || f.check === only)).map((f) =>
+    `<g class="mark ${f.hard ? "" : "soft"}"><title>${esc(f.message)}</title>
+      <line x1="${f.u - a}" y1="${-f.v - a}" x2="${f.u + a}" y2="${-f.v + a}"/><line x1="${f.u - a}" y1="${-f.v + a}" x2="${f.u + a}" y2="${-f.v - a}"/></g>`).join("") : "";
+  const gaps = showFaults && (!only || only === "backing") ? s.gaps.map((g) =>
+    `<rect class="gap" x="${g.u0}" y="${-g.v1}" width="${g.u1 - g.u0}" height="${g.v1 - g.v0}" stroke="${FACE[g.face]}" fill="url(#hatch-${g.face}-${s.id})"><title>${faceName(s, g.face)}: ${g.kind === "edge" ? "a board edge" : "a board"} ${ftin(g.u1 - g.u0)} by ${ftin(g.v1 - g.v0)} with nothing behind it</title></rect>`).join("") : "";
+  const tees = (s.tees || []).map((t) => `<g class="tee"><title>${esc(t.wall)} meets this wall here</title>
+    <line x1="${t.u}" x2="${t.u}" y1="0" y2="${-V}"/><text x="${t.u}" y="${-V - 5 * k}" text-anchor="middle" font-size="${16 * k}">${esc(t.wall)}</text></g>`).join("");
+  const hatch = (face, angle) => `<pattern id="hatch-${face}-${s.id}" patternUnits="userSpaceOnUse" width="${8 * k}" height="${8 * k}" patternTransform="rotate(${angle})">
+      <line x1="0" y1="0" x2="0" y2="${8 * k}" stroke="${FACE[face]}" stroke-width="${1.4 * k}"/></pattern>`;
+  return `<svg viewBox="${-pad} ${-(V + pad)} ${Math.max(span, U) + 2 * pad} ${V + 2 * pad}">
+      <defs>${hatch("outer", 45)}${hatch("inner", -45)}</defs>
+      ${surf}<path class="outline" d="${outline}"/>
+      ${nbs}${rects}${tees}${ops}${gaps}${marks}${active ? targetSvg(s, k) : ""}${evidenceSvg(s, k)}
+    </svg>`;
+}
+
+function surfaceCaption(s) {
+  const [U, V] = s.size;
+  if (isFloor(s)) {
+    return `<b>${s.id}</b> floor of storey ${s.storey}, ${ftin(U)} by ${ftin(V)}, seen from above, x to the right.
+      On ${s.bearers.length} walls below (faint); ${s.loads.length} walls stand on it (dashed).`;
+  }
+  return `<b>${s.id}</b> ${s.role === "interior" ? "partition, " : ""}${ftin(U)} long, ${ftin(V)} high,
+    seen from ${s.role === "interior" ? "its face side" : "outside"}, its start on the left.
+    Meets ${s.start_meets ?? "nothing"} at its start, ${s.end_meets ?? "nothing"} at its end.`;
+}
 
 function renderElev() {
   const el = $("#elev");
   if (!st.data) return;
-  if (!st.data.walls.length) {
-    el.innerHTML = `<p class="empty">This house has no walls.</p>`;
+  const list = surfaceList().filter((s) => listed(s.id));
+  if (!list.length) {
+    el.innerHTML = `<p class="empty">Nothing on this storey.</p>`;
     return;
   }
   const keep = el.scrollTop;
   const rel = related();
-  const span = Math.max(...st.data.walls.map((w) => w.length));
-  const k = span / 1000;   // drawing unit: sizes below scale with the drawing, whatever the model's units
-  const pad = 20 * k;
-  const done = finished();
+  const span = Math.max(...surfaceList().map((s) => s.size[0]));
   const cur = current();
-  const showFaults = $("#showFaults").checked && done;
-  const showSurf = $("#showSurfaces").checked;
-  const surfOp = st.at === 0 ? 0.42 : done ? 0.12 : 0.2;
-  el.innerHTML = st.data.walls.map((w) => {
-    const L = w.length, H = w.height;
-    const active = cur && (cur.wall === w.id || cur.target?.other === w.id);
-    const own = st.data.members.filter((m) => m.surface === w.id && !st.hidden.has(m.rule) && (present(m.id) || goneNow(m.id)));
-    const rects = own.map((m) => {
-      const [lo, hi] = m.local;
-      const r = rel?.get(m.id);
-      const gone = goneNow(m.id);
-      const isNow = placedNow(m.id);
-      const hit = matchedMember(m.id);
-      const cls = ["m", rel && !r ? "dim" : "", r === "self" ? "sel" : "", showFaults && st.faulty.has(m.id) ? "fault" : "",
-        isNow || (hit && trigger()) ? "now" : "", gone ? "gone" : ""].join(" ");
-      const fillc = r && REL[r] ? REL[r] : gone ? "none" : hit ? st.colors[cur.rule] : done || isNow || r === "rule" ? st.colors[m.rule] : PAST;
-      return `<rect class="${cls}" data-id="${m.id}" x="${lo[0]}" y="${-hi[1]}" width="${hi[0] - lo[0]}" height="${hi[1] - lo[1]}" fill="${fillc}"><title>${m.id} ${esc(m.role || "")}, ${esc(m.rule)}, ${esc(m.section)}${gone ? ", removed at this step" : ""}</title></rect>`;
-    }).join("");
-    const nbs = w.neighbours.filter((b) => present(b.id)).map((b) =>
-      `<rect class="nb" data-id="${b.id}" x="${b.lo[0]}" y="${-b.hi[1]}" width="${b.hi[0] - b.lo[0]}" height="${b.hi[1] - b.lo[1]}"><title>${b.id}, on another wall</title></rect>`).join("");
-    const holes = w.openings.map((o) => `M${o.u0} ${-o.v1}h${o.u1 - o.u0}v${o.v1 - o.v0}h${o.u0 - o.u1}z`).join("");
-    const surf = showSurf ? `<path class="surf" d="M0 ${-H}h${L}v${H}h${-L}z${holes}" fill="${SURF}" fill-opacity="${surfOp}" fill-rule="evenodd"/>` : "";
-    const ops = w.openings.map((o) =>
-      `<rect class="op" x="${o.u0}" y="${-o.v1}" width="${o.u1 - o.u0}" height="${o.v1 - o.v0}"/>` +
-      `<text x="${(o.u0 + o.u1) / 2}" y="${-(o.v0 + o.v1) / 2}" text-anchor="middle" font-size="${17 * k}">${esc(o.id)} ${esc(o.kind)}</text>` +
-      `<text x="${(o.u0 + o.u1) / 2}" y="${-(o.v0 + o.v1) / 2 + 20 * k}" text-anchor="middle" font-size="${15 * k}">${ftin(o.u1 - o.u0)} x ${ftin(o.v1 - o.v0)}</text>`).join("");
-    const a = 7 * k;
-    const marks = showFaults ? st.data.faults.filter((f) => f.wall === w.id && f.u != null && f.check !== "backing").map((f) =>
-      `<g class="mark ${f.hard ? "" : "soft"}"><title>${esc(f.message)}</title>
-        <line x1="${f.u - a}" y1="${-f.v - a}" x2="${f.u + a}" y2="${-f.v + a}"/><line x1="${f.u - a}" y1="${-f.v + a}" x2="${f.u + a}" y2="${-f.v - a}"/></g>`).join("") : "";
-    const gaps = showFaults ? w.gaps.map((g) =>
-      `<rect class="gap" x="${g.u0}" y="${-g.v1}" width="${g.u1 - g.u0}" height="${g.v1 - g.v0}" stroke="${FACE[g.face]}" fill="url(#hatch-${g.face}-${w.id})"><title>${FACE_NAME[g.face]}: ${g.kind} gap ${ftin(g.u1 - g.u0)} wide, the board has nothing behind it</title></rect>`).join("") : "";
-    const tees = w.tees.map((t) => `<g class="tee"><title>${esc(t.wall)} meets this wall here</title>
-      <line x1="${t.u}" x2="${t.u}" y1="0" y2="${-H}"/><text x="${t.u}" y="${-H - 5 * k}" text-anchor="middle" font-size="${16 * k}">${esc(t.wall)}</text></g>`).join("");
-    const hatch = (face, angle) => `<pattern id="hatch-${face}-${w.id}" patternUnits="userSpaceOnUse" width="${8 * k}" height="${8 * k}" patternTransform="rotate(${angle})">
-          <line x1="0" y1="0" x2="0" y2="${8 * k}" stroke="${FACE[face]}" stroke-width="${1.4 * k}"/></pattern>`;
-    const tag = !active ? "" : `<span class="steptag">${pill(cur.rule, st.colors[cur.rule])} ${cur.wall !== w.id ? `matched ${esc(cur.match)} on ${esc(cur.wall)}, which meets this wall`
-      : trigger() ? `matched ${esc(cur.match)}` : `placed ${cur.placed.length} here`} at step ${stepNo()}</span>`;
-    return `<div class="wall ${active ? "active" : ""} ${cur && !active ? "rest" : ""}" id="wall-${w.id}">
-      <div class="cap"><b>${w.id}</b> ${w.role === "interior" ? "partition, " : ""}${ftin(L)} long, ${ftin(H)} high,
-        seen from ${w.role === "interior" ? "its face side" : "outside"}, its start on the left.
-        Meets ${w.start_meets ?? "nothing"} at its start, ${w.end_meets ?? "nothing"} at its end. ${tag}</div>
-      <svg viewBox="${-pad} ${-(H + pad)} ${span + 2 * pad} ${H + 2 * pad}">
-        <defs>${hatch("outer", 45)}${hatch("inner", -45)}</defs>
-        ${surf}<rect class="outline" x="0" y="${-H}" width="${L}" height="${H}"/>
-        ${nbs}${rects}${tees}${ops}${gaps}${marks}${active ? targetSvg(w, k) : ""}
-      </svg></div>`;
-  }).join("") + `<div class="legend"><span style="--c:${SURF}">wall surface (the input)</span>
+  const levels = [...new Set(list.map((s) => s.storey))].sort();
+  el.innerHTML = levels.map((n) => `<h3 class="storey">Storey ${n}</h3>` + list.filter((s) => s.storey === n)
+    .sort((a, b) => isFloor(b) - isFloor(a)).map((s) => {
+      const active = cur && (cur.wall === s.id || cur.target?.other === s.id);
+      const tag = !active ? "" : `<span class="steptag">${pill(cur.rule, st.colors[cur.rule])} ${cur.wall !== s.id ? `matched ${esc(cur.match)} on ${esc(cur.wall)}, which meets this one`
+        : trigger() ? `matched ${esc(cur.match)}` : `placed ${cur.placed.length} here`} at step ${stepNo()}</span>`;
+      return `<div class="wall ${isFloor(s) ? "floor" : ""} ${active ? "active" : ""} ${cur && !active ? "rest" : ""}" id="wall-${s.id}">
+        <div class="cap">${surfaceCaption(s)} ${tag}</div>${surfaceSvg(s, span, rel)}</div>`;
+    }).join("")).join("") + `<div class="legend"><span style="--c:${SURF}">surface (the input)</span>
      <span style="--c:${PAST}">placed by earlier steps</span>
      <span style="--c:${REL.bears}">the selection bears on it</span>
      <span style="--c:${REL.carries}">it bears on the selection</span><span style="--c:${REL.side}">beside the selection</span>
-     <span style="--c:#e4e2dd">member of another wall</span>
-     <span style="--c:${FACE.outer}">no backing, outside face</span><span style="--c:${FACE.inner}">no backing, inside face</span></div>`;
+     <span style="--c:#e4e2dd">member of another surface</span>
+     <span style="--c:${FACE.outer}">no backing: outside face, subfloor</span><span style="--c:${FACE.inner}">no backing: inside face, ceiling</span></div>`;
   el.scrollTop = keep;
 }
 
-function targetSvg(w, k) {
-  // what the current step's rule matched on this wall: filled at the trigger, outlined at the output
-  const s = current(), t = s.target;
+function targetSvg(s, k) {
+  // what the current step's rule matched on this surface: filled at the trigger, outlined at the output
+  const cur = current(), t = cur.target;
   if (!t || t.kind === "member") return "";
-  const c = st.colors[s.rule], trig = trigger();
-  const at = t.wall === w.id ? t : t.other === w.id ? { ...otherEnd(t), u0: otherEnd(t).u, u1: otherEnd(t).u } : null;
+  const c = st.colors[cur.rule], cls = `target ${trigger() ? "trig" : "out"}`;
+  const at = t.wall === s.id ? t : otherEnd(t)?.wall === s.id ? otherEnd(t) : null;
   if (!at) return "";
-  const cls = `target ${trig ? "trig" : "out"}`;
-  if (at.u1 - at.u0 < 1e-6) return `<line class="${cls}" x1="${at.u0}" x2="${at.u0}" y1="${-at.v0}" y2="${-at.v1}" stroke="${c}"/>`;
-  const face = t.face === "inner" ? `<text x="${(at.u0 + at.u1) / 2}" y="${-at.v1 - 4 * k}" text-anchor="middle" font-size="${15 * k}">inside face</text>` : "";
+  if (isLine(at)) return `<line class="${cls}" x1="${at.u0}" x2="${at.u1}" y1="${-at.v0}" y2="${-at.v1}" stroke="${c}"/>`;
+  const face = t.face === "inner" ? `<text x="${(at.u0 + at.u1) / 2}" y="${-at.v1 - 4 * k}" text-anchor="middle" font-size="${15 * k}">${faceName(s, "inner")}</text>` : "";
   return `<rect class="${cls}" x="${at.u0}" y="${-at.v1}" width="${at.u1 - at.u0}" height="${at.v1 - at.v0}" stroke="${c}" fill="${c}"/>${face}`;
 }
 
@@ -808,6 +881,24 @@ $("#elev").addEventListener("click", (e) => {
   const r = e.target.closest("rect[data-id]");
   select(r && st.byId[r.dataset.id] ? { kind: "member", id: r.dataset.id } : null);
 });
+
+function renderStoreys() {
+  // the storey filter in the view bar: All, 1, 2, 3
+  const n = Math.max(1, ...Object.values(st.level));
+  if (st.storey > n) st.storey = 0;
+  $("#storeys").innerHTML = n < 2 ? "" : ["All", ...Array.from({ length: n }, (_, i) => i + 1)].map((x, i) =>
+    `<button data-storey="${i}" class="${st.storey === i ? "on" : ""}" title="${i ? `storey ${i}${i > 1 ? " and its floor" : ""}; in 3D, with the storeys below` : "every storey"}">${x}</button>`).join("");
+}
+
+$("#storeys").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-storey]");
+  if (!b) return;
+  st.storey = +b.dataset.storey;
+  renderStoreys();
+  look3d();
+  renderElev();
+});
+
 
 // ---------------------------------------------------------------- the caption on the view while stepping
 
@@ -820,12 +911,14 @@ function renderCaption() {
   el.hidden = false;
   const n = d.steps.length;
   if (st.at === 0) {
-    const ops = d.walls.reduce((a, w) => a + w.openings.length, 0);
+    const ops = [...d.walls, ...d.floors].reduce((a, w) => a + w.openings.length, 0);
     const parts = d.walls.filter((w) => w.role === "interior").length;
-    const walls = `${d.walls.length - parts} walls${parts ? ` and ${parts} partition${parts === 1 ? "" : "s"}` : ""}`;
+    const levels = Math.max(...d.walls.map((w) => w.storey));
+    const plural = (k, word) => `${k} ${word}${k === 1 ? "" : "s"}`;
     el.innerHTML = `<div class="c-top">step 0 of ${n}</div>
-      <div class="c-main">The bare house: ${walls} with ${ops} openings, no timber yet.</div>
-      <div class="c-doc">Each wall is a surface: the plane of its framing's face. Press &#x2192; to fire the first rule.</div>`;
+      <div class="c-main">The bare house: ${plural(levels, "storey")}, ${plural(d.walls.length - parts, "wall")}, ${plural(parts, "partition")}
+        and ${plural(d.floors.length, "floor")}, with ${plural(ops, "opening")}; no timber yet.</div>
+      <div class="c-doc">Each wall and floor is a surface: the plane of its framing's face. Press &#x2192; to fire the first rule.</div>`;
     return;
   }
   const s = current();
@@ -890,7 +983,7 @@ function renderInspect() {
       <tr><td>rule</td><td><span class="chip" data-rule="${esc(m.rule)}"><i style="background:${st.colors[m.rule]}"></i>${esc(m.rule)}</span></td></tr>
       <tr><td>section</td><td>${esc(m.section)}</td></tr>
       <tr><td>length</td><td>${ftin(m.length)}</td></tr>
-      <tr><td>wall</td><td>${m.surface ?? "-"}</td></tr>
+      <tr><td>surface</td><td>${m.surface ?? "-"}${st.surf[m.surface] ? `, storey ${st.level[m.surface]}` : ""}</td></tr>
       <tr><td>along (u)</td><td>${ftin(lo[0])} to ${ftin(hi[0])}</td></tr>
       <tr><td>up (v)</td><td>${ftin(lo[1])} to ${ftin(hi[1])}</td></tr>
       <tr><td>in (w)</td><td>${inch(lo[2])} to ${inch(hi[2])}</td></tr>
@@ -929,7 +1022,7 @@ async function loadRuleDemo(name, firing) {
 
 function demoSvg(d, after) {
   // every toy wall at one scale, in a frame fitted to the largest, so stepping between firings keeps still
-  const w = d.wall, L = w.length, H = w.height, [SL, SH] = d.span;
+  const w = d.wall, [L, H] = w.size, [SL, SH] = d.span;
   const pad = Math.max(SL, SH) / 50;
   const c = st.colors[d.rule] || "#888";
   const box = (b, cls, fillc) => `<rect class="${cls}" x="${b.u0}" y="${-b.v1}" width="${b.u1 - b.u0}" height="${b.v1 - b.v0}" fill="${fillc}"><title>${esc(b.id)} ${esc(b.role || b.rule)}</title></rect>`;
@@ -938,15 +1031,19 @@ function demoSvg(d, after) {
   const before = d.before.filter((b) => !after || !removed.has(b.id));
   const t = d.target;
   return `<svg class="demo-svg" viewBox="${-pad - (SL - L) / 2} ${-(SH + pad)} ${SL + 2 * pad} ${SH + 2 * pad}">
-    <path d="M0 ${-H}h${L}v${H}h${-L}z${holes}" fill="${SURF}" fill-opacity="0.18" fill-rule="evenodd"/>
-    <rect class="outline" x="0" y="${-H}" width="${L}" height="${H}"/>
+    <path d="M${w.outline.map(([u, v]) => `${u} ${-v}`).join("L")}z${holes}" fill="${SURF}" fill-opacity="0.18" fill-rule="evenodd"/>
+    <path class="outline" d="M${w.outline.map(([u, v]) => `${u} ${-v}`).join("L")}z"/>
+    ${w.bearers.map((b) => {
+      const [sx, sy] = b.side, dd = b.depth || 3.5;
+      return `<polygon class="under" points="${[b.a, b.b, [b.b[0] + sx * dd, b.b[1] + sy * dd], [b.a[0] + sx * dd, b.a[1] + sy * dd]].map(([u, v]) => `${u},${-v}`).join(" ")}"/>`;
+    }).join("")}
     ${d.neighbours.map((b) => box(b, "nb", "#e4e2dd")).join("")}
     ${before.map((b) => (t?.member === b.id ? box(b, `m now${after ? "" : " hit"}`, c) : box(b, "m", PAST))).join("")}
     ${after ? d.placed.map((b) => box(b, "m now", c)).join("") : d.removed.map((b) => box(b, "m gone", "none")).join("")}
     ${w.openings.map((o) => `<rect class="op" x="${o.u0}" y="${-o.v1}" width="${o.u1 - o.u0}" height="${o.v1 - o.v0}"/>`).join("")}
     ${w.tees.map((t) => `<g class="tee"><line x1="${t.u}" x2="${t.u}" y1="0" y2="${-H}"/><text x="${t.u}" y="${-H - pad / 4}" text-anchor="middle" font-size="${pad * 0.9}">${esc(t.wall)}</text></g>`).join("")}
-    ${t && t.kind !== "member" ? (t.u1 - t.u0 < 1e-6
-      ? `<line class="target ${after ? "out" : "trig"}" x1="${t.u0}" x2="${t.u0}" y1="${-t.v0}" y2="${-t.v1}" stroke="${c}"/>`
+    ${t && t.kind !== "member" ? (isLine(t)
+      ? `<line class="target ${after ? "out" : "trig"}" x1="${t.u0}" x2="${t.u1}" y1="${-t.v0}" y2="${-t.v1}" stroke="${c}"/>`
       : `<rect class="target ${after ? "out" : "trig"}" x="${t.u0}" y="${-t.v1}" width="${t.u1 - t.u0}" height="${t.v1 - t.v0}" stroke="${c}" fill="${c}"/>`) : ""}
   </svg>`;
 }
@@ -967,7 +1064,7 @@ function demoHtml(d) {
     <div class="dlab">Trigger: matched ${esc(d.match || "")} ${nav}</div>${demoSvg(d, false)}
     <div class="darrow">&#x2193; ${pill(d.rule, c)}</div>
     <div class="dlab">Output</div>${demoSvg(d, true)}
-    <p class="dcap">On the toy house, wall ${esc(d.wall.id)}${d.target?.other ? ` where it meets ${esc(d.target.other)}` : ""}${d.target?.face === "inner" ? ", inside face" : ""},
+    <p class="dcap">On the toy house, ${d.wall.kind === "floor" ? "floor" : "wall"} ${esc(d.wall.id)}${d.wall.kind === "floor" ? " seen from above" : ""}${d.target?.other ? ` where it meets ${esc(d.target.other)}` : ""}${d.target?.face === "inner" ? `, ${d.wall.kind === "floor" ? "ceiling" : "inside face"}` : ""},
       pass ${d.pass}: ${what}.${many ? "" : " It fires once there."}</p>
   </div>`;
 }
@@ -982,38 +1079,251 @@ for (const pane of ["#inspect", "#faults"]) {
     if (c && st.byId[c.dataset.id]) return select({ kind: "member", id: c.dataset.id });
     const r = e.target.closest("[data-rule]");
     if (r) return select({ kind: "rule", id: r.dataset.rule });
-    const w = e.target.closest("[data-wall]");
-    if (w) {
-      showTab("elev");
-      document.getElementById(`wall-${w.dataset.wall}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
   });
 }
 
-// ---------------------------------------------------------------- faults and report
+// ---------------------------------------------------------------- the verifier: its checks, and each fault with its evidence
 
-function renderFaults() {
-  const d = st.data;
-  const groups = new Map();
-  for (const f of d.faults) {
-    const k = `${f.hard ? 0 : 1}|${f.check}`;
-    if (!groups.has(k)) groups.set(k, []);
-    groups.get(k).push(f);
+const EV = "#d8342c";   // evidence drawn for the chosen fault
+const axisOf = (m) => { const d = [0, 1, 2].map((k) => m.hi[k] - m.lo[k]); return d.indexOf(Math.max(...d)); };
+const centre = (m) => [0, 1, 2].map((k) => (m.lo[k] + m.hi[k]) / 2);
+
+function limitText(name) {
+  // a limit from the verifier's constants, in feet and inches (or the unit its comment names)
+  const c = st.vinfo?.constants[name];
+  if (!c) return name;
+  const v = c.value, len = (x) => (x >= 12 ? ftin(x) : inch(x));
+  if (Array.isArray(v)) return `${len(Math.min(...v))} to ${len(Math.max(...v))}`;
+  if (typeof v === "object") {
+    const sec = Object.fromEntries(Object.entries(st.vinfo.sections).map(([n, d]) => [String(d), n]));
+    return Object.entries(v).map(([d, x]) => `${sec[d] || inch(+d) + " deep"} ${len(x)}`).join(", ");
   }
-  const keys = [...groups.keys()].sort((a, b) => a[0] - b[0] || groups.get(b).length - groups.get(a).length);
-  const intro = `<p class="hint">Hard faults make the frame unbuildable; soft faults break code or good practice.
-    Click a fault to see its wall, a member or rule to select it.</p>`;
-  $("#faults").innerHTML = intro + (keys.map((k) => {
-    const fs = groups.get(k);
-    const f0 = fs[0];
-    return `<div class="group"><h4><span class="tag ${f0.hard ? "" : "soft"}">${f0.hard ? "hard" : "soft"}</span>
-        ${esc(f0.check)} <small>${fs.length}, ${esc(d.checks[f0.check] || "")}</small></h4>` +
-      fs.map((f) => `<div class="fault" ${f.wall ? `data-wall="${f.wall}"` : ""} style="cursor:pointer">${esc(f.message)}
-        <div>${f.members.filter((id) => st.byId[id]).map(chip).join("")}${f.rules.map((r) =>
-          `<span class="chip" data-rule="${esc(r)}"><i style="background:${st.colors[r] || "#999"}"></i>${esc(r)}</span>`).join("")}</div></div>`).join("") +
-      `</div>`;
-  }).join("") || `<p class="empty">No faults: the current checks find nothing wrong with this frame.</p>`);
+  return /linear feet/.test(c.note) ? `${v} ft` : len(v);
 }
+
+function evidence(f) {
+  // what to draw and say for one fault: members that hold it (supports), dimension lines, boxes, face rectangles
+  const out = { supports: [], dims: [], boxes: [], rects: [], text: "" };
+  const m = st.byId[f.members[0]];
+  const name = (x) => `${x.id} (${esc(x.role || x.rule)})`;
+  const limits = (ns) => ns.map((n) => `<span class="lim">${n}: ${limitText(n)}</span>`).join(" ");
+  if ((f.check === "span" || f.check === "overhang") && m) {
+    const k = axisOf(m), c = centre(m);
+    const sup = m.bears.filter((id) => st.byId[id]).map((id) => {
+      const s = st.byId[id];
+      return [Math.max(m.lo[k], s.lo[k]), Math.min(m.hi[k], s.hi[k]), id];
+    }).sort((a, b) => a[0] - b[0]);
+    out.supports = sup.map((x) => x[2]);
+    const at = (x) => { const p = [...c]; p[k] = x; p[2] = m.hi[2] + 4; return p; };   // a little above the member
+    const lim = f.message.match(/limit (.+?)(?: for (.+))?$/);
+    if (f.check === "span") {
+      let reach = sup[0]?.[1], left = sup[0]?.[2];
+      for (const [s0, s1, id] of sup.slice(1)) {
+        if (s0 > reach && f.at[k] >= reach - 1 && f.at[k] <= s0 + 1) {
+          out.dims.push({ a: at(reach), b: at(s0), text: `${ftin(s0 - reach)} clear, limit ${lim?.[1] ?? "?"}` });
+          out.text = `${name(m)} carries load and spans <b>${ftin(s0 - reach)}</b> clear between ${chip(left)} and ${chip(id)}.
+            The limit for ${esc(lim?.[2] || "it")} is <b>${esc(lim?.[1] || "?")}</b>.`;
+          break;
+        }
+        if (s1 >= reach) { reach = s1; left = id; }
+      }
+      out.text += `<div class="lims">${limits(st.vinfo?.checks.find((x) => x.name === "span")?.limits || [])}</div>`;
+    } else {
+      const last = Math.max(...sup.map((x) => x[1])), first = sup[0]?.[0];
+      const [a, b] = Math.abs(f.at[k] - m.lo[k]) < Math.abs(f.at[k] - m.hi[k]) ? [m.lo[k], first] : [last, m.hi[k]];
+      out.dims.push({ a: at(a), b: at(b), text: `${ftin(b - a)} past its support, limit ${limitText("MAX_OVERHANG")}` });
+      out.text = `${name(m)} runs <b>${ftin(b - a)}</b> past its last support; a loaded member may overhang at most <b>${limitText("MAX_OVERHANG")}</b>.`;
+    }
+  } else if (f.check === "bearing" && m) {
+    const s = st.byId[f.members[1]], k = axisOf(m), c = centre(m);
+    out.supports = s ? [s.id] : [];
+    if (s) {
+      const a = Math.max(m.lo[k], s.lo[k]), b = Math.min(m.hi[k], s.hi[k]);
+      const at = (x) => { const p = [...c]; p[k] = x; p[2] = m.lo[2] - 2; return p; };
+      out.dims.push({ a: at(a), b: at(b), text: `bears ${inch(b - a)}, minimum ${limitText("MIN_BEARING")}` });
+    }
+    out.text = `${esc(f.message)}. A member must sit at least <b>${limitText("MIN_BEARING")}</b> on what holds it.`;
+  } else if (f.check === "clash" && m && st.byId[f.members[1]]) {
+    const o = st.byId[f.members[1]];
+    const lo = [0, 1, 2].map((k) => Math.max(m.lo[k], o.lo[k])), hi = [0, 1, 2].map((k) => Math.min(m.hi[k], o.hi[k]));
+    out.boxes.push({ lo, hi });
+    out.text = `${name(m)} and ${name(o)} occupy the same space: the red box, ${inch(hi[0] - lo[0])} x ${inch(hi[1] - lo[1])} x ${inch(hi[2] - lo[2])}.
+      Two pieces of timber cannot overlap; one must stop short, or be notched (not modelled yet).`;
+  } else if (f.check === "backing") {
+    const s = st.surf[f.wall], face = /inner face/.test(f.message) ? "inner" : "outer";
+    const g = s?.gaps.find((x) => x.face === face && Math.abs((x.u0 + x.u1) / 2 - f.u) < 0.6 && Math.abs((x.v0 + x.v1) / 2 - f.v) < 0.6);
+    if (g) {
+      const W = g.u1 - g.u0, H = g.v1 - g.v0;
+      out.rects.push({ sid: s.id, face, ...g, text: `${ftin(W)} x ${ftin(H)}` });
+      out.text = g.kind === "edge"
+        ? `On the ${faceName(s, face)} of ${s.id}, a board edge runs <b>${ftin(Math.max(W, H))}</b> with nothing behind it.
+           An edge needs backing at least every <b>${limitText("MAX_EDGE")}</b>, so blocking or clips will do.`
+        : `On the ${faceName(s, face)} of ${s.id}, a board spans <b>${ftin(W)} by ${ftin(H)}</b> with nothing behind it.
+           It needs support within <b>${limitText("MAX_CLEAR")}</b> in at least one direction (24" centres less one stud).`;
+    } else out.text = esc(f.message);
+  } else if (f.check === "floating" && m) {
+    const list = (ids) => ids.filter((id) => st.byId[id] || id === "ground").map(chip).join("") || "nothing";
+    out.text = `${name(m)} has no chain of bearing down to the ground. It bears on: ${list(m.bears)}. Beside it: ${list(m.side)}.
+      None of these is held up, and it is not nailed between two held-up members at both ends.`;
+  } else {
+    out.text = `${esc(f.message)}.`;
+  }
+  return out;
+}
+
+const chosenFault = () => (st.fault != null ? st.data.faults[st.fault] : null);
+
+function renderEvidence3d() {
+  clear(evGroup);
+  const f = chosenFault();
+  if (!f) return;
+  const ev = evidence(f);
+  const P = (p) => new THREE.Vector3(...p.map((x) => x * S));
+  const mat = new THREE.LineBasicMaterial({ color: EV, depthTest: false });
+  for (const d of ev.dims) {
+    const a = P(d.a), b = P(d.b);
+    const tick = new THREE.Vector3(0, 0, 3 * S);
+    const line = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints([a, b, a.clone().sub(tick), a.clone().add(tick), b.clone().sub(tick), b.clone().add(tick)]), mat);
+    line.renderOrder = 12;
+    evGroup.add(line);
+    label(esc(d.text), "evidence", a.clone().add(b).multiplyScalar(0.5).add(new THREE.Vector3(0, 0, 4 * S)), evGroup);
+  }
+  for (const bx of ev.boxes) {
+    const size = [0, 1, 2].map((k) => Math.max(0.2, bx.hi[k] - bx.lo[k]) * S);
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), new THREE.MeshBasicMaterial({ color: EV, transparent: true, opacity: 0.55, depthTest: false }));
+    mesh.position.copy(P([0, 1, 2].map((k) => (bx.lo[k] + bx.hi[k]) / 2)));
+    mesh.renderOrder = 12;
+    evGroup.add(mesh);
+  }
+  for (const r of ev.rects) {
+    markOn(evGroup, r.sid, r, EV, true, r.face);
+    const s = st.surf[r.sid];
+    label(esc(r.text), "evidence", new THREE.Vector3(((r.u0 + r.u1) / 2) * S, ((r.v0 + r.v1) / 2) * S, 0).applyMatrix4(surfMatrix(s)), evGroup);
+  }
+  if (!ev.dims.length && !ev.boxes.length && !ev.rects.length && f.at) {
+    const ring = new THREE.Mesh(new THREE.SphereGeometry(0.12, 20, 14), new THREE.MeshBasicMaterial({ color: EV, transparent: true, opacity: 0.5, depthTest: false }));
+    ring.position.copy(P(f.at));
+    ring.renderOrder = 12;
+    evGroup.add(ring);
+  }
+}
+
+function evidenceSvg(s, k) {
+  const f = chosenFault();
+  if (!f || f.wall !== s.id) return "";
+  const ev = evidence(f);
+  let out = "";
+  for (const d of ev.dims) {
+    const [a, b] = [toLocal(s, d.a), toLocal(s, d.b)];
+    out += `<g class="ev"><line x1="${a[0]}" y1="${-a[1]}" x2="${b[0]}" y2="${-b[1]}"/>
+      <text x="${(a[0] + b[0]) / 2}" y="${-(a[1] + b[1]) / 2 - 5 * k}" text-anchor="middle" font-size="${17 * k}">${esc(d.text)}</text></g>`;
+  }
+  for (const bx of ev.boxes) {
+    const pts = [0, 1].flatMap((i) => [0, 1].flatMap((j) => [0, 1].map((l) => toLocal(s, [i ? bx.hi[0] : bx.lo[0], j ? bx.hi[1] : bx.lo[1], l ? bx.hi[2] : bx.lo[2]]))));
+    const [u0, u1, v0, v1] = [Math.min(...pts.map((p) => p[0])), Math.max(...pts.map((p) => p[0])), Math.min(...pts.map((p) => p[1])), Math.max(...pts.map((p) => p[1]))];
+    out += `<rect class="ev box" x="${u0}" y="${-v1}" width="${Math.max(u1 - u0, k)}" height="${Math.max(v1 - v0, k)}"/>`;
+  }
+  for (const r of ev.rects) {
+    out += `<g class="ev"><rect x="${r.u0}" y="${-r.v1}" width="${r.u1 - r.u0}" height="${r.v1 - r.v0}"/>
+      <text x="${(r.u0 + r.u1) / 2}" y="${-(r.v0 + r.v1) / 2}" text-anchor="middle" font-size="${18 * k}">${esc(r.text)}</text></g>`;
+  }
+  if (!out && f.u != null) out = `<circle class="ev" cx="${f.u}" cy="${-f.v}" r="${12 * k}"/>`;
+  return out;
+}
+
+function renderVerifier() {
+  const el = $("#faults");
+  const d = st.data, vi = st.vinfo;
+  if (!d || !vi) { el.innerHTML = `<p class="empty">Loading the verifier...</p>`; return; }
+  const s = d.stats, cost = vi.constants.PIECE_COST?.value ?? 0;
+  const rows = Object.entries(s.by_section || {}).map(([sec, x]) => {
+    const w = (vi.sections[sec] || 3.5) / 3.5;
+    return `<tr><td>${esc(sec)}</td><td>${x.pieces}</td><td>${num(x.bought_ft)} ft</td><td>x ${w.toFixed(2)}</td><td>${num(x.bought_ft * w)} ft</td></tr>`;
+  }).join("");
+  const byCheck = {};
+  d.faults.forEach((f, i) => (byCheck[f.check] ||= []).push(i));
+  const checks = vi.checks.map((c) => {
+    const idx = byCheck[c.name] || [];
+    const open = st.openChecks.has(c.name);
+    const list = open ? idx.slice(0, 60).map((i) => {
+      const f = d.faults[i], sel = st.fault === i;
+      return `<div class="fault ${sel ? "sel" : ""}" data-fault="${i}">${esc(f.message)}
+        ${sel ? `<div class="explain-f">${evidence(f).text} ${f.at ? `<button class="zoomto" title="Bring the 3D view close to it">zoom to it</button>` : ""}
+          <div>${f.members.filter((id) => st.byId[id]).map(chip).join("")}${f.rules.map((r) =>
+            `<span class="chip" data-rule="${esc(r)}"><i style="background:${st.colors[r] || "#999"}"></i>${esc(r)}</span>`).join("") || (f.members.length ? "" : `<span class="muted">nothing was placed here, so no rule to blame</span>`)}</div></div>` : ""}</div>`;
+    }).join("") + (idx.length > 60 ? `<p class="muted">... and ${idx.length - 60} more</p>` : "") : "";
+    return `<div class="check ${idx.length ? "has" : ""} ${open ? "open" : ""}">
+      <div class="ch-head" data-check="${esc(c.name)}"><span class="tag ${c.hard ? "" : "soft"}">${c.hard ? "hard" : "soft"}</span>
+        <b>${esc(c.name)}</b><span class="count ${idx.length ? "bad" : "good"}">${idx.length || "none"}</span>
+        ${idx.length ? `<button class="only ${st.only === c.name ? "on" : ""}" data-only="${esc(c.name)}" title="show only these faults in 3D and on the surfaces">only</button>` : ""}</div>
+      <div class="ch-body">${esc(c.meaning)}.
+        ${c.limits.length ? `<div class="lims">${c.limits.map((n) => `<span class="lim" title="${esc(vi.constants[n]?.note || "")}">${esc(vi.constants[n]?.note.split(":")[0] || n)}: <b>${limitText(n)}</b></span>`).join("")}</div>` : ""}
+        ${c.code.length ? `<div class="code-ref">approximates ${c.code.map(esc).join(", ")}</div>` : ""}</div>
+      ${list}</div>`;
+  }).join("");
+  el.innerHTML = `<div class="score">
+      <h4>The score</h4>
+      <div class="scoreline"><span class="${s.hard ? "bad" : "good"}"><b>${s.hard}</b> hard</span>, <b>${s.soft}</b> soft, cost <b>${num(s.cost)} ft</b></div>
+      <p class="hint">Grammars are compared by hard faults first (unbuildable), then soft faults (code or practice), then cost.
+        A cheaper frame never beats one with fewer faults.</p>
+      <details><summary>How the cost is worked out</summary>
+        <p class="hint">Each section's pieces are cut from stock lengths of ${limitText("STOCK")}, longest first, with a ${limitText("KERF")} saw kerf.
+          The lumber bought counts in proportion to its depth, as linear feet of 2x4, and every piece adds ${cost} ft for cutting, handling and nailing.</p>
+        <table class="costs"><tr><th>section</th><th>pieces</th><th>bought</th><th>depth</th><th>as 2x4</th></tr>${rows}
+          <tr><td colspan="4">${s.members} pieces x ${cost} ft</td><td>${num(s.members * cost)} ft</td></tr>
+          <tr class="tot"><td colspan="4">cost</td><td>${num(s.cost)} ft</td></tr></table></details>
+    </div>
+    <h4>Checks <small>click one to list its faults; click a fault to see its evidence</small></h4>
+    ${st.only ? `<p class="hint">Showing only <b>${esc(st.only)}</b> faults. <a href="#" data-only="${esc(st.only)}">Show all</a></p>` : ""}
+    ${checks}`;
+}
+
+$("#faults").addEventListener("click", (e) => {
+  const only = e.target.closest("[data-only]");
+  if (only) {
+    e.preventDefault();
+    st.only = st.only === only.dataset.only ? null : only.dataset.only;
+    st.openChecks.add(only.dataset.only);
+    renderMarks();
+    look3d();
+    renderElev();
+    return renderVerifier();
+  }
+  if (e.target.closest("button.zoomto")) return zoomTo(chosenFault().at);
+  if (e.target.closest(".chip, button")) return;
+  const fi = e.target.closest("[data-fault]");
+  if (fi) return chooseFault(+fi.dataset.fault);
+  const head = e.target.closest("[data-check]");
+  if (head) {
+    const n = head.dataset.check;
+    st.openChecks.has(n) ? st.openChecks.delete(n) : st.openChecks.add(n);
+    renderVerifier();
+  }
+});
+
+function zoomTo(p) {
+  // keep the viewing direction, come within about ten feet of a point
+  showTab("view3d");
+  const t = new THREE.Vector3(...p.map((x) => x * S));
+  const dir = camera.position.clone().sub(controls.target).normalize();
+  controls.target.copy(t);
+  camera.position.copy(t).addScaledVector(dir, 3);
+}
+
+function chooseFault(i) {
+  st.fault = st.fault === i ? null : i;
+  st.sel = null;
+  const f = chosenFault();
+  if (f && st.storey && !shown3d(f.wall)) st.storey = 0;
+  renderStoreys();
+  look3d();
+  renderElev();
+  renderInspect();
+  renderVerifier();
+  if (f?.wall && $("#elev").classList.contains("on")) document.getElementById(`wall-${f.wall}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+// ---------------------------------------------------------------- report
 
 function renderReport() {
   $("#reportText").textContent = st.data.report;
@@ -1977,8 +2287,9 @@ async function liveTick() {
       renderDraftDiff();
       if (lv.follow) await followDraft();
     }
-  } catch { /* the next tick tries again */ }
-  finally { liveBusy = false; }
+  } catch (e) {   // the next tick tries again, unless the run is gone
+    if (/not found|no such run/i.test(e.message)) Object.assign(lv, { run: null, follow: false });
+  } finally { liveBusy = false; }
   renderLiveHead();
   renderRunLive();
 }
@@ -2194,7 +2505,7 @@ document.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); build(); }
   const typing = ["TEXTAREA", "INPUT", "SELECT"].includes(document.activeElement?.tagName);
   if (typing || runsMode()) return;
-  if (e.key === "Escape") { if (measure.on) setMeasure(false); else select(null); }
+  if (e.key === "Escape") { if (measure.on) setMeasure(false); else if (st.fault != null) chooseFault(st.fault); else select(null); }
   if (e.key === "ArrowLeft") { e.preventDefault(); stopPlay(); goto(st.at - 1); }
   if (e.key === "ArrowRight") { e.preventDefault(); stopPlay(); goto(st.at + 1); }
 });
@@ -2209,6 +2520,7 @@ document.addEventListener("keydown", (e) => {
     if (t && document.getElementById(t)) showTab(t);
   }
   try {
+    st.vinfo = await api("GET", "/api/verifier");
     await loadLists();
     await loadGrammar();
     await build();

@@ -133,6 +133,19 @@ Pareto search keeps the grammars that do well across many houses.
 - Credentials: the subscription needs Claude Code signed in (found on the path, at CLAUDE_CLI, or inside the
   Claude desktop app). The API needs an `ANTHROPIC_API_KEY` or an `ant auth login` profile.
 
+## Houses
+
+- Complete houses of varying complexity, composed of rectangular blocks: a box, an L, a T, a colonial ell
+  (a lower wing to one side) or a U, two or three storeys, wings with their own storey counts.
+- Exterior walls trace the outline of the blocks reaching each storey, split where one block meets another;
+  junction walls stand where two blocks meet inside. Deep blocks get a spine; the main block gets cross
+  partitions; one stair opening goes through every floor. Openings are placed last, clear of junctions.
+- Floors are polygons (the outline of the blocks above). Every surface has an outline in its own u, v, and
+  the backing check scans that outline, so floors of any shape and later gable walls work the same way.
+- Walls that continue in the same line do not "meet" each other; only crossing walls make corners and Ts.
+- Next: roofs (gable, hip, shed, dormers) with sloped members, cut ends and notches; then angled bays,
+  turrets and porches. See the reference photos in `reference_houses/`.
+
 ## MVP scope
 
 - One storey, rectangular plan, 8 or 9 ft walls, exterior walls with doors and windows. Corners in 3D.

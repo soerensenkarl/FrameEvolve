@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass, field
 from functools import cached_property
 from pathlib import Path
 
-from frameevolve.geometry import EPS, Box, Vec, add, axis_aligned, corners, dot, mul, sub, unit
+from frameevolve.geometry import EPS, Box, Vec, add, axis_aligned, corners, dot, inside, mul, sub, unit
 
 THICK = 1.5
 # nominal name: (actual width, actual depth), inches
@@ -58,7 +58,8 @@ class Bearer:
 
 
 class Surface:
-    """What walls and floors share: local axes eu, ev, ew from an origin, and a size along u and v."""
+    """What walls and floors share: local axes eu, ev, ew from an origin, a size along u and v, and an outline
+    in u, v (a rectangle for a wall today; a floor's plan shape)."""
 
     def world(self, u: float, v: float, w: float) -> Vec:
         return add(self.origin, add(mul(self.eu, u), add(mul(self.ev, v), mul(self.ew, w))))
@@ -104,6 +105,11 @@ class Wall(Surface):
         return (self.length, self.height)
 
     @property
+    def outline_uv(self) -> list[tuple[float, float]]:
+        L, H = self.size
+        return [(0.0, 0.0), (L, 0.0), (L, H), (0.0, H)]
+
+    @property
     def dir(self) -> Vec:
         return unit((self.end[0] - self.start[0], self.end[1] - self.start[1], 0.0))
 
@@ -124,15 +130,14 @@ class Wall(Surface):
 
 @dataclass
 class Floor(Surface):
-    """A floor surface: a horizontal rectangle at height z, the top of its framing (the subfloor sits on it).
+    """A floor surface: a horizontal polygon at height z, the top of its framing (the subfloor sits on it).
 
-    Local coordinates: u along x from its corner, v along y, w down into the framing. bearers are the walls
-    under it, loads the walls standing on it; both are worked out from the geometry.
+    outline: its plan shape, counter-clockwise. Local coordinates: u along x and v along y from the corner of
+    its bounding box, w down into the framing. bearers are the walls under it, loads the walls standing on it;
+    both are worked out from the geometry. Openings (stairs) are rectangles in u, v.
     """
     id: str
-    corner: tuple[float, float]
-    length: float                    # along x
-    width: float                     # along y
+    outline: list[tuple[float, float]]
     z: float
     role: str = "floor"
     openings: list[Opening] = field(default_factory=list)
@@ -140,8 +145,27 @@ class Floor(Surface):
     loads: list[Bearer] = field(default_factory=list)
 
     @property
+    def corner(self) -> tuple[float, float]:
+        return (min(p[0] for p in self.outline), min(p[1] for p in self.outline))
+
+    @property
+    def length(self) -> float:
+        """Bounding box extent along x."""
+        return max(p[0] for p in self.outline) - self.corner[0]
+
+    @property
+    def width(self) -> float:
+        """Bounding box extent along y."""
+        return max(p[1] for p in self.outline) - self.corner[1]
+
+    @property
     def size(self) -> tuple[float, float]:
         return (self.length, self.width)
+
+    @property
+    def outline_uv(self) -> list[tuple[float, float]]:
+        cx, cy = self.corner
+        return [(x - cx, y - cy) for x, y in self.outline]
 
     @property
     def origin(self) -> Vec:
@@ -152,8 +176,7 @@ class Floor(Surface):
     ew = property(lambda self: (0.0, 0.0, -1.0))
 
     def contains(self, p: tuple[float, float]) -> bool:
-        return (self.corner[0] - EPS <= p[0] <= self.corner[0] + self.length + EPS
-                and self.corner[1] - EPS <= p[1] <= self.corner[1] + self.width + EPS)
+        return inside(p, self.outline)
 
 
 WALL_DERIVED = ("start_meets", "end_meets", "tees", "above", "below")
@@ -166,6 +189,7 @@ class House:
     id: str
     walls: list[Wall]
     floors: list[Floor] = field(default_factory=list)
+    kind: str = ""                   # what sort of house: box, L, T, ell, U
 
     def __post_init__(self):
         self.link()
@@ -187,8 +211,9 @@ class House:
         for w in self.walls:
             for end, p in (("start", w.start), ("end", w.end)):
                 for x in self.walls:
-                    if x is w or abs(x.base - w.base) > EPS:
-                        continue
+                    parallel = abs(w.dir[0] * x.normal[0] + w.dir[1] * x.normal[1]) < 1e-9
+                    if x is w or parallel or abs(x.base - w.base) > EPS:
+                        continue          # a wall carrying on in the same line is not one this wall meets
                     q = (p[0] - x.start[0], p[1] - x.start[1])
                     t = q[0] * x.dir[0] + q[1] * x.dir[1]
                     off = abs(q[0] * x.normal[0] + q[1] * x.normal[1])
@@ -216,7 +241,7 @@ class House:
             w.tees.sort(key=lambda t: t.u)
 
     def to_dict(self) -> dict:
-        return {"id": self.id,
+        return {"id": self.id, "kind": self.kind,
                 "walls": [{k: v for k, v in asdict(w).items() if k not in WALL_DERIVED} for w in self.walls],
                 "floors": [{k: v for k, v in asdict(f).items() if k not in FLOOR_DERIVED} for f in self.floors]}
 
@@ -226,9 +251,10 @@ class House:
             return [Opening(**o) for o in x.get("openings", [])]
         walls = [Wall(**{**{k: v for k, v in w.items() if k not in WALL_DERIVED}, "start": tuple(w["start"]),
                          "end": tuple(w["end"]), "openings": openings(w)}) for w in d["walls"]]
-        floors = [Floor(**{**{k: v for k, v in f.items() if k not in FLOOR_DERIVED}, "corner": tuple(f["corner"]),
-                           "openings": openings(f)}) for f in d.get("floors", [])]
-        return House(d["id"], walls, floors)
+        floors = [Floor(**{**{k: v for k, v in f.items() if k not in FLOOR_DERIVED},
+                           "outline": [tuple(p) for p in f["outline"]], "openings": openings(f)})
+                  for f in d.get("floors", [])]
+        return House(d["id"], walls, floors, d.get("kind", ""))
 
     def save(self, path) -> None:
         Path(path).write_text(json.dumps(self.to_dict(), indent=1))
