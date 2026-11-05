@@ -132,7 +132,13 @@ def grammar_rules(source: str) -> list[dict]:
         for d in node.decorator_list:
             if isinstance(d, ast.Call) and getattr(d.func, "id", "") == "rule" and d.args:
                 prio = d.args[0].value if isinstance(d.args[0], ast.Constant) else None
+                kw = {k.arg: k.value for k in d.keywords}
+                match = kw.get("match", d.args[1] if len(d.args) > 1 else None)
+                when = kw.get("when", d.args[2] if len(d.args) > 2 else None)
                 out.append({"name": node.name, "priority": prio, "doc": ast.get_docstring(node) or "",
+                            "match": match.value if isinstance(match, ast.Constant) else None,
+                            "when": ast.get_source_segment(source, when.body if isinstance(when, ast.Lambda) else when)
+                            if when is not None else None,
                             "line": node.lineno, "end": node.end_lineno})
     return sorted(out, key=lambda r: (r["priority"] if r["priority"] is not None else 1e9, r["name"]))
 
@@ -176,7 +182,7 @@ def frame_payload(house: House, frame: Frame, source: str) -> dict:
     m = report.metrics
     return {
         "house": house.id, "walls": walls, "members": members, "rules": grammar_rules(source),
-        "steps": frame.steps, "errors": frame.errors, "log": frame.log,
+        "steps": frame.steps, "errors": frame.errors,
         "faults": [asdict(f) for f in report.faults], "checks": CHECKS, "report": report.text(),
         "stats": {"members": m["members"], "hard": report.hard, "soft": report.soft, "cost": m["cost"],
                   "bought_ft": m["bought_ft"], "waste_pct": m["waste_pct"], "steps": len(frame.steps)},
@@ -232,7 +238,7 @@ def rule_demo(name: str, source: str, rule: str, firing: int | None = None) -> d
         if abs(b["w0"]) <= EPS and b["u1"] > EPS and b["u0"] < w.length - EPS:
             near.append(b)
     out.update({
-        "firing": firing, "pass": step["pass"],
+        "firing": firing, "pass": step["pass"], "match": step.get("match"), "target": step.get("target"),
         "wall": {"id": w.id, "length": w.length, "height": w.height, "openings": [asdict(o) for o in w.openings],
                  "tees": [asdict(t) for t in w.tees]},
         "firings": [{"wall": steps[k]["wall"], "pass": steps[k]["pass"]} for k in fired],

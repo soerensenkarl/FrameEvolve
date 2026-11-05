@@ -86,6 +86,14 @@ svg rect.gap { stroke-width: 1.2; }
 svg .tee line { stroke: #8aa0b6; stroke-width: 1; stroke-dasharray: 3 3; }
 svg .tee text { fill: #6a8299; }
 svg text { fill: #5f7790; }
+svg .target { vector-effect: non-scaling-stroke; }
+svg rect.target.trig { fill-opacity: .4; stroke-width: 3; }
+svg rect.target.out { fill: none; stroke-width: 1.5; stroke-dasharray: 5 3; opacity: .7; }
+svg line.target.trig { stroke-width: 6; stroke-linecap: round; }
+svg line.target.out { stroke-width: 2; stroke-dasharray: 5 3; opacity: .7; }
+svg rect.m.hit { stroke: #000; stroke-width: 2.5; }
+.lbl.target { font-weight: 600; color: var(--text); background: rgba(255,255,255,.85); padding: 0 4px; border-radius: 4px; }
+#caption code { font-size: 11.5px; color: var(--text); }
 svg .mark { stroke: var(--err); stroke-width: 3; stroke-linecap: round; }
 svg .mark.soft { stroke: #e08a00; }
 
@@ -101,10 +109,11 @@ svg .mark.soft { stroke: #e08a00; }
 #rules li.sel { background: #e7effc; }
 #rules li.off { opacity: .45; }
 #rules li.notyet { opacity: .38; }
-#rules li.now { border-left-color: var(--c); background: #f3f1ec; font-weight: 600; }
+#rules li.now { border-left-color: var(--c); background: #f3f1ec; font-weight: 600; opacity: 1; }
 #rules .firing { font-size: 10px; font-weight: 500; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
 #rules .sw { width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(0,0,0,.25); flex: none; }
 #rules .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+#rules .nm small { display: block; color: var(--muted); font-size: 10.5px; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #rules .pr, #rules .ct { color: var(--muted); font-size: 11px; font-weight: 400; font-variant-numeric: tabular-nums; }
 #rules .eye { border: none; background: none; padding: 0 2px; color: var(--muted); font-size: 12px; }
 #rules .bad { font-size: 11px; font-weight: 600; }
@@ -151,7 +160,7 @@ textarea#src { flex: 1; font: 12px/1.55 ui-monospace, Menlo, monospace; border: 
 
 /* the rule as a before -> after diagram */
 .demo { margin: 10px 0 4px; }
-.demo .dlab { display: flex; justify-content: space-between; align-items: center; min-height: 24px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 2px 0; }
+.demo .dlab { display: flex; justify-content: space-between; align-items: center; min-height: 24px; font-size: 11.5px; color: var(--muted); margin: 2px 0; }
 .demo-svg { width: 100%; height: auto; display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
 .demo .darrow { text-align: center; color: var(--muted); font-size: 16px; margin: 4px 0; }
 .demo .darrow .pill { font-size: 12px; vertical-align: 2px; }
@@ -165,9 +174,12 @@ textarea#src { flex: 1; font: 12px/1.55 ui-monospace, Menlo, monospace; border: 
 #timeline button { padding: 2px 8px; min-width: 30px; }
 #stripWrap { flex: 1; min-width: 0; position: relative; }
 #strip { display: flex; height: 18px; align-items: stretch; cursor: pointer; touch-action: none; padding: 3px 0; }
-#strip .seg { flex: 1 1 0; min-width: 1px; margin-right: 1px; border-radius: 2px; transition: opacity .1s, transform .1s; }
+#strip .pair { flex: 1 1 0; min-width: 2px; display: flex; margin-right: 1px; }
+#strip .pair.pass { margin-left: 4px; }
+#strip .seg { flex: 1 1 0; min-width: 1px; border-radius: 2px; transition: opacity .1s, transform .1s; }
+#strip .seg.trig { background: #fff; box-shadow: inset 0 0 0 1.5px var(--c); }
+#strip .seg.out { background: var(--c); }
 #strip .seg.zero { flex: 0 0 14px; background: var(--chip); border: 1.5px solid #8fb0cf; margin-right: 4px; }
-#strip .seg.pass { margin-left: 4px; }
 #strip .seg.ahead { opacity: .28; }
 #strip .seg.cur { transform: scaleY(1.7); box-shadow: 0 0 0 1.5px #1d1d1b; position: relative; z-index: 1; }
 #strip .seg.zero.cur { transform: none; box-shadow: 0 0 0 2px #1d1d1b; }

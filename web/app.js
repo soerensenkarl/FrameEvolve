@@ -63,14 +63,20 @@ const st = {
   saved: "",            // grammar source as saved on disk
   origin: null,         // where unsaved edits came from, e.g. "run demo, c002"
   fitFor: null,         // the house the 3D camera was last framed on
-  at: 0,                // build steps shown; equal to the number of steps when the frame is finished
+  at: 0,                // half-steps shown: 2k-1 is step k's trigger (before it fires), 2k its output
   placedAt: {}, removedAt: {}, playing: null, builds: 0,
   demo: new Map(), demoFor: null,
 };
-const finished = () => !st.data || st.at >= st.data.steps.length;
-const present = (id) => st.placedAt[id] < st.at && !(st.removedAt[id] < st.at);
-const current = () => (st.data && !finished() && st.at > 0 ? st.data.steps[st.at - 1] : null);
-const goneNow = (id) => !finished() && st.removedAt[id] === st.at - 1;
+const finished = () => !st.data || st.at >= 2 * st.data.steps.length;
+const applied = () => Math.floor(st.at / 2);           // steps whose output is shown
+const stepNo = () => Math.ceil(st.at / 2);             // the step being shown, from 1
+const trigger = () => st.at % 2 === 1;                 // showing what a rule matched, before it fires
+const present = (id) => st.placedAt[id] < applied() && !(st.removedAt[id] < applied());
+const current = () => (st.data && !finished() && st.at > 0 ? st.data.steps[stepNo() - 1] : null);
+const placedNow = (id) => !finished() && !trigger() && st.placedAt[id] === applied() - 1;
+const goneNow = (id) => !finished() && !trigger() && st.removedAt[id] === applied() - 1;
+const matchedMember = (id) => { const t = current()?.target; return t?.kind === "member" && t.member === id; };
+const wallById = (id) => st.data.walls.find((w) => w.id === id);
 const runsMode = () => document.body.classList.contains("runs-mode");
 
 // ---------------------------------------------------------------- server
@@ -154,7 +160,7 @@ function index() {
     for (const id of s.removed) st.removedAt[id] = i;
   });
   for (const m of d.members) if (!(m.id in st.placedAt)) st.placedAt[m.id] = -1;
-  st.at = d.steps.length;
+  st.at = 2 * d.steps.length;
   stopPlay();
   if (st.sel?.kind === "member" && !st.byId[st.sel.id]) st.sel = null;
   if (st.sel?.kind === "rule" && !names.includes(st.sel.id)) st.sel = null;
@@ -215,7 +221,7 @@ function renderRules() {
   }
   const done = finished();
   const cur = current();
-  const fired = new Set(st.data.steps.slice(0, st.at).map((s) => s.rule));
+  const fired = new Set(st.data.steps.slice(0, applied()).map((s) => s.rule));
   let counts = st.counts;
   if (!done) {
     counts = {};
@@ -223,15 +229,15 @@ function renderRules() {
   }
   $("#rulesHint").textContent = done ? "Click a rule to see what it does and highlight its members."
     : st.at === 0 ? "Step 0: no rule has fired yet."
-    : "Marked: the rule firing at this step. Faded: not fired yet.";
+    : "Marked: the rule at this step. Faded: not fired yet. Grey: what each rule matches.";
   ul.innerHTML = rules.map((r) => {
     const isNow = cur?.rule === r.name;
     const cls = [st.sel?.kind === "rule" && st.sel.id === r.name ? "sel" : "", st.hidden.has(r.name) ? "off" : "",
       isNow ? "now" : "", !done && !fired.has(r.name) ? "notyet" : ""].join(" ");
     return `<li data-rule="${esc(r.name)}" class="${cls}" style="--c:${st.colors[r.name]}" title="${esc(oneLine(r.doc))}">
       <span class="sw" style="background:${st.colors[r.name]}"></span>
-      <span class="nm">${esc(r.name)}</span>
-      ${isNow ? `<span class="firing">firing</span>` : ""}
+      <span class="nm">${esc(r.name)}${r.match ? `<small>${esc(r.match)}${r.when ? `, when ${esc(r.when)}` : ""}</small>` : ""}</span>
+      ${isNow ? `<span class="firing">${trigger() ? "matched" : "fired"}</span>` : ""}
       ${done && st.ruleFaults[r.name] ? `<span class="bad" title="hard faults involving this rule">${st.ruleFaults[r.name]}!</span>` : ""}
       <span class="ct" title="members placed by this rule${done ? "" : " so far"}">${counts[r.name] || 0}</span>
       <span class="pr" title="priority: lower fires first in every pass">p${r.priority}</span>
@@ -256,7 +262,7 @@ $("#rules").addEventListener("click", (e) => {
 
 // ---------------------------------------------------------------- 3D
 
-let renderer, labeler, scene, camera, controls, group, gapGroup, markGroup, surfGroup;
+let renderer, labeler, scene, camera, controls, group, gapGroup, markGroup, surfGroup, targetGroup;
 const meshes = new Map();
 let surfs = [];   // per wall: {wall, mesh, line, label, opLabels}
 
@@ -287,7 +293,8 @@ function setup3d() {
   gapGroup = new THREE.Group();
   markGroup = new THREE.Group();
   surfGroup = new THREE.Group();
-  scene.add(group, gapGroup, markGroup, surfGroup);
+  targetGroup = new THREE.Group();
+  scene.add(group, gapGroup, markGroup, surfGroup, targetGroup);
 
   new ResizeObserver(resize).observe(el);
   let down = null;
@@ -450,20 +457,20 @@ function look3d() {
   if (!st.data) return;
   const rel = related();
   const done = finished();
-  const now = st.at - 1;
+  const cur = current();
   for (const [id, mesh] of meshes) {
     const m = st.byId[id];
     const r = rel?.get(id);
     const gone = goneNow(id);
     mesh.visible = !st.hidden.has(m.rule) && (present(id) || gone);
     const mat = mesh.material;
-    const isNow = !done && st.placedAt[id] === now;
-    const own = st.colors[m.rule];
-    // while stepping, earlier members are neutral and the firing rule's members carry its colour
-    const c = r && REL[r] ? REL[r] : gone ? GONE : done || isNow || r === "rule" ? own : PAST;
+    const isNow = placedNow(id);
+    const hit = matchedMember(id);
+    // while stepping, earlier members are neutral; the rule's output, or the member it matched, carry its colour
+    const c = r && REL[r] ? REL[r] : gone ? GONE : hit ? st.colors[cur.rule] : done || isNow || r === "rule" ? st.colors[m.rule] : PAST;
     mat.color.set(c);
     if (r === "self") mat.emissive.set(0x555500);
-    else if (isNow) mat.emissive.set(c).multiplyScalar(0.35);
+    else if (isNow || (hit && trigger())) mat.emissive.set(c).multiplyScalar(0.35);
     else mat.emissive.set(done && st.faulty.has(id) ? 0x550000 : 0x000000);
     mat.opacity = rel && !r ? 0.12 : gone ? 0.35 : 1;
     mat.depthWrite = mat.opacity === 1;
@@ -473,9 +480,8 @@ function look3d() {
   markGroup.visible = show;
   // the house's surfaces: strong on the bare house, faint once framing exists
   const on = $("#showSurfaces").checked;
-  const cur = current();
   for (const s of surfs) {
-    const active = cur?.wall === s.wall;
+    const active = cur?.wall === s.wall || cur?.target?.other === s.wall;
     s.mesh.visible = s.line.visible = s.label.visible = on;
     s.mesh.material.opacity = st.at === 0 ? 0.32 : active ? 0.2 : done ? 0.06 : 0.1;
     s.line.material.opacity = st.at === 0 ? 0.9 : active ? 0.8 : done ? 0.3 : 0.45;
@@ -485,6 +491,66 @@ function look3d() {
       o.visible = on && (st.at === 0 || active || done);
       o.element.classList.toggle("faint", st.at > 0 && !active);
     }
+  }
+  renderTarget3d();
+}
+
+function depthOf(wall) {
+  // how far a wall's framing reaches in from its surface: the commonest reach of its members
+  const n = {};
+  for (const m of st.data.members) if (m.surface === wall && m.local && present(m.id)) n[m.local[1][2]] = (n[m.local[1][2]] || 0) + 1;
+  const best = Object.entries(n).sort((a, b) => b[1] - a[1])[0];
+  return best ? +best[0] : 3.5;
+}
+
+function otherEnd(t) {
+  // where the other wall of a corner or tee meets this one, in its own coordinates
+  const o = wallById(t.other);
+  return o && { wall: o.id, u: o.end_meets === t.wall ? o.length : 0, v0: 0, v1: o.height };
+}
+
+function renderTarget3d() {
+  // what the current step's rule matched, on the wall's surface: strong at the trigger, an outline at the output
+  clear(targetGroup);
+  const s = current();
+  const t = s?.target;
+  if (!t || t.kind === "member") return;
+  const c = st.colors[s.rule], trig = trigger();
+  const mark = (wid, u0, u1, v0, v1, face) => {
+    const w = wallById(wid);
+    if (!w) return;
+    const M = wallMatrix(w, face === "inner" ? -(depthOf(wid) + 0.3) * S : 0.008);
+    if (u1 - u0 > 1e-6) {
+      const pts = [[u0, v0], [u1, v0], [u1, v1], [u0, v1]].map(([u, v]) => new THREE.Vector3(u * S, v * S, 0));
+      if (trig) {
+        const plane = new THREE.Mesh(new THREE.ShapeGeometry(new THREE.Shape(pts.map((p) => new THREE.Vector2(p.x, p.y)))),
+          new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false }));
+        plane.applyMatrix4(M);
+        targetGroup.add(plane);
+      }
+      const loop = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts),
+        new THREE.LineBasicMaterial({ color: c, transparent: true, opacity: trig ? 1 : 0.6, depthTest: false }));
+      loop.applyMatrix4(M);
+      loop.renderOrder = 5;
+      targetGroup.add(loop);
+      if (face === "inner") {
+        const l = new CSS2DObject(Object.assign(document.createElement("div"), { className: "lbl target", textContent: "inside face" }));
+        l.position.copy(new THREE.Vector3(((u0 + u1) / 2) * S, ((v0 + v1) / 2) * S, 0).applyMatrix4(M));
+        targetGroup.add(l);
+      }
+    } else {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(2.5 * S, (v1 - v0) * S, 2.5 * S),
+        new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: trig ? 0.9 : 0.4, depthTest: !trig }));
+      post.position.set(u0 * S, ((v0 + v1) / 2) * S, -1.5 * S);
+      post.applyMatrix4(M);
+      post.renderOrder = 5;
+      targetGroup.add(post);
+    }
+  };
+  mark(t.wall, t.u0, t.u1, t.v0, t.v1, t.face);
+  if (t.other) {
+    const o = otherEnd(t);
+    if (o) mark(o.wall, o.u, o.u, o.v0, o.v1);
   }
 }
 
@@ -506,20 +572,20 @@ function renderElev() {
   const cur = current();
   const showFaults = $("#showFaults").checked && done;
   const showSurf = $("#showSurfaces").checked;
-  const now = st.at - 1;
   const surfOp = st.at === 0 ? 0.42 : done ? 0.12 : 0.2;
   el.innerHTML = st.data.walls.map((w) => {
     const L = w.length, H = w.height;
-    const active = cur?.wall === w.id;
+    const active = cur && (cur.wall === w.id || cur.target?.other === w.id);
     const own = st.data.members.filter((m) => m.surface === w.id && !st.hidden.has(m.rule) && (present(m.id) || goneNow(m.id)));
     const rects = own.map((m) => {
       const [lo, hi] = m.local;
       const r = rel?.get(m.id);
       const gone = goneNow(m.id);
-      const isNow = !done && st.placedAt[m.id] === now;
+      const isNow = placedNow(m.id);
+      const hit = matchedMember(m.id);
       const cls = ["m", rel && !r ? "dim" : "", r === "self" ? "sel" : "", showFaults && st.faulty.has(m.id) ? "fault" : "",
-        isNow ? "now" : "", gone ? "gone" : ""].join(" ");
-      const fillc = r && REL[r] ? REL[r] : gone ? "none" : done || isNow || r === "rule" ? st.colors[m.rule] : PAST;
+        isNow || (hit && trigger()) ? "now" : "", gone ? "gone" : ""].join(" ");
+      const fillc = r && REL[r] ? REL[r] : gone ? "none" : hit ? st.colors[cur.rule] : done || isNow || r === "rule" ? st.colors[m.rule] : PAST;
       return `<rect class="${cls}" data-id="${m.id}" x="${lo[0]}" y="${-hi[1]}" width="${hi[0] - lo[0]}" height="${hi[1] - lo[1]}" fill="${fillc}"><title>${m.id} ${esc(m.role || "")}, ${esc(m.rule)}, ${esc(m.section)}${gone ? ", removed at this step" : ""}</title></rect>`;
     }).join("");
     const nbs = w.neighbours.filter((b) => present(b.id)).map((b) =>
@@ -540,7 +606,8 @@ function renderElev() {
       <line x1="${t.u}" x2="${t.u}" y1="0" y2="${-H}"/><text x="${t.u}" y="${-H - 5 * k}" text-anchor="middle" font-size="${16 * k}">${esc(t.wall)}</text></g>`).join("");
     const hatch = (face, angle) => `<pattern id="hatch-${face}-${w.id}" patternUnits="userSpaceOnUse" width="${8 * k}" height="${8 * k}" patternTransform="rotate(${angle})">
           <line x1="0" y1="0" x2="0" y2="${8 * k}" stroke="${FACE[face]}" stroke-width="${1.4 * k}"/></pattern>`;
-    const tag = active ? `<span class="steptag">${pill(cur.rule, st.colors[cur.rule])} acts on this wall at step ${st.at}</span>` : "";
+    const tag = !active ? "" : `<span class="steptag">${pill(cur.rule, st.colors[cur.rule])} ${cur.wall !== w.id ? `matched ${esc(cur.match)} on ${esc(cur.wall)}, which meets this wall`
+      : trigger() ? `matched ${esc(cur.match)}` : `placed ${cur.placed.length} here`} at step ${stepNo()}</span>`;
     return `<div class="wall ${active ? "active" : ""} ${cur && !active ? "rest" : ""}" id="wall-${w.id}">
       <div class="cap"><b>${w.id}</b> ${w.role === "interior" ? "partition, " : ""}${ftin(L)} long, ${ftin(H)} high,
         seen from ${w.role === "interior" ? "its face side" : "outside"}, its start on the left.
@@ -548,7 +615,7 @@ function renderElev() {
       <svg viewBox="${-pad} ${-(H + pad)} ${span + 2 * pad} ${H + 2 * pad}">
         <defs>${hatch("outer", 45)}${hatch("inner", -45)}</defs>
         ${surf}<rect class="outline" x="0" y="${-H}" width="${L}" height="${H}"/>
-        ${nbs}${rects}${tees}${ops}${gaps}${marks}
+        ${nbs}${rects}${tees}${ops}${gaps}${marks}${active ? targetSvg(w, k) : ""}
       </svg></div>`;
   }).join("") + `<div class="legend"><span style="--c:${SURF}">wall surface (the input)</span>
      <span style="--c:${PAST}">placed by earlier steps</span>
@@ -557,6 +624,19 @@ function renderElev() {
      <span style="--c:#e4e2dd">member of another wall</span>
      <span style="--c:${FACE.outer}">no backing, outside face</span><span style="--c:${FACE.inner}">no backing, inside face</span></div>`;
   el.scrollTop = keep;
+}
+
+function targetSvg(w, k) {
+  // what the current step's rule matched on this wall: filled at the trigger, outlined at the output
+  const s = current(), t = s.target;
+  if (!t || t.kind === "member") return "";
+  const c = st.colors[s.rule], trig = trigger();
+  const at = t.wall === w.id ? t : t.other === w.id ? { ...otherEnd(t), u0: otherEnd(t).u, u1: otherEnd(t).u } : null;
+  if (!at) return "";
+  const cls = `target ${trig ? "trig" : "out"}`;
+  if (at.u1 - at.u0 < 1e-6) return `<line class="${cls}" x1="${at.u0}" x2="${at.u0}" y1="${-at.v0}" y2="${-at.v1}" stroke="${c}"/>`;
+  const face = t.face === "inner" ? `<text x="${(at.u0 + at.u1) / 2}" y="${-at.v1 - 4 * k}" text-anchor="middle" font-size="${15 * k}">inside face</text>` : "";
+  return `<rect class="${cls}" x="${at.u0}" y="${-at.v1}" width="${at.u1 - at.u0}" height="${at.v1 - at.v0}" stroke="${c}" fill="${c}"/>${face}`;
 }
 
 $("#elev").addEventListener("click", (e) => {
@@ -588,9 +668,12 @@ function renderCaption() {
   const c = st.colors[s.rule];
   const what = [`placed ${s.placed.length} member${s.placed.length === 1 ? "" : "s"}`];
   if (s.removed.length) what.push(`removed ${s.removed.length}`);
-  el.innerHTML = `<div class="c-top">step ${st.at} of ${n}, pass ${s.pass}</div>
-    <div class="c-main">${pill(s.rule, c)} on wall <b>${esc(s.wall)}</b>: ${what.join(", ")}</div>
-    ${r?.doc ? `<div class="c-doc">${esc(oneLine(r.doc))}</div>` : ""}`;
+  const main = trigger() ? `trigger: ${pill(s.rule, c)} matched <b>${esc(s.match)}</b>`
+    : `output: ${pill(s.rule, c)} ${what.join(", ")} on <b>${esc(s.wall)}</b>`;
+  el.innerHTML = `<div class="c-top">step ${stepNo()} of ${n}, ${trigger() ? "trigger" : "output"}, pass ${s.pass}</div>
+    <div class="c-main">${main}</div>
+    ${r?.doc ? `<div class="c-doc">${esc(oneLine(r.doc))}</div>` : ""}
+    ${trigger() && r?.when ? `<div class="c-doc">when <code>${esc(r.when)}</code></div>` : ""}`;
 }
 
 // ---------------------------------------------------------------- inspector
@@ -623,7 +706,8 @@ function renderInspect() {
     el.innerHTML = `<div class="title"><span class="sw" style="background:${st.colors[r.name]}"></span>${esc(r.name)}</div>
       <div id="ruleDemo"><p class="empty">Showing it on the toy house...</p></div>
       <p class="doc">${esc(r.doc || "No docstring.")}</p>
-      <table class="kv"><tr><td>priority</td><td>${r.priority ?? "-"} <span class="muted">(lower fires first)</span></td></tr>
+      <table class="kv"><tr><td>matches</td><td>every ${esc(r.match || "?")}${r.when ? ` where <code>${esc(r.when)}</code>` : ""}</td></tr>
+      <tr><td>priority</td><td>${r.priority ?? "-"} <span class="muted">(lower fires first)</span></td></tr>
       <tr><td>members</td><td>${st.counts[r.name] || 0} on ${esc(st.data.house)}</td></tr>
       <tr><td>in faults</td><td>${st.data.members.filter((m) => m.rule === r.name && !m.removed && st.faulty.has(m.id)).length} members in hard faults</td></tr></table>
       <h4>Source <button class="edit" data-rule="${esc(r.name)}">edit</button></h4>
@@ -687,14 +771,18 @@ function demoSvg(d, after) {
   const removed = new Set(d.removed.map((b) => b.id));
   const holes = w.openings.map((o) => `M${o.u0} ${-o.v1}h${o.u1 - o.u0}v${o.v1 - o.v0}h${o.u0 - o.u1}z`).join("");
   const before = d.before.filter((b) => !after || !removed.has(b.id));
+  const t = d.target;
   return `<svg class="demo-svg" viewBox="${-pad - (SL - L) / 2} ${-(SH + pad)} ${SL + 2 * pad} ${SH + 2 * pad}">
     <path d="M0 ${-H}h${L}v${H}h${-L}z${holes}" fill="${SURF}" fill-opacity="0.18" fill-rule="evenodd"/>
     <rect class="outline" x="0" y="${-H}" width="${L}" height="${H}"/>
     ${d.neighbours.map((b) => box(b, "nb", "#e4e2dd")).join("")}
-    ${before.map((b) => box(b, "m", PAST)).join("")}
+    ${before.map((b) => (t?.member === b.id ? box(b, `m now${after ? "" : " hit"}`, c) : box(b, "m", PAST))).join("")}
     ${after ? d.placed.map((b) => box(b, "m now", c)).join("") : d.removed.map((b) => box(b, "m gone", "none")).join("")}
     ${w.openings.map((o) => `<rect class="op" x="${o.u0}" y="${-o.v1}" width="${o.u1 - o.u0}" height="${o.v1 - o.v0}"/>`).join("")}
     ${w.tees.map((t) => `<g class="tee"><line x1="${t.u}" x2="${t.u}" y1="0" y2="${-H}"/><text x="${t.u}" y="${-H - pad / 4}" text-anchor="middle" font-size="${pad * 0.9}">${esc(t.wall)}</text></g>`).join("")}
+    ${t && t.kind !== "member" ? (t.u1 - t.u0 < 1e-6
+      ? `<line class="target ${after ? "out" : "trig"}" x1="${t.u0}" x2="${t.u0}" y1="${-t.v0}" y2="${-t.v1}" stroke="${c}"/>`
+      : `<rect class="target ${after ? "out" : "trig"}" x="${t.u0}" y="${-t.v1}" width="${t.u1 - t.u0}" height="${t.v1 - t.v0}" stroke="${c}" fill="${c}"/>`) : ""}
   </svg>`;
 }
 
@@ -711,10 +799,11 @@ function demoHtml(d) {
       firing ${d.firing + 1} of ${d.firings.length}
       <button data-firing="${d.firing + 1}" ${d.firing >= d.firings.length - 1 ? "disabled" : ""} title="next firing">&#x203A;</button></span>` : "";
   return `<div class="demo">
-    <div class="dlab">Before ${nav}</div>${demoSvg(d, false)}
+    <div class="dlab">Trigger: matched ${esc(d.match || "")} ${nav}</div>${demoSvg(d, false)}
     <div class="darrow">&#x2193; ${pill(d.rule, c)}</div>
-    <div class="dlab">After</div>${demoSvg(d, true)}
-    <p class="dcap">On the toy house, wall ${esc(d.wall.id)}, pass ${d.pass}: ${what}.${many ? "" : " It fires once there."}</p>
+    <div class="dlab">Output</div>${demoSvg(d, true)}
+    <p class="dcap">On the toy house, wall ${esc(d.wall.id)}${d.target?.other ? ` where it meets ${esc(d.target.other)}` : ""}${d.target?.face === "inner" ? ", inside face" : ""},
+      pass ${d.pass}: ${what}.${many ? "" : " It fires once there."}</p>
   </div>`;
 }
 
@@ -772,32 +861,36 @@ function renderStrip() {
   if (strip.dataset.build === String(st.builds)) return;
   strip.dataset.build = String(st.builds);
   const steps = st.data.steps;
+  // each firing is a pair: a hollow trigger, then the filled output, in the rule's colour
   strip.innerHTML = `<div class="seg zero" data-i="0"></div>` + steps.map((s, i) =>
-    `<div class="seg ${i && s.pass !== steps[i - 1].pass ? "pass" : ""}" data-i="${i + 1}" style="background:${st.colors[s.rule]}"></div>`).join("");
+    `<div class="pair ${i && s.pass !== steps[i - 1].pass ? "pass" : ""}" style="--c:${st.colors[s.rule]}">` +
+    `<div class="seg trig" data-i="${2 * i + 1}"></div><div class="seg out" data-i="${2 * i + 2}"></div></div>`).join("");
 }
 
 function renderTimeline() {
   if (!st.data) return;
   renderStrip();
   const n = st.data.steps.length;
-  for (const seg of $("#strip").children) {
+  for (const seg of $("#strip").querySelectorAll(".seg")) {
     const i = +seg.dataset.i;
     seg.classList.toggle("ahead", i > st.at);
-    seg.classList.toggle("cur", i === st.at && st.at < n);
+    seg.classList.toggle("cur", i === st.at && !finished());
   }
-  $("#tlLabel").innerHTML = st.at >= n ? `<b>finished</b>, ${n} steps` : `<b>step ${st.at}</b> of ${n}`;
+  $("#tlLabel").innerHTML = finished() ? `<b>finished</b>, ${n} steps` : st.at === 0 ? `<b>step 0</b> of ${n}`
+    : `<b>step ${stepNo()}</b> of ${n}, ${trigger() ? "trigger" : "output"}`;
   $("#tlPlay").innerHTML = st.playing ? "&#x23F8;" : "&#x25B6;";
 }
 
 function stepTip(i) {
   if (i === 0) return "step 0: the bare house";
-  const s = st.data.steps[i - 1];
-  return `step ${i}: ${s.rule} on ${s.wall}, ${s.placed.length} placed${s.removed.length ? `, ${s.removed.length} removed` : ""}`;
+  const s = st.data.steps[Math.ceil(i / 2) - 1];
+  return i % 2 ? `step ${Math.ceil(i / 2)}, trigger: ${esc(s.rule)} matched ${esc(s.match)}`
+    : `step ${i / 2}, output: ${esc(s.rule)} placed ${s.placed.length}${s.removed.length ? `, removed ${s.removed.length}` : ""} on ${esc(s.wall)}`;
 }
 
 function goto(at) {
   if (!st.data) return;
-  st.at = Math.max(0, Math.min(st.data.steps.length, at));
+  st.at = Math.max(0, Math.min(2 * st.data.steps.length, at));
   renderTimeline();
   renderRules();
   renderCaption();
@@ -848,7 +941,7 @@ $("#tlPlay").addEventListener("click", () => {
   st.playing = setInterval(() => {
     if (finished()) { stopPlay(); renderTimeline(); return; }
     goto(st.at + 1);
-  }, 450);
+  }, 380);
   goto(st.at);
 });
 
