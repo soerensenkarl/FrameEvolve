@@ -70,3 +70,19 @@ Minimal grammar, 10 iterations (crashed after 4 on a parent-draw bug, fixed, res
   faults over all 10 houses. The Pareto set and later iterations recovered. Worth measuring.
 - Bug: the parent was drawn inside a generator, so a fresh random choice was compared with each
   candidate; with two grammars in the Pareto set it could match none and crash. Fixed, with a test.
+
+## 2026-11-05 Advanced platform framing, multi-storey houses
+
+- Houses: 2 or 3 storeys, rectangular plan, a spine partition per storey and cross partitions to it;
+  floors on every storey but the top. Walls under a floor reach its top; the grammar decides joist depth.
+- Floors are surfaces like walls (u, v in plan, w down), so placement and backing checks work unchanged.
+  New match kinds: floor, bearer (wall under a floor), load (wall on a floor).
+- Verifier toward advanced framing: a board needs support within 24" in one direction (ladder blocking,
+  clips, single headers pass); exterior walls must be 2x6 (R-20 cavity); nailed blocking counts as held;
+  floors carry load and joists have span limits; the single-top-plate check is gone.
+- Seed rewritten as advanced platform framing (2x6/2x4 at 24" on one grid, single plates, two-stud
+  corners and ladder junctions, headers only in bearing walls, 2x12 joists split over the spine):
+  0 hard faults on 29 of 30 houses; the 30th has one plate bearing 5/8" on a joist.
+- Lesson: a backing check that assumed a wall's face always stops at the wall it meets was wrong where the
+  other wall's framing lies beyond; it now uses the same "in the way" test the grammar uses.
+- Old runs (first, atomic) were scored on the earlier one-storey houses and 2x4 rules; not comparable.
