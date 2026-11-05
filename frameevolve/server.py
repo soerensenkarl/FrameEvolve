@@ -26,6 +26,21 @@ ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
 HOUSES = ROOT / "data" / "houses"
 GRAMMARS = ROOT / "grammars"
+RUN_GRAMMAR = re.compile(r"^([A-Za-z0-9_\-]+)\.(c\d{3})$")   # "first.c003": a grammar a search kept
+
+
+def grammar_file(name: str) -> Path | None:
+    """grammars/<name>.py, or for "run.cid" the grammar that run kept. None if there is no such file."""
+    m = RUN_GRAMMAR.match(name)
+    p = ROOT / "runs" / m[1] / "grammars" / f"{m[2]}.py" if m else GRAMMARS / f"{name}.py" if NAME.match(name) else None
+    return p if p and p.is_file() else None
+
+
+def grammar_names() -> list[str]:
+    """The saved grammars, then every grammar each run kept, newest run first."""
+    out = [p.stem for p in sorted(GRAMMARS.glob("*.py"))]
+    runs = sorted((ROOT / "runs").glob("*/grammars"), key=lambda d: d.stat().st_mtime, reverse=True)
+    return out + [f"{d.parent.name}.{p.stem}" for d in runs for p in sorted(d.glob("c*.py"))]
 RUNS = ROOT / "runs"
 NAME = re.compile(r"^[A-Za-z0-9_\-]+$")
 FILE = re.compile(r"^[A-Za-z0-9_\-]+\.[A-Za-z0-9]+$")
@@ -191,7 +206,7 @@ def frame_payload(house: House, frame: Frame, source: str) -> dict:
 
 def build_source(name: str, source: str, house: House) -> Frame:
     with tempfile.TemporaryDirectory() as d:
-        p = Path(d) / f"{name}.py"
+        p = Path(d) / f"{name.replace('.', '_')}.py"
         p.write_text(source)
         return build(p, house)
 
@@ -285,12 +300,12 @@ class Handler(BaseHTTPRequestHandler):
                                 "size": [round(max(w.end[0] for w in h.walls)), round(max(w.end[1] for w in h.walls))]})
                 return self.send(200, out)
             if path == "/api/grammars":
-                return self.send(200, [p.stem for p in sorted(GRAMMARS.glob("*.py"))])
+                return self.send(200, grammar_names())
             if path.startswith("/api/grammar/"):
                 name = path.split("/")[-1]
-                if not NAME.match(name) or not (GRAMMARS / f"{name}.py").is_file():
+                if not grammar_file(name):
                     return self.send(404, {"error": "no such grammar"})
-                src = (GRAMMARS / f"{name}.py").read_text()
+                src = grammar_file(name).read_text()
                 return self.send(200, {"name": name, "source": src, "rules": grammar_rules(src)})
             if path == "/api/jobs":
                 return self.send(200, {"jobs": JOBS.list(), "credentials": jobs_mod.credentials()})
@@ -339,11 +354,11 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(400, {"error": "bad house name"})
                 house = House.load(HOUSES / f"{b['house']}.json")
                 name = b["grammar"]
-                if not NAME.match(name):
-                    return self.send(400, {"error": "bad grammar name"})
+                if not grammar_file(name) and b.get("source") is None:
+                    return self.send(400, {"error": "no such grammar"})
                 source = b.get("source")
                 if source is None:
-                    source = (GRAMMARS / f"{name}.py").read_text()
+                    source = grammar_file(name).read_text()
                 frame = build_source(name, source, house)
                 return self.send(200, frame_payload(house, frame, source))
             if path == "/api/jobs":
@@ -361,11 +376,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(404, {"error": "not found"})
             if path == "/api/rule_demo":
                 name = b["grammar"]
-                if not NAME.match(name):
-                    return self.send(400, {"error": "bad grammar name"})
+                if not grammar_file(name) and b.get("source") is None:
+                    return self.send(400, {"error": "no such grammar"})
                 source = b.get("source")
                 if source is None:
-                    source = (GRAMMARS / f"{name}.py").read_text()
+                    source = grammar_file(name).read_text()
                 firing = b.get("firing")
                 return self.send(200, rule_demo(name, source, str(b["rule"]), None if firing is None else int(firing)))
             if path == "/api/houses":
@@ -389,6 +404,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path.startswith("/api/grammar/"):
                 name = path.split("/")[-1]
+                if RUN_GRAMMAR.match(name):
+                    return self.send(400, {"error": "a run's grammar is kept as the search found it; copy it into "
+                                                    "grammars/ to change it"})
                 if not NAME.match(name):
                     return self.send(400, {"error": "bad grammar name"})
                 (GRAMMARS / f"{name}.py").write_text(self.body()["source"])

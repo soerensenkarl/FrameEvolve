@@ -111,7 +111,8 @@ async function loadLists(houseId) {
     `${h.id}   ${ftin(h.size[0])} x ${ftin(h.size[1])}, ${h.openings} openings`]),
     houseId || recall("house"));
   grammarList = await api("GET", "/api/grammars");
-  fill($("#grammar"), grammarList.map((g) => [g, g]), $("#grammar").value || recall("grammar") || "seed");
+  const label = (g) => (g.includes(".") ? `run ${g.split(".")[0]}: ${g.split(".")[1]}` : g);
+  fill($("#grammar"), grammarList.map((g) => [g, label(g)]), $("#grammar").value || recall("grammar") || "seed");
 }
 
 async function loadGrammar() {
