@@ -50,14 +50,16 @@ def api_reference() -> str:
              + f". s.STOCK: stock lengths {', '.join(map(str, STOCK))} (8 to 20 ft).",
              "A member has id, section, rule, surface (its wall id), role (a free label), length, box (lo, hi world corners).",
              ""]
-    for name in ["place", "remove", "once", "members", "local", "bears_on", "carries", "beside", "gaps", "below",
+    import frameevolve.builder as builder
+    doc = inspect.getdoc(builder)
+    lines += [doc[doc.index("A grammar is"):doc.index("Coordinates in rules")].strip(), ""]
+    for name in ["place", "remove", "members", "local", "bears_on", "carries", "beside", "gaps", "below",
                  "above", "free"]:
         fn = getattr(State, name)
         doc = " ".join((inspect.getdoc(fn) or "").split())
         lines.append(f"s.{name}{inspect.signature(fn)}".replace("self, ", "").replace("(self)", "()") + f": {doc}")
-    lines += ["", "A gap from s.gaps() has u0, u1, v0, v1 and kind 'edge' or 'field'.",
-              "Mark a rule with @rule(priority) from frameevolve.builder. Lower priority runs first in every pass. "
-              "Each pass calls every rule on every wall; building stops when a pass changes nothing."]
+    lines += ["", "A gap from s.gaps() has u0, u1, v0, v1, face and kind 'edge' or 'field'.",
+              "Import with `from frameevolve.builder import rule`."]
     return "\n".join(lines)
 
 

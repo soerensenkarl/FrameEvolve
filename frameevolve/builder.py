@@ -1,19 +1,34 @@
 """The builder applies a grammar to a house and returns a frame.
 
-A grammar is a Python file of rules. A rule is a function marked with @rule(priority) that takes the
-state `s` for one wall at a time, looks at the design state (the house plus every member placed so far)
-and places or removes members. The builder calls each rule, in priority order, on every wall, pass after
-pass, until a whole pass changes nothing. `s.once(key)` lets a rule act once per key, so rules read as
-"for every X not yet handled". Every member records the rule that placed it.
+A grammar is a Python file of rules. A rule declares what it matches, and when:
+
+    @rule(40, match="opening", when=lambda s, o: o.kind == "window")
+    def sills(s, o):
+        s.place(...)
+
+The builder goes rule by rule, in priority order. For each rule it lists every match of its kind in the
+design state (the house plus every member placed so far), and calls the rule once for each match whose
+`when` holds and that it has not fired on before. Passes repeat until a whole pass changes nothing, so a
+rule whose condition only becomes true after other rules have acted still fires. A rule never fires twice
+on the same match. Every member records the rule that placed it; every step records the match.
+
+Match kinds (what the rule receives as its second argument; `s.wall` is set to the wall it is on):
+  wall     every wall
+  opening  every door and window
+  corner   every wall end that meets another wall's end: .end ('start' or 'end'), .other (wall id)
+  tee      every partition end meeting a wall along its length (s.wall is the wall met): .wall, .u, .side
+  gap      every stretch of a face with no backing: .face ('outer' or 'inner'), .kind, .u0, .u1, .v0, .v1
+  member   every member placed so far
 
 Coordinates in rules are the current wall's: u along the wall from its start, v up from its base,
-w inward from its outer face. Inches.
+w into the framing from the wall's surface. Inches.
 """
 from __future__ import annotations
 
 import importlib.util
 import itertools
 import traceback
+from dataclasses import dataclass
 from pathlib import Path
 
 from frameevolve import surface
@@ -22,12 +37,67 @@ from frameevolve.graph import GROUND, Graph, build_graph
 from frameevolve.model import SECTIONS, STOCK, THICK, Frame, House, Member, Wall
 
 
-def rule(priority: int):
-    """Mark a function as a rule. Lower priority runs first in every pass."""
+MATCHES = ("wall", "opening", "corner", "tee", "gap", "member")
+
+
+def rule(priority: int, match: str, when=None):
+    """Mark a function as a rule: fn(s, x) for each x of kind `match` where when(s, x) holds.
+    Lower priority runs first in every pass."""
+    if match not in MATCHES:
+        raise ValueError(f"match is one of {', '.join(MATCHES)}, not {match!r}")
+
     def mark(fn):
-        fn.priority = priority
+        fn.priority, fn.match, fn.when = priority, match, when
         return fn
     return mark
+
+
+@dataclass(frozen=True)
+class Corner:
+    end: str     # which end of s.wall: "start" or "end"
+    other: str   # the wall it meets there
+
+
+def target(s: "State", kind: str, wall: Wall, x) -> dict:
+    """Where a match is, for drawing what triggered a rule: a rectangle on the wall (u0, u1, v0, v1, and the
+    face for a gap) or, for a member, its id. A tee is a line at its u (u0 == u1)."""
+    full = {"wall": wall.id, "u0": 0.0, "u1": wall.length, "v0": 0.0, "v1": wall.height}
+    if kind == "wall":
+        return {"kind": kind, **full}
+    if kind == "opening":
+        return {"kind": kind, "wall": wall.id, "u0": x.u0, "u1": x.u1, "v0": x.v0, "v1": x.v1}
+    if kind == "corner":
+        u = 0.0 if x.end == "start" else wall.length
+        return {"kind": kind, **full, "u0": u, "u1": u, "other": x.other}
+    if kind == "tee":
+        return {"kind": kind, **full, "u0": x.u, "u1": x.u, "other": x.wall}
+    if kind == "gap":
+        return {"kind": kind, "wall": wall.id, "u0": x.u0, "u1": x.u1, "v0": x.v0, "v1": x.v1, "face": x.face}
+    return {"kind": kind, "wall": wall.id, "member": x.id}
+
+
+def matches(s: "State", kind: str) -> list[tuple[Wall, object, tuple]]:
+    """Every match of a kind in the design state now: (the wall it is on, the thing, a key that names it)."""
+    walls = s.house.walls
+    if kind == "wall":
+        return [(w, w, (w.id,)) for w in walls]
+    if kind == "opening":
+        return [(w, o, (o.id,)) for w in walls for o in w.openings]
+    if kind == "corner":
+        by_id = {w.id: w for w in walls}
+        return [(w, Corner(end, other), (w.id, end)) for w in walls for end in ("start", "end")
+                if (other := getattr(w, f"{end}_meets")) and not any(t.wall == w.id for t in by_id[other].tees)]
+    if kind == "tee":
+        return [(w, t, (w.id, t.wall)) for w in walls for t in w.tees]
+    if kind == "gap":
+        ms = list(s._members.values())
+        by_id = {w.id: w for w in walls}
+        return [(w, g, (w.id, face, round(g.u0, 3), round(g.v0, 3), g.kind)) for w in walls
+                for face in ("outer", "inner") for g in surface.gaps(w, ms, face=face, walls=by_id)]
+    if kind == "member":
+        by_id = {w.id: w for w in walls}
+        return [(by_id.get(m.surface, walls[0]), m, (m.id,)) for m in s._members.values()]
+    raise ValueError(kind)
 
 
 def load_rules(path) -> list:
@@ -36,7 +106,7 @@ def load_rules(path) -> list:
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     rules = [f for f in vars(mod).values()
-             if callable(f) and hasattr(f, "priority") and getattr(f, "__module__", None) == mod.__name__]
+             if callable(f) and hasattr(f, "match") and getattr(f, "__module__", None) == mod.__name__]
     return sorted(rules, key=lambda f: (f.priority, f.__name__))
 
 
@@ -52,7 +122,6 @@ class State:
         self.changes = 0
         self._members: dict[str, Member] = {}
         self._ids = itertools.count(1)
-        self._done: set = set()
         self._rule = ""
         self._graph: Graph | None = None
         self._removed: dict[str, Member] = {}
@@ -131,14 +200,6 @@ class State:
                 return False
         return True
 
-    def once(self, *key) -> bool:
-        """True the first time this rule asks with this key on this wall, False after."""
-        k = (self._rule, self.wall.id) + key
-        if k in self._done:
-            return False
-        self._done.add(k)
-        return True
-
     # writing ---------------------------------------------------------------------------------------
 
     def place(self, section: str, u0: float, u1: float, v0: float, v1: float, w0: float = 0.0,
@@ -193,32 +254,44 @@ def build(grammar, house: House, max_passes: int = 10, max_members: int = 20000)
     try:
         rules = load_rules(path)
     except Exception as e:
-        return Frame(house.id, str(grammar), [], [], [f"grammar does not load: {type(e).__name__}: {e}"])
+        return Frame(house.id, str(grammar), [], [f"grammar does not load: {type(e).__name__}: {e}"])
     s = State(house)
-    log: list[str] = []
     errors: list[str] = []
     steps: list[dict] = []
+    fired: set = set()
 
     def frame() -> Frame:
         removed = [m for k, m in s._removed.items() if k not in s._members]
-        return Frame(house.id, str(grammar), list(s._members.values()), log, errors, steps, removed)
+        return Frame(house.id, str(grammar), list(s._members.values()), errors, steps, removed)
+
+    def error(r, key, e) -> None:
+        msg = f"{r.__name__} on {' '.join(map(str, key))}: {type(e).__name__}: {e}{_where(e, path)}"
+        if msg not in errors:
+            errors.append(msg)
 
     for p in range(1, max_passes + 1):
         before = s.changes
         for r in rules:
-            for wall in house.walls:
-                s.wall, s._rule = wall, r.__name__
-                s._placed_now, s._removed_now = [], []
-                n = s.changes
+            s._rule = r.__name__
+            for wall, x, key in matches(s, r.match):
+                if (r.__name__, key) in fired:
+                    continue
+                s.wall = wall
                 try:
-                    r(s)
+                    if r.when is not None and not r.when(s, x):
+                        continue      # not yet: a later pass may make it true
                 except Exception as e:
-                    msg = f"{r.__name__} on {wall.id}: {type(e).__name__}: {e}{_where(e, path)}"
-                    if msg not in errors:
-                        errors.append(msg)
-                if s.changes != n:
-                    log.append(f"pass {p}: {r.__name__} on {wall.id}, {s.changes - n} changes")
+                    error(r, key, e)
+                    continue
+                fired.add((r.__name__, key))
+                s._placed_now, s._removed_now = [], []
+                try:
+                    r(s, x)
+                except Exception as e:
+                    error(r, key, e)
+                if s._placed_now or s._removed_now:
                     steps.append({"pass": p, "rule": r.__name__, "wall": wall.id,
+                                  "match": f"{r.match} {' '.join(map(str, key))}", "target": target(s, r.match, wall, x),
                                   "placed": s._placed_now, "removed": s._removed_now})
                 if len(s._members) > max_members:
                     errors.append(f"stopped: more than {max_members} members")

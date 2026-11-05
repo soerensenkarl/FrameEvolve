@@ -24,7 +24,8 @@ class Gap:
     u1: float
     v0: float
     v1: float
-    kind: str  # "edge": a sheathing edge with nothing behind it; "field": too wide between backing
+    kind: str  # "edge": a board edge with nothing behind it; "field": too wide between backing
+    face: str = "outer"
 
 
 def subtract(intervals, cuts):
@@ -87,14 +88,14 @@ def gaps(wall: Wall, members: list[Member], max_clear: float = MAX_CLEAR, face: 
         for s0, s1 in solid:
             for g0, g1 in subtract([(s0, s1)], backed):
                 if g0 <= s0 + EPS or g1 >= s1 - EPS:
-                    found.append(Gap(g0, g1, h0, h1, "edge"))
+                    found.append(Gap(g0, g1, h0, h1, "edge", face))
                 elif g1 - g0 > max_clear:
-                    found.append(Gap(g0, g1, h0, h1, "field"))
+                    found.append(Gap(g0, g1, h0, h1, "field", face))
     merged: list[Gap] = []
     for g in sorted(found, key=lambda g: (g.kind, g.u0, g.u1, g.v0)):
         p = merged[-1] if merged else None
         if p and (p.kind, p.u0, p.u1) == (g.kind, g.u0, g.u1) and abs(p.v1 - g.v0) <= EPS:
-            merged[-1] = Gap(p.u0, p.u1, p.v0, g.v1, p.kind)
+            merged[-1] = Gap(p.u0, p.u1, p.v0, g.v1, p.kind, face)
         else:
             merged.append(g)
     return merged

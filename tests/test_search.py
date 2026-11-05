@@ -37,7 +37,7 @@ def test_pareto_keeps_every_grammar_that_is_best_somewhere():
 def test_evaluate_survives_a_grammar_that_hangs(tmp_path):
     """A proposed grammar that never returns gets the failed score instead of stalling the search."""
     g = tmp_path / "hang.py"
-    g.write_text("from frameevolve.builder import rule\n\n@rule(1)\ndef hang(s):\n    while True:\n        pass\n")
+    g.write_text("from frameevolve.builder import rule\n\n@rule(1, match='wall')\ndef hang(s, w):\n    while True:\n        pass\n")
     h = tmp_path / "h.json"
     houses.generate(0).save(h)
     res = evaluate(g, [h], timeout=3)

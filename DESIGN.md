@@ -55,11 +55,15 @@ Pareto search keeps the grammars that do well across many houses.
 
 ## Builder
 
-- Rules are Python functions marked with `@rule(priority)`. The builder calls each rule, in priority
-  order, on every wall, pass after pass, until a whole pass changes nothing (or a pass cap).
-- `s.once(key)` lets a rule act once per key, so rules read as "for every X not yet handled".
-- Every member records the rule that placed it. Reason: every fault can then be charged to a rule,
-  which is what makes reports actionable.
+- A rule declares what it matches and when: `@rule(priority, match="opening", when=...)`. Match kinds:
+  wall, opening, corner, tee, gap (a stretch of face with no backing), member.
+- The builder goes rule by rule in priority order. For each rule it lists every match of its kind in the
+  current design state and fires the rule once per match whose condition holds. Passes repeat until a
+  pass changes nothing (cap 10), so a condition that becomes true later still fires.
+- Reason: rule by rule keeps the coarse-to-fine order; declared matches make the trigger visible (what,
+  where, how often), give exact before/after rule diagrams, and give credit to (rule, match). This is
+  the shape-grammar and CGA idea of an explicit left-hand side, with priority-ordered sweeps.
+- Every member records the rule that placed it; every step records the rule, the match and its geometry.
 - `role` on a member is a free label for reading. The verifier never trusts it.
 
 ## Graph
@@ -88,8 +92,9 @@ Pareto search keeps the grammars that do well across many houses.
 
 ## Build history
 
-- The builder records every rule firing that changed something, in order, with the members it placed
-  and removed. Removed members are kept so the build can be replayed.
+- The builder records every rule firing that changed something, in order: the rule, the match, where
+  the match is, and the members placed and removed. Removed members are kept so the build can be
+  replayed, trigger then output.
 - Reason: to see how a grammar builds a frame, step by step, not only the result.
 
 ## Search

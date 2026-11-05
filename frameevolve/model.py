@@ -198,19 +198,18 @@ class Frame:
     house: str
     grammar: str
     members: list[Member]
-    log: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     steps: list[dict] = field(default_factory=list)
     removed: list[Member] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {"house": self.house, "grammar": self.grammar, "members": [m.to_dict() for m in self.members],
-                "log": self.log, "errors": self.errors, "steps": self.steps,
+                "errors": self.errors, "steps": self.steps,
                 "removed": [m.to_dict() for m in self.removed]}
 
     @staticmethod
     def from_dict(d: dict) -> "Frame":
-        return Frame(d["house"], d["grammar"], [Member.from_dict(m) for m in d["members"]], d["log"], d["errors"],
+        return Frame(d["house"], d["grammar"], [Member.from_dict(m) for m in d["members"]], d["errors"],
                      d.get("steps", []), [Member.from_dict(m) for m in d.get("removed", [])])
 
     def save(self, path) -> None:

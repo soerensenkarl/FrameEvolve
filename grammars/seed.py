@@ -53,13 +53,12 @@ def s_depth(section):
     return {"2x4": 3.5, "2x6": 5.5, "2x8": 7.25, "2x10": 9.25, "2x12": 11.25}[section]
 
 
-@rule(10)
-def bottom_plate(s):
-    if not s.once():
-        return
+@rule(10, match="wall")
+def bottom_plate(s, wall):
+    """A bottom plate along the wall, cut out at doors, in pieces no longer than the stock."""
     a, b = extent(s)
     runs = [(a, b)]
-    for o in s.wall.openings:
+    for o in wall.openings:
         if o.kind == "door":
             runs = [r for x0, x1 in runs for r in ((x0, min(x1, o.u0)), (max(x0, o.u1), x1)) if r[1] - r[0] > 0.1]
     for u0, u1 in runs:
@@ -68,13 +67,11 @@ def bottom_plate(s):
             s.place("2x4", u0 + (u1 - u0) * i / n, u0 + (u1 - u0) * (i + 1) / n, 0, T, role="bottom plate")
 
 
-@rule(10)
-def top_plate(s):
-    """Joints land on a stud centre, so each piece bears on half a stud."""
-    if not s.once():
-        return
+@rule(10, match="wall")
+def top_plate(s, wall):
+    """A top plate along the wall; joints land on a stud centre, so each piece bears on half a stud."""
     a, b = extent(s)
-    H = s.wall.height
+    H = wall.height
     u = a
     while b - u > MAX_PIECE:
         c = max(j for j in layout(s) if u < j <= u + MAX_PIECE)
@@ -83,106 +80,83 @@ def top_plate(s):
     s.place("2x4", u, b, H - T, H, role="top plate")
 
 
-@rule(20)
-def end_studs(s):
-    if not s.once():
-        return
+@rule(20, match="wall")
+def end_studs(s, wall):
+    """A stud at each end of the wall's framing."""
     a, b = extent(s)
-    H = s.wall.height
-    s.place("2x4", a, a + T, T, H - T, role="end stud")
-    s.place("2x4", b - T, b, T, H - T, role="end stud")
+    s.place("2x4", a, a + T, T, wall.height - T, role="end stud")
+    s.place("2x4", b - T, b, T, wall.height - T, role="end stud")
 
 
-@rule(21)
-def corner_backer(s):
+@rule(21, match="corner", when=lambda s, c: c.end == "start" and s.wall.role == "exterior")
+def corner_backer(s, c):
     """At the inside corner where the previous wall butts in, a stud to catch the drywall edge."""
-    if s.wall.role == "exterior" and s.wall.start_meets and s.once():
-        s.place("2x4", D, D + T, T, s.wall.height - T, role="corner backer")
+    s.place("2x4", D, D + T, T, s.wall.height - T, role="corner backer")
 
 
-@rule(22)
-def partition_backers(s):
+@rule(22, match="tee")
+def partition_backers(s, t):
     """A stud each side of where a partition meets this wall, to catch the drywall edges."""
+    lo, hi = tee_range(t)
     H = s.wall.height
-    for t in s.wall.tees:
-        if s.once(t.wall):
-            lo, hi = tee_range(t)
-            s.place("2x4", lo - T, lo, T, H - T, role="partition backer")
-            s.place("2x4", hi, hi + T, T, H - T, role="partition backer")
+    s.place("2x4", lo - T, lo, T, H - T, role="partition backer")
+    s.place("2x4", hi, hi + T, T, H - T, role="partition backer")
 
 
-@rule(30)
-def studs(s):
-    if not s.once():
-        return
-    H = s.wall.height
+@rule(30, match="wall")
+def studs(s, wall):
+    """Studs on the module, clear of the ends, the openings and the partitions."""
     for c in layout(s):
-        s.place("2x4", c - T / 2, c + T / 2, T, H - T, role="stud")
+        s.place("2x4", c - T / 2, c + T / 2, T, wall.height - T, role="stud")
 
 
-@rule(40)
-def jacks(s):
+@rule(40, match="opening")
+def jacks(s, o):
     """A jack stud each side of an opening, from the bottom plate up to the head."""
-    for o in s.wall.openings:
-        if s.once(o.id):
-            s.place("2x4", o.u0 - T, o.u0, T, o.v1, role="jack")
-            s.place("2x4", o.u1, o.u1 + T, T, o.v1, role="jack")
+    s.place("2x4", o.u0 - T, o.u0, T, o.v1, role="jack")
+    s.place("2x4", o.u1, o.u1 + T, T, o.v1, role="jack")
 
 
-@rule(41)
-def kings(s):
+@rule(41, match="opening")
+def kings(s, o):
     """A full-height king stud outside each jack."""
     H = s.wall.height
-    for o in s.wall.openings:
-        if s.once(o.id):
-            s.place("2x4", o.u0 - 2 * T, o.u0 - T, T, H - T, role="king")
-            s.place("2x4", o.u1 + T, o.u1 + 2 * T, T, H - T, role="king")
+    s.place("2x4", o.u0 - 2 * T, o.u0 - T, T, H - T, role="king")
+    s.place("2x4", o.u1 + T, o.u1 + 2 * T, T, H - T, role="king")
 
 
-@rule(42)
-def headers(s):
+@rule(42, match="opening")
+def headers(s, o):
     """Two plies on edge across the opening, flush with both faces (a spacer fills the gap between them),
     bearing on the jacks and sized from the span table."""
-    for o in s.wall.openings:
-        if s.once(o.id):
-            section, d = header_for(o.width)
-            s.place(section, o.u0 - T, o.u1 + T, o.v1, o.v1 + d, w0=0, role="header")
-            s.place(section, o.u0 - T, o.u1 + T, o.v1, o.v1 + d, w0=D - T, role="header")
+    section, d = header_for(o.width)
+    s.place(section, o.u0 - T, o.u1 + T, o.v1, o.v1 + d, w0=0, role="header")
+    s.place(section, o.u0 - T, o.u1 + T, o.v1, o.v1 + d, w0=D - T, role="header")
 
 
-@rule(43)
-def sills(s):
+@rule(43, match="opening", when=lambda s, o: o.kind == "window")
+def sills(s, o):
     """A flat sill under each window, between the jacks."""
-    for o in s.wall.openings:
-        if o.kind == "window" and s.once(o.id):
-            s.place("2x4", o.u0, o.u1, o.v0 - T, o.v0, role="sill")
+    s.place("2x4", o.u0, o.u1, o.v0 - T, o.v0, role="sill")
 
 
-@rule(44)
-def cripples(s):
+@rule(44, match="opening")
+def cripples(s, o):
     """Short studs on the module above each header and below each sill."""
     H = s.wall.height
-    for o in s.wall.openings:
-        if not s.once(o.id):
-            continue
-        top = o.v1 + header_for(o.width)[1]
-        c = SPACING * (int((o.u0 - T) // SPACING) + 1)
-        while c + T / 2 <= o.u1 + T:
-            if top < H - T - 0.0625 and c - T / 2 >= o.u0 - T:
-                s.place("2x4", c - T / 2, c + T / 2, top, H - T, role="cripple")
-            if o.kind == "window" and c - T / 2 >= o.u0 and c + T / 2 <= o.u1:
-                s.place("2x4", c - T / 2, c + T / 2, T, o.v0 - T, role="cripple")
-            c += SPACING
+    top = o.v1 + header_for(o.width)[1]
+    c = SPACING * (int((o.u0 - T) // SPACING) + 1)
+    while c + T / 2 <= o.u1 + T:
+        if top < H - T - 0.0625 and c - T / 2 >= o.u0 - T:
+            s.place("2x4", c - T / 2, c + T / 2, top, H - T, role="cripple")
+        if o.kind == "window" and c - T / 2 >= o.u0 and c + T / 2 <= o.u1:
+            s.place("2x4", c - T / 2, c + T / 2, T, o.v0 - T, role="cripple")
+        c += SPACING
 
 
-@rule(90)
-def fill_gaps(s):
-    """A stud wherever the sheathing would span further than the module allows."""
-    for g in s.gaps():
-        if g.kind != "field":
-            continue
-        u = (g.u0 + g.u1) / 2
-        v = (g.v0 + g.v1) / 2
-        lo, hi = s.below(u - T / 2, u + T / 2, v), s.above(u - T / 2, u + T / 2, v)
-        if s.once(round(u, 2), round(lo, 2)):
-            s.place("2x4", u - T / 2, u + T / 2, lo, hi, role="stud")
+@rule(90, match="gap", when=lambda s, g: g.kind == "field")
+def fill_gaps(s, g):
+    """A stud wherever a board would span further than the module allows."""
+    u, v = (g.u0 + g.u1) / 2, (g.v0 + g.v1) / 2
+    lo, hi = s.below(u - T / 2, u + T / 2, v), s.above(u - T / 2, u + T / 2, v)
+    s.place("2x4", u - T / 2, u + T / 2, lo, hi, role="stud")
