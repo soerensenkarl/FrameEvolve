@@ -1330,8 +1330,8 @@ function renderRunsMain() {
       <p class="muted">${esc(c.model)} proposer, ${run.houses.length} training houses, ${c.minibatch} per iteration,
         ${its.length} iterations, ${kept} edits kept. Started ${c.created ? new Date(c.created * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "?"}.</p>
       ${steerHtml(run, job)}${lv.run === run.name && liveRun(run.name) ? `<div id="runLive"></div>` : ""}</div>
+    ${paretoView(run)}
     <section><h3>Progress <small>the best grammar so far, summed over the ${run.houses.length} training houses</small></h3>${progressSvg(run)}</section>
-    <section><h3>Score per house <small>rows are the grammars kept, columns the training houses; click a row to see the grammar</small></h3>${paretoTable(run)}</section>
     <section><h3>Iterations <small>newest first; click one to see what the proposer saw and did</small></h3>${iterList(run)}</section>`;
   renderRunLive();
 }
@@ -1379,7 +1379,15 @@ $("#runsMain").addEventListener("click", async (e) => {
     } catch (err) { status(err.message, true); }
     return;
   }
+  const zoom = e.target.closest("a[data-zoom]");
+  if (zoom) { e.preventDefault(); rs.zoom = zoom.dataset.zoom; rs.mainKey = ""; return renderRunsMain(); }
+  const yk = e.target.closest("button[data-yk]");
+  if (yk) { rs.yk = yk.dataset.yk; rs.mainKey = ""; return renderRunsMain(); }
+  const open = e.target.closest("button[data-open]");
+  const cell = e.target.closest("td[data-house]");
   const cand = e.target.closest("[data-cand]");
+  if (open) return openCandidate(open.dataset.open);
+  if (cell && cand) return openCandidate(cand.dataset.cand, cell.dataset.house);
   if (cand) { rs.sel = { kind: "cand", id: cand.dataset.cand }; rs.mainKey = ""; renderRunsMain(); return renderRunsDetail(); }
   const it = e.target.closest("[data-it]");
   if (it) { rs.sel = { kind: "iter", n: +it.dataset.it }; rs.mainKey = ""; renderRunsMain(); return renderRunsDetail(); }
@@ -1485,38 +1493,156 @@ $("#runsMain").addEventListener("pointermove", (e) => {
     showTip(cell.dataset.tip, cell.getBoundingClientRect(), "above");
     xh?.setAttribute("visibility", "hidden");
   } else {
-    hideTip();
+    if (!e.target.closest("#pf [data-cand]")) hideTip();   // a grammar keeps the tip it got on pointerover
     xh?.setAttribute("visibility", "hidden");
   }
 });
 $("#runsMain").addEventListener("pointerleave", hideTip);
 
-function paretoTable(run) {
+// ---- the Pareto set: houses x grammars, the lineage, the trade-off; hovering one grammar lights it up in all three
+
+const headline = (t) => (t[0] ? `${t[0]} hard` : t[1] ? `${t[1]} soft` : `${(t[2] / 1000).toFixed(1)}k ft`);
+const headCls = (t) => (t[0] ? "bad" : t[1] ? "warn" : "");
+
+function paretoView(run) {
+  return `<section id="pf"><h3>Pareto set</h3>
+    <p class="explain">Each grammar is scored on every house. The Pareto set keeps every grammar that is best on at least one
+    house; the search picks parents from it, more often the more houses they win.</p>
+    ${houseMatrix(run)}
+    <h4>Lineage <small>parent to child, by iteration</small></h4>${lineageSvg(run)}
+    <h4>Trade-off <small>totals over ${run.houses.length} houses</small>
+      <span class="seg2">${["hard", "soft"].map((k) => `<button data-yk="${k}" class="${(rs.yk || "hard") === k ? "on" : ""}">${k} faults</button>`).join("")}</span></h4>
+    ${tradeoffSvg(run, rs.yk === "soft" ? 1 : 0)}</section>`;
+}
+
+function footprint(walls) {
+  if (!walls?.length) return "";
+  const xs = walls.flatMap((w) => [w[0], w[2]]), ys = walls.flatMap((w) => [w[1], w[3]]);
+  const [x0, y0] = [Math.min(...xs), Math.min(...ys)], s = Math.max(Math.max(...xs) - x0, Math.max(...ys) - y0) || 1;
+  const k = 26 / s;   // fit in 26 px; north up, so y flips
+  return `<svg class="fp" viewBox="-2 -2 30 30" width="30" height="30">${walls.map((w) =>
+    `<line x1="${(w[0] - x0) * k}" y1="${26 - (w[1] - y0) * k}" x2="${(w[2] - x0) * k}" y2="${26 - (w[3] - y0) * k}" class="${w[4] ? "in" : ""}"/>`).join("")}</svg>`;
+}
+
+function houseMatrix(run) {
   const H = run.houses;
-  const best = {};
-  for (const h of H) {
+  const col = Object.fromEntries(H.map((h) => {
     const sc = run.candidates.map((c) => c.scores[h]).filter(Boolean);
-    best[h] = sc.length ? sc.reduce((a, b) => (lt(b, a) < 0 ? b : a)) : null;
-  }
-  const same = (a, b) => a && b && a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
+    const best = sc.reduce((a, b) => (lt(b, a) < 0 ? b : a), sc[0]);
+    return [h, { best, lo: Math.min(...sc.map((x) => x[2])), hi: Math.max(...sc.map((x) => x[2])) }];
+  }));
   const rows = run.candidates.map((c) => {
     const wins = run.pareto[c.id]?.length || 0;
-    const sel = rs.sel?.kind === "cand" && rs.sel.id === c.id;
-    return `<tr data-cand="${esc(c.id)}" class="${sel ? "sel" : ""}">
-      <th title="${esc(c.note)}"><b>${esc(c.id)}</b>${wins ? `<span class="pbadge" title="in the Pareto set: best on ${wins} of ${H.length} houses">best on ${wins}</span>` : ""}</th>
-      ${H.map((h) => {
-        const s = c.scores[h];
-        if (!s) return `<td>-</td>`;
-        return `<td class="${same(s, best[h]) ? "best" : ""}" data-tip="${esc(`<b>${c.id}</b> on ${h}: ${fmtScore(s)}${same(s, best[h]) ? ", the best on this house" : ""}`)}">
-          ${s[0] ? `<span class="hardn">${s[0]}</span>` : ""}<b>${Math.round(s[2])}</b><small>${s[1]} soft</small></td>`;
-      }).join("")}
-      <td class="tot"><b>${Math.round(c.total[2])}</b><small>${c.total[0] ? `<span class="bad">${c.total[0]} hard</span> ` : ""}${c.total[1]} soft</small></td></tr>`;
+    const cls = [wins ? "" : "dom", rs.sel?.kind === "cand" && rs.sel.id === c.id ? "sel" : ""].join(" ");
+    const cells = H.map((h) => {
+      const sc = c.scores[h], k = col[h];
+      if (!sc) return `<td></td>`;
+      const win = lt(sc, k.best) === 0;
+      const w = k.hi > k.lo ? 25 + 75 * (sc[2] - k.lo) / (k.hi - k.lo) : 60;
+      const tone = sc[0] ? "hard" : sc[1] ? "soft" : win ? "win" : "";
+      const mark = sc[0] ? `<i class="bad">${sc[0]}</i>` : sc[1] ? `<i class="warn">${sc[1]}</i>` : "";
+      return `<td data-house="${esc(h)}" class="${win ? "win" : ""}" data-tip="${esc(`<b>${c.id}</b> on ${h}: ${fmtScore(sc)}${win ? "<br>the best on this house" : ""}<br>click to open it in 3D`)}">
+        <span class="bar ${tone}" style="width:${w}%"></span>${mark}</td>`;
+    }).join("");
+    return `<tr data-cand="${esc(c.id)}" class="${cls}">
+      <th><span class="pdot ${wins ? "on" : ""}"></span>${esc(c.id)} <small class="${headCls(c.total)}">${headline(c.total)}</small></th>${cells}
+      <td class="won" title="${wins ? `best on ${wins} of ${H.length} houses` : "not best on any house: dominated"}">
+        <span class="wonbar"><span style="width:${(100 * wins) / H.length}%"></span></span>${wins || ""}</td>
+      <td><button class="open" data-open="${esc(c.id)}" title="Open this grammar in 3D on the current house">open</button></td></tr>`;
   }).join("");
-  return `<div class="tablewrap"><table class="pareto"><thead><tr><th>grammar</th>${H.map((h) => `<th>${esc(h)}</th>`).join("")}<th>total</th></tr></thead>
-    <tbody>${rows}</tbody></table></div>
-    <p class="hint">Each cell: cost in linear ft (big), soft faults (small), hard faults in red when there are any.
-    Green: the best grammar on that house. "best on" marks the Pareto set, from which parents are picked.</p>`;
+  return `<table class="pm"><thead><tr><th></th>${H.map((h) => `<th title="${esc(h)}">${footprint(run.footprints?.[h])}<div>${esc(h)}</div></th>`).join("")}
+    <th>houses won</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+    <p class="hint">A bar per grammar and house: its length is the cost, from the cheapest to the dearest on that house; a number
+    counts hard faults (red) or soft faults (amber). Green: the best on that house. Click a bar to open that grammar on that house.</p>`;
 }
+
+function lineageSvg(run) {
+  const C = run.candidates, by = Object.fromEntries(C.map((c) => [c.id, c]));
+  const kids = {};
+  for (const c of C) (kids[c.parent] ||= []).push(c);
+  const lane = {};
+  let lanes = 0;
+  const place = (c, l) => {   // the first child carries on its parent's lane; later ones branch below
+    lane[c.id] = l;
+    (kids[c.id] || []).sort((a, b) => a.iteration - b.iteration).forEach((k, i) => place(k, i ? lanes++ : l));
+  };
+  for (const root of C.filter((c) => !by[c.parent])) place(root, lanes++);
+  const N = Math.max(1, ...C.map((c) => c.iteration));
+  const W = 680, L = 24, R = 30, top = 22, lh = 54;
+  const x = (c) => L + (c.iteration / N) * (W - L - R), y = (c) => top + lane[c.id] * lh;
+  const edges = C.filter((c) => by[c.parent]).map((c) => {
+    const p = by[c.parent], mx = (x(p) + x(c)) / 2;
+    return `<path data-cand="${esc(c.id)}" class="edge" d="M${x(p)} ${y(p)}C${mx} ${y(p)} ${mx} ${y(c)} ${x(c)} ${y(c)}"/>`;
+  }).join("");
+  const nodes = C.map((c) => {
+    const on = !!run.pareto[c.id], sel = rs.sel?.kind === "cand" && rs.sel.id === c.id;
+    return `<g data-cand="${esc(c.id)}" class="node ${on ? "on" : "dom"} ${sel ? "sel" : ""}">
+      <circle cx="${x(c)}" cy="${y(c)}" r="7"/><text x="${x(c)}" y="${y(c) - 11}" text-anchor="middle">${esc(c.id)}</text>
+      <text class="sub ${headCls(c.total)}" x="${x(c)}" y="${y(c) + 20}" text-anchor="middle">${headline(c.total)}</text></g>`;
+  }).join("");
+  const H = top + (lanes - 1) * lh + 40;
+  const ticks = [0, ...(N > 1 ? [Math.round(N / 2), N] : [N])].map((i) =>
+    `<text class="tk" x="${L + (i / N) * (W - L - R)}" y="${H - 2}" text-anchor="middle">${i}</text>`).join("");
+  return `<svg class="tree" viewBox="0 0 ${W} ${H + 4}" width="100%">${edges}${nodes}${ticks}</svg>
+    <p class="hint">Green: in the Pareto set. Grey: kept once, now beaten on every house. The axis is the iteration.</p>`;
+}
+
+function tradeoffSvg(run, k) {
+  // close up: leave out grammars far worse than the best on this measure, which squash the rest into a corner
+  const all = run.candidates, lo = Math.min(...all.map((c) => c.total[k])), hi = Math.max(...all.map((c) => c.total[k]));
+  const near = all.filter((c) => c.total[k] <= lo + Math.max(5, 0.1 * (hi - lo)));
+  const close = rs.zoom !== "all" && near.length > 1 && near.length < all.length;
+  const C = close ? near : all;
+  const off = all.filter((c) => !C.includes(c));
+  const W = 680, H = 230, L = 44, R = 20, T = 14, B = 30;
+  const xs = C.map((c) => c.total[2]), ys = C.map((c) => c.total[k]);
+  const [x0, x1] = [Math.min(...xs), Math.max(...xs)], pad = (x1 - x0) * 0.08 || x0 * 0.05 || 1;
+  const ymax = Math.max(1, ...ys);
+  const px = (v) => L + ((v - x0 + pad) / (x1 - x0 + 2 * pad)) * (W - L - R);
+  const py = (v) => T + (1 - Math.sqrt(v / ymax)) * (H - T - B);   // square root, so small counts stay apart from big ones
+  // grammars no other beats on both totals, cheapest first: the frontier
+  const front = [...C].sort((a, b) => a.total[2] - b.total[2] || a.total[k] - b.total[k])
+    .reduce((f, c) => (!f.length || c.total[k] < f.at(-1).total[k] ? [...f, c] : f), []);
+  const line = front.map((c, i) => (i ? `H${px(c.total[2])}V${py(c.total[k])}` : `M${px(c.total[2])} ${py(c.total[k])}`)).join("");
+  const onFront = new Set(front.map((c) => c.id));
+  const pts = C.map((c) => {
+    const sel = rs.sel?.kind === "cand" && rs.sel.id === c.id;
+    return `<g data-cand="${esc(c.id)}" class="pt ${run.pareto[c.id] ? "on" : "dom"} ${sel ? "sel" : ""}">
+      <circle cx="${px(c.total[2])}" cy="${py(c.total[k])}" r="6"/>
+      ${onFront.has(c.id) ? `<text x="${px(c.total[2]) + 9}" y="${py(c.total[k]) - 6}">${esc(c.id)}</text>` : ""}</g>`;
+  }).join("");
+  const yt = [0, ymax].map((v) => `<text class="tk" x="${L - 6}" y="${py(v) + 4}" text-anchor="end">${v}</text>`).join("");
+  const xt = [x0, x1].map((v) => `<text class="tk" x="${px(v)}" y="${H - 12}" text-anchor="middle">${(v / 1000).toFixed(1)}k</text>`).join("");
+  return `<svg class="scatter" viewBox="0 0 ${W} ${H}" width="100%">
+    <line class="axis" x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}"/><line class="axis" x1="${L}" x2="${L}" y1="${T}" y2="${H - B}"/>
+    ${yt}${xt}<text class="tk" x="${W - R}" y="${H - 1}" text-anchor="end">cost, linear ft</text>
+    <text class="tk" x="4" y="${T - 2}">${k ? "soft" : "hard"}</text>
+    <path class="front" d="${line}"/>${pts}</svg>
+    <p class="hint">Lower left is better. The dashed line joins the grammars no other shown beats on both totals; the vertical
+    scale is a square root so small counts stay readable.
+    ${off.length ? `Close up: ${off.map((c) => `${esc(c.id)} (${headline(c.total)}, ${(c.total[2] / 1000).toFixed(1)}k ft)`).join(", ")} ${off.length === 1 ? "is" : "are"} off the chart.
+      <a href="#" data-zoom="all">Show all</a>` : rs.zoom === "all" && near.length < all.length ? `<a href="#" data-zoom="close">Close up</a>` : ""}</p>`;
+}
+
+function pfHighlight(id) {
+  const pf = $("#pf");
+  if (!pf) return;
+  pf.classList.toggle("hovering", !!id);
+  pf.querySelectorAll("[data-cand]").forEach((el) => el.classList.toggle("hl", el.dataset.cand === id));
+}
+
+$("#runsMain").addEventListener("pointerover", (e) => {
+  const el = e.target.closest("#pf [data-cand]");
+  pfHighlight(el?.dataset.cand);
+  if (el && !e.target.closest("td[data-tip]")) {
+    const c = rs.run.candidates.find((x) => x.id === el.dataset.cand);
+    const wins = rs.run.pareto[c.id]?.length || 0;
+    const target = el.querySelector("circle") || el.querySelector("th") || el;
+    showTip(`<b>${esc(c.id)}</b>${c.parent ? ` from ${esc(c.parent)}` : ""}: ${fmtScore(c.total)}<br>${wins ? `best on ${wins} of ${rs.run.houses.length} houses` : "dominated: not best on any house"}
+      ${c.note ? `<br><span class="tipnote">${esc(c.note.slice(0, 220))}${c.note.length > 220 ? "..." : ""}</span>` : ""}`, target.getBoundingClientRect(), "above");
+  }
+});
+$("#runsMain").addEventListener("pointerleave", () => pfHighlight(null));
 
 function iterList(run) {
   if (!run.iterations.length) return `<p class="empty">No iterations yet. ${runningSearch(run.name) ? "The first one is running." : "Continue the run to start the search."}</p>`;
@@ -1609,7 +1735,7 @@ async function renderRunsDetail(refresh = false) {
     if (!c) { el.innerHTML = `<p class="empty">No grammar ${esc(sel.id)} in this run.</p>`; return; }
     const wins = run.pareto[c.id] || [];
     const parent = run.candidates.find((x) => x.id === c.parent);
-    el.innerHTML = `<div class="dhead"><h2>${esc(c.id)}</h2>${wins.length ? `<span class="pbadge">Pareto set: best on ${wins.length} of ${run.houses.length} houses</span>` : `<span class="muted">not best on any house</span>`}</div>
+    el.innerHTML = `<div class="dhead"><h2>${esc(c.id)}</h2>${wins.length ? `<span class="pbadge">Pareto set: best on ${wins.length} of ${run.houses.length} houses</span>` : `<span class="muted">dominated: not best on any house</span>`}</div>
       ${c.note ? `<p class="note">${esc(c.note)}</p>` : ""}
       <table class="kv">
         <tr><td>made in</td><td>${c.iteration ? `iteration <a href="#" data-it="${c.iteration}">${c.iteration}</a>` : "the start: the seed grammar"}</td></tr>
@@ -1618,7 +1744,7 @@ async function renderRunsDetail(refresh = false) {
         ${parent ? `<tr><td>vs ${esc(parent.id)}</td><td>${c.total[1] - parent.total[1]} soft, ${num(c.total[2] - parent.total[2])} ft cost</td></tr>` : ""}
         ${wins.length ? `<tr><td>best on</td><td>${wins.map(esc).join(", ")}</td></tr>` : ""}
       </table>
-      <div class="actions"><button class="primary" data-open="${esc(c.id)}">Open in workbench</button><span class="muted">${openHint()}</span></div>
+      <div class="actions"><button class="primary" data-open="${esc(c.id)}">Open in workbench</button><span class="muted">builds it on ${esc($("#house").value)}; it is in the grammar menu as ${esc(rs.name)}.${esc(c.id)}</span></div>
       <div id="cdiff"><p class="empty">Loading the grammar...</p></div>`;
     try {
       const src = await runGrammar(c.id);
@@ -1751,7 +1877,7 @@ $("#runsDetail").addEventListener("click", async (e) => {
   const itl = e.target.closest("a[data-it]");
   if (itl) { e.preventDefault(); rs.sel = { kind: "iter", n: +itl.dataset.it }; rs.mainKey = ""; renderRunsMain(); return renderRunsDetail(); }
   const open = e.target.closest("button[data-open]");
-  if (open) return openInWorkbench(await runGrammar(open.dataset.open), `run ${rs.name}, ${open.dataset.open}`);
+  if (open) return openCandidate(open.dataset.open);
   const op = e.target.closest("button[data-openprop]");
   if (op && rs.proposed?.n === +op.dataset.openprop) return openInWorkbench(rs.proposed.source, `run ${rs.name}, proposal of iteration ${op.dataset.openprop}`);
   const ja = e.target.closest("button[data-jact]");
@@ -1759,6 +1885,23 @@ $("#runsDetail").addEventListener("click", async (e) => {
     try { await api("POST", `/api/job/${rs.sel.id}/${ja.dataset.jact}`); await tick(); renderRunsDetail(); } catch (err) { status(err.message, true); }
   }
 });
+
+async function openCandidate(cid, house) {
+  // a kept grammar is in the grammar menu as run.cid: open it there, on `house` if given
+  const g = `${rs.name}.${cid}`;
+  if (!grammarList.includes(g)) await loadLists($("#house").value);
+  if (!grammarList.includes(g)) return openInWorkbench(await runGrammar(cid), `run ${rs.name}, ${cid}`);
+  setFollow(false);
+  if (house) { $("#house").value = house; remember("house", house); }
+  $("#grammar").value = g;
+  remember("grammar", g);
+  st.hidden.clear();
+  st.sel = null;
+  await loadGrammar();
+  showTab("view3d");
+  showTab("faults");
+  if (await build()) status(`run ${rs.name}, ${cid}, on ${$("#house").value}`);
+}
 
 async function openInWorkbench(source, label) {
   setFollow(false);

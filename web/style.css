@@ -223,21 +223,6 @@ body.runs-mode #left, body.runs-mode #right, body.runs-mode #timeline, body.runs
 .chart .rv { font-size: 12px; fill: var(--text); font-variant-numeric: tabular-nums; }
 .chart .base { stroke: var(--line); }
 .chart .band { fill: #fbfaf8; }
-.tablewrap { overflow-x: auto; }
-table.pareto { border-collapse: separate; border-spacing: 2px; font-variant-numeric: tabular-nums; }
-table.pareto th { font-weight: 500; font-size: 11px; color: var(--muted); text-align: center; padding: 2px 4px; }
-table.pareto tbody th { text-align: left; color: var(--text); font-size: 12px; white-space: nowrap; padding-right: 8px; }
-table.pareto td { background: var(--panel); border-radius: 4px; text-align: center; padding: 3px 4px; min-width: 42px; line-height: 1.2; position: relative; }
-table.pareto td b { font-weight: 500; display: block; }
-table.pareto td small { color: var(--muted); font-size: 9.5px; white-space: nowrap; }
-table.pareto td.best { background: #dff0e3; }
-table.pareto td.best b { font-weight: 700; }
-table.pareto td.tot { background: none; }
-table.pareto .hardn { position: absolute; top: 1px; right: 3px; font-size: 10px; color: var(--err); font-weight: 600; }
-table.pareto tr { cursor: pointer; }
-table.pareto tbody tr:hover td:not(.best):not(.tot) { background: #f0efeb; }
-table.pareto tr.sel th b { color: var(--accent); }
-table.pareto tr.sel td { box-shadow: inset 0 0 0 1px #c4d6f5; }
 .pbadge { font-size: 10px; background: #dff0e3; color: #22663a; border-radius: 4px; padding: 0 5px; margin-left: 6px; font-weight: 500; }
 .iters { display: flex; flex-direction: column; gap: 6px; }
 .it { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid #d6d3cc; border-radius: 6px; padding: 7px 10px; cursor: pointer; }
@@ -311,3 +296,54 @@ button.tool.on { background: #1d1d1b; border-color: #1d1d1b; color: white; }
 .runlive { margin-top: 8px; border: 1px solid #bfe0c9; background: #f3faf5; border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }
 .runlive .lastfeed { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .runlive .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+/* the Pareto set: houses x grammars, lineage, trade-off */
+#pf .explain { margin: 0 0 10px; max-width: 640px; }
+table.pm { border-collapse: separate; border-spacing: 2px 3px; font-variant-numeric: tabular-nums; }
+table.pm thead th { font-weight: 400; font-size: 10.5px; color: var(--muted); text-align: center; vertical-align: bottom; padding: 0 2px; }
+table.pm .fp { display: block; margin: 0 auto 1px; }
+table.pm .fp line { stroke: #6a8299; stroke-width: 1.4; stroke-linecap: round; }
+table.pm .fp line.in { stroke: #a9b8c7; stroke-width: 1; }
+table.pm tbody th { text-align: left; font-weight: 500; font-size: 12px; white-space: nowrap; padding-right: 8px; cursor: pointer; }
+table.pm tbody th small { font-weight: 400; color: var(--muted); margin-left: 4px; }
+table.pm tr.dom th { color: var(--muted); }
+table.pm tr.sel th { color: var(--accent); }
+table.pm td[data-house] { width: 44px; height: 20px; background: var(--panel); border-radius: 4px; position: relative; cursor: pointer; padding: 0 3px; }
+table.pm td[data-house]:hover { box-shadow: inset 0 0 0 1.5px #8aa0b6; }
+table.pm td.win { background: #dff0e3; box-shadow: inset 0 0 0 1.5px #7cc08f; }
+table.pm .bar { display: block; height: 6px; border-radius: 3px; background: #a9b8c7; }
+table.pm .bar.win { background: var(--ok); }
+table.pm .bar.hard { background: #e6a29d; }
+table.pm .bar.soft { background: #f0c98a; }
+table.pm td i { position: absolute; right: 3px; top: 0; font-style: normal; font-size: 9.5px; font-weight: 600; }
+.warn { color: #b06d00; }
+table.pm td.won { font-size: 11px; color: var(--muted); white-space: nowrap; padding-left: 6px; }
+.wonbar { display: inline-block; width: 50px; height: 6px; border-radius: 3px; background: var(--chip); margin-right: 5px; vertical-align: middle; overflow: hidden; }
+.wonbar span { display: block; height: 100%; background: var(--ok); }
+button.open { font-size: 11px; padding: 0 6px; color: var(--muted); }
+.pdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: #d6d3cc; }
+.pdot.on { background: var(--ok); }
+#pf h4 { display: flex; align-items: baseline; gap: 6px; max-width: 680px; margin-top: 16px; }
+.seg2 { margin-left: auto; display: inline-flex; }
+.seg2 button { font-size: 11px; padding: 1px 7px; border-radius: 0; }
+.seg2 button:first-child { border-radius: 5px 0 0 5px; }
+.seg2 button:last-child { border-radius: 0 5px 5px 0; margin-left: -1px; }
+svg.tree, svg.scatter { display: block; max-width: 680px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+svg.tree .edge { fill: none; stroke: #c9c6bf; stroke-width: 1.6; }
+svg.tree .node, svg.scatter .pt { cursor: pointer; }
+svg.tree .node circle, svg.scatter .pt circle { fill: #d6d3cc; stroke: #fff; stroke-width: 2; }
+svg.tree .node.on circle, svg.scatter .pt.on circle { fill: var(--ok); }
+svg.tree .node.sel circle, svg.scatter .pt.sel circle { stroke: var(--accent); stroke-width: 3; }
+svg.tree text { font-size: 11px; fill: var(--text); }
+svg.tree .node.dom text { fill: var(--muted); }
+svg.tree text.sub { font-size: 9.5px; fill: var(--muted); }
+svg.tree text.sub.bad { fill: var(--err); }
+svg.tree text.sub.warn { fill: #b06d00; }
+svg.scatter .axis { stroke: var(--line); }
+svg.scatter .front { fill: none; stroke: var(--ok); stroke-width: 1.5; stroke-dasharray: 5 4; }
+svg.scatter text { font-size: 11px; fill: var(--text); }
+svg .tk { font-size: 10px; fill: var(--muted); }
+#pf [data-cand] { transition: opacity .12s; }
+#pf.hovering [data-cand]:not(.hl) { opacity: .22; }
+#pf.hovering tr.hl th { color: var(--text); }
+.tipnote { color: #cfcdc6; }

@@ -92,21 +92,25 @@ def run_summary(p: Path) -> dict:
 
 
 def run_payload(p: Path) -> dict:
-    """A run as the page shows it: config, candidates with totals, iterations, and the Pareto set."""
+    """A run as the page shows it: config, candidates with totals, iterations, the Pareto set, and each training
+    house's footprint as wall segments [x0, y0, x1, y1, interior] for a thumbnail."""
     from frameevolve.search import Run, pareto
     config = json.loads((p / "config.json").read_text())
-    house_ids = []
+    house_ids, footprints = [], {}
     for h in config.get("train", []):
         hp = Path(h) if Path(h).is_absolute() else ROOT / h
         try:
-            house_ids.append(House.load(hp).id)
+            house = House.load(hp)
         except Exception:
             house_ids.append(Path(h).stem)
+            continue
+        house_ids.append(house.id)
+        footprints[house.id] = [[*w.start, *w.end, w.role == "interior"] for w in house.walls]
     cands = jsonl(p / "candidates.jsonl")
     for c in cands:
         c["total"] = total(c["scores"], house_ids)
     run = Run(p)
-    return {"name": p.name, "config": config, "houses": house_ids, "candidates": cands,
+    return {"name": p.name, "config": config, "houses": house_ids, "footprints": footprints, "candidates": cands,
             "iterations": jsonl(p / "iterations.jsonl"), "pareto": pareto(run.cands, house_ids) if run.cands else {}}
 
 
