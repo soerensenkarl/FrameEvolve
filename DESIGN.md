@@ -114,7 +114,9 @@ Pareto search keeps the grammars that do well across many houses.
 
 ## Proposer
 
-- A Claude agent (default `claude-opus-5-5`, effort medium) through the Anthropic SDK's tool runner.
+- A Claude agent (default `claude-opus-5-5`, effort medium). Two ways in, same prompt and tools: Claude Code
+  through the Claude Agent SDK, signed in with a Claude subscription (the default, `--via subscription`),
+  or the Anthropic API's tool runner (`--via api`).
 - It sees: the parent grammar, the parent's scores on every training house, the verifier's text reports
   on the minibatch, and one elevation picture per minibatch house with hard faults marked.
 - Its tools: view the draft, replace one exact piece of text, replace the whole file, and check the
@@ -124,7 +126,8 @@ Pareto search keeps the grammars that do well across many houses.
   cannot drift from the code.
 - Server-side refusal fallbacks are on (`fallbacks: "default"`); `ClaudeProposer(fallbacks=False)`
   turns them off.
-- Credentials: an `ANTHROPIC_API_KEY`, or a profile from `ant auth login`.
+- Credentials: the subscription needs Claude Code signed in (found on the path, at CLAUDE_CLI, or inside the
+  Claude desktop app). The API needs an `ANTHROPIC_API_KEY` or an `ant auth login` profile.
 
 ## MVP scope
 

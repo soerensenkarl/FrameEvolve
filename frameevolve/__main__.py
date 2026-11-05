@@ -30,6 +30,8 @@ def main(argv=None) -> None:
     v.add_argument("--train", nargs="+", default=[f"data/houses/h{i:03d}.json" for i in range(10)])
     v.add_argument("--minibatch", type=int, default=3)
     v.add_argument("--iterations", type=int, default=5)
+    v.add_argument("--via", choices=["subscription", "api"], default="subscription",
+                   help="subscription: Claude Code signed in with a Claude plan; api: an API key or ant profile")
     v.add_argument("--model", default="claude-opus-5-5")
     v.add_argument("--effort", default="medium")
     v.add_argument("--checks", type=int, default=3, help="draft checks the proposer may run per iteration")
@@ -43,7 +45,7 @@ def main(argv=None) -> None:
     if a.cmd == "evolve":
         import random
         import re
-        from frameevolve.proposer import ClaudeProposer, ScriptedProposer
+        from frameevolve.proposer import ClaudeCodeProposer, ClaudeProposer, ScriptedProposer
         from frameevolve.search import Run, run_search
         if Path(a.run, "config.json").exists():
             run = Run(Path(a.run))
@@ -61,7 +63,8 @@ def main(argv=None) -> None:
                 return out, f"set the stud module to {new} in." if n else "no spacing found"
             proposer = ScriptedProposer(edit)
         else:
-            proposer = ClaudeProposer(a.model, a.effort, a.checks, images=not a.no_images)
+            kind = ClaudeCodeProposer if a.via == "subscription" else ClaudeProposer
+            proposer = kind(a.model, a.effort, a.checks, images=not a.no_images)
         run_search(run, proposer, a.iterations, a.seed)
     elif a.cmd == "evaluate":
         import json

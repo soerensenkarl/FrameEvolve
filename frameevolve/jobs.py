@@ -24,15 +24,18 @@ EFFORTS = ("low", "medium", "high", "xhigh", "max")
 
 
 def credentials() -> dict:
-    """Whether the proposer can reach Claude, and how."""
+    """Whether the proposer can reach Claude, and how. The subscription (Claude Code) comes first."""
+    from frameevolve.proposer import find_claude
+    if find_claude():
+        return {"ok": True, "how": "Claude Code, signed in with your Claude subscription", "via": "subscription"}
     if os.environ.get("ANTHROPIC_API_KEY"):
         return {"ok": True, "how": "ANTHROPIC_API_KEY is set"}
     if os.environ.get("ANTHROPIC_AUTH_TOKEN"):
         return {"ok": True, "how": "ANTHROPIC_AUTH_TOKEN is set"}
     if (Path.home() / ".config" / "anthropic").exists():
         return {"ok": True, "how": "an `ant auth login` profile exists"}
-    return {"ok": False, "how": "No Claude credentials. Set ANTHROPIC_API_KEY before starting the workbench, "
-                                "or run `ant auth login` once. Dry runs work without them."}
+    return {"ok": False, "how": "Claude Code was not found, and there is no API key. Install Claude Code and sign "
+                                "in, or set ANTHROPIC_API_KEY. Dry runs work without them."}
 
 
 def _house(path: str) -> str:
@@ -74,7 +77,10 @@ def command(kind: str, a: dict) -> tuple[list[str], str]:
             effort = a.get("effort", "medium")
             if effort not in EFFORTS:
                 raise ValueError(f"effort is one of {', '.join(EFFORTS)}")
-            argv += ["--model", model, "--effort", effort, "--checks", str(int(a.get("checks", 3)))]
+            via = a.get("via", "subscription")
+            if via not in ("subscription", "api"):
+                raise ValueError("via is subscription or api")
+            argv += ["--via", via, "--model", model, "--effort", effort, "--checks", str(int(a.get("checks", 3)))]
             if a.get("no_images"):
                 argv.append("--no-images")
         return argv, f"search {run}: {n} iterations" + (" (dry)" if a.get("dry") else "")

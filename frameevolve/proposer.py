@@ -91,99 +91,93 @@ def _image_block(path: Path) -> dict:
     return {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": data}}
 
 
+class Draft:
+    """The grammar the proposer is editing, and the four things it can do to it. Shared by both proposers."""
+    TOOLS = {
+        "view_grammar": ("Show the current draft grammar with line numbers. start: first line, from 1; "
+                         "end: last line, 0 for the end of the file.",
+                         {"start": (int, 1), "end": (int, 0)}),
+        "edit_grammar": ("Replace one exact piece of the draft grammar. old: text that occurs exactly once, "
+                         "including indentation; new: what to put in its place.",
+                         {"old": (str, None), "new": (str, None)}),
+        "write_grammar": ("Replace the whole draft grammar. source: the complete Python file.",
+                          {"source": (str, None)}),
+        "check_grammar": ("Build and verify the current draft on this round's houses and return the reports. "
+                          "Limited uses.", {}),
+    }
+
+    def __init__(self, source: str, context: dict, out: Path, checks: int):
+        self.src, self.context, self.out, self.limit, self.checks = source, context, out, checks, 0
+
+    def view_grammar(self, start: int = 1, end: int = 0) -> str:
+        lines = self.src.splitlines()
+        end = end or len(lines)
+        return "\n".join(f"{i:4d}  {lines[i - 1]}" for i in range(max(1, start), min(end, len(lines)) + 1))
+
+    def edit_grammar(self, old: str, new: str) -> str:
+        n = self.src.count(old)
+        if n != 1:
+            return f"Not changed: that text occurs {n} times in the draft; it must occur exactly once."
+        self.src = self.src.replace(old, new)
+        return "Changed."
+
+    def write_grammar(self, source: str) -> str:
+        self.src = source
+        return f"Draft replaced, {len(source.splitlines())} lines."
+
+    def check_grammar(self) -> str:
+        from frameevolve.search import evaluate
+        if self.checks >= self.limit:
+            return f"No checks left ({self.limit} used). Finish with what you have."
+        self.checks += 1
+        path = self.out / "draft.py"
+        path.write_text(self.src)
+        res = evaluate(path, [Path(h) for h in self.context["house_paths"]])
+        total = [sum(r["score"][j] for r in res.values()) for j in range(3)]
+        return (f"Check {self.checks} of {self.limit}. Total over these houses: {total[0]} hard, {total[1]} soft, "
+                f"cost {total[2]:.1f} (parent: {self.context['parent_batch']}).\n\n"
+                + "\n\n".join(r["text"] for r in res.values()))
+
+
+def prompt(context: dict, images: bool, out: Path) -> tuple[str, list[dict]]:
+    """The system prompt and the first message's content (text, then the pictures). Saved to prompt.md."""
+    reports = "\n\n".join(context["reports"].values())
+    scores = "\n".join(f"  {h}: {s[0]} hard, {s[1]} soft, cost {s[2]:.1f}" for h, s in context["parent_scores"].items())
+    pb = context["parent_batch"]
+    text = (f"The parent grammar is {context['parent']}. Its scores on every training house:\n{scores}\n\n"
+            f"These houses are this round's test: {', '.join(context['houses'])}. The parent's total on them is "
+            f"{pb[0]} hard, {pb[1]} soft, cost {pb[2]:.1f}. Their reports:\n\n{reports}\n\n"
+            + ("The pictures show each wall from outside, coloured by rule; red crosses mark hard faults and red "
+               "hatching marks sheathing with nothing behind it.\n\n" if images else "")
+            + "Read the grammar with view_grammar, then improve it.")
+    content = [{"type": "text", "text": text}]
+    if images:
+        content += [_image_block(Path(p)) for p in context["images"]]
+    system = SYSTEM.format(checks="\n".join(f"- {k}: {v}" for k, v in CHECKS.items()), api=api_reference())
+    (out / "prompt.md").write_text(f"# System\n\n{system}\n\n# User\n\n{text}\n")
+    return system, content
+
+
 class ClaudeProposer:
+    """Claude through the Anthropic API (an API key or an `ant auth login` profile)."""
+
     def __init__(self, model: str = "claude-opus-5-5", effort: str = "medium", checks: int = 3,
                  max_turns: int = 24, images: bool = True, fallbacks: bool = True):
-        self.model = model
-        self.effort = effort
-        self.checks = checks
-        self.max_turns = max_turns
-        self.images = images
-        self.fallbacks = fallbacks
+        self.model, self.effort, self.checks = model, effort, checks
+        self.max_turns, self.images, self.fallbacks = max_turns, images, fallbacks
 
     def propose(self, source: str, context: dict, out: Path) -> Proposal:
         import anthropic
-        from anthropic import beta_tool
+        from anthropic.lib.tools import BetaFunctionTool
 
-        from frameevolve.search import evaluate
-
-        draft = {"src": source, "checks": 0}
-        draft_path = out / "draft.py"
-        houses = [Path(p) for p in context.get("house_paths", [])]
-
-        @beta_tool
-        def view_grammar(start: int = 1, end: int = 0) -> str:
-            """Show the current draft grammar with line numbers.
-
-            Args:
-                start: first line to show, from 1.
-                end: last line to show; 0 means the end of the file.
-            """
-            lines = draft["src"].splitlines()
-            end = end or len(lines)
-            return "\n".join(f"{i:4d}  {lines[i - 1]}" for i in range(max(1, start), min(end, len(lines)) + 1))
-
-        @beta_tool
-        def edit_grammar(old: str, new: str) -> str:
-            """Replace one exact piece of the draft grammar with new text.
-
-            Args:
-                old: text that occurs exactly once in the draft, including indentation.
-                new: the text to put in its place.
-            """
-            n = draft["src"].count(old)
-            if n != 1:
-                return f"Not changed: that text occurs {n} times in the draft; it must occur exactly once."
-            draft["src"] = draft["src"].replace(old, new)
-            return "Changed."
-
-        @beta_tool
-        def write_grammar(source: str) -> str:
-            """Replace the whole draft grammar.
-
-            Args:
-                source: the complete Python file.
-            """
-            draft["src"] = source
-            return f"Draft replaced, {len(source.splitlines())} lines."
-
-        @beta_tool
-        def check_grammar() -> str:
-            """Build and verify the current draft on the houses shown, and return the reports."""
-            if draft["checks"] >= self.checks:
-                return f"No checks left ({self.checks} used). Finish with what you have."
-            draft["checks"] += 1
-            draft_path.write_text(draft["src"])
-            res = evaluate(draft_path, houses)
-            total = [sum(r["score"][j] for r in res.values()) for j in range(3)]
-            return (f"Check {draft['checks']} of {self.checks}. Total over these houses: {total[0]} hard, "
-                    f"{total[1]} soft, cost {total[2]:.1f} (parent: {context['parent_batch']}).\n\n"
-                    + "\n\n".join(r["text"] for r in res.values()))
-
-        reports = "\n\n".join(context["reports"].values())
-        scores = "\n".join(f"  {h}: {s[0]} hard, {s[1]} soft, cost {s[2]:.1f}"
-                           for h, s in context["parent_scores"].items())
-        text = (f"The parent grammar is {context['parent']}. Its scores on every training house:\n{scores}\n\n"
-                f"These houses are this round's test: {', '.join(context['houses'])}. The parent's total on them is "
-                f"{context['parent_batch'][0]} hard, {context['parent_batch'][1]} soft, cost "
-                f"{context['parent_batch'][2]:.1f}. Their reports:\n\n{reports}\n\n"
-                + ("The pictures show each wall from outside, coloured by rule; red crosses mark hard faults and "
-                   "red hatching marks sheathing with nothing behind it.\n\n" if self.images else "")
-                + "Read the grammar with view_grammar, then improve it.")
-        content = [{"type": "text", "text": text}]
-        if self.images:
-            content += [_image_block(Path(p)) for p in context["images"]]
-        system = SYSTEM.format(checks="\n".join(f"- {k}: {v}" for k, v in CHECKS.items()), api=api_reference())
-        (out / "prompt.md").write_text(f"# System\n\n{system}\n\n# User\n\n{text}\n")
-
-        client = anthropic.Anthropic()
+        draft = Draft(source, context, out, self.checks)
+        tools = [BetaFunctionTool(getattr(draft, name), name=name, description=desc,
+                                  input_schema=_schema(params)) for name, (desc, params) in Draft.TOOLS.items()]
+        system, content = prompt(context, self.images, out)
         extra = {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"} if self.fallbacks else {}
-        runner = client.beta.messages.tool_runner(
-            model=self.model, max_tokens=16000, system=system,
-            messages=[{"role": "user", "content": content}],
-            tools=[view_grammar, edit_grammar, write_grammar, check_grammar],
-            max_iterations=self.max_turns, output_config={"effort": self.effort}, **extra,
-        )
+        runner = anthropic.Anthropic().beta.messages.tool_runner(
+            model=self.model, max_tokens=16000, system=system, messages=[{"role": "user", "content": content}],
+            tools=tools, max_iterations=self.max_turns, output_config={"effort": self.effort}, **extra)
         transcript, usage, last = [], {"input_tokens": 0, "output_tokens": 0, "turns": 0}, None
         for message in runner:
             last = message
@@ -197,5 +191,93 @@ class ClaudeProposer:
         if last.stop_reason == "refusal":
             raise RuntimeError("Claude declined the request")
         note = " ".join(b.text for b in last.content if b.type == "text").strip()
-        usage["checks"] = draft["checks"]
-        return Proposal(draft["src"], note[:2000], usage)
+        usage["checks"] = draft.checks
+        return Proposal(draft.src, note[:2000], usage)
+
+
+def find_claude() -> str | None:
+    """The Claude Code program: CLAUDE_CLI, `claude` on the path, or the one inside the Claude desktop app."""
+    import glob
+    import os
+    import shutil
+    if os.environ.get("CLAUDE_CLI"):
+        return os.environ["CLAUDE_CLI"]
+    home = os.path.expanduser("~")
+    return shutil.which("claude") or (sorted(glob.glob(f"{home}/.claude/local/claude"))
+                                      + sorted(glob.glob(f"{home}/Library/Application Support/Claude/claude-code/*/*/"
+                                                         "claude.app/Contents/MacOS/claude")) or [None])[-1]
+
+
+class ClaudeCodeProposer:
+    """Claude through Claude Code (the Claude Agent SDK), signed in with a Claude subscription."""
+
+    def __init__(self, model: str = "claude-opus-5-5", effort: str = "medium", checks: int = 3,
+                 max_turns: int = 24, images: bool = True):
+        self.model, self.effort, self.checks = model, effort, checks
+        self.max_turns, self.images = max_turns, images
+
+    def propose(self, source: str, context: dict, out: Path) -> Proposal:
+        import asyncio
+        return asyncio.run(self._propose(source, context, out))
+
+    async def _propose(self, source: str, context: dict, out: Path) -> Proposal:
+        import asyncio
+        from dataclasses import asdict, is_dataclass
+
+        from claude_agent_sdk import (AssistantMessage, ClaudeAgentOptions, ResultMessage, TextBlock, ToolUseBlock,
+                                      create_sdk_mcp_server, query, tool)
+
+        cli = find_claude()
+        if not cli:
+            raise RuntimeError("Claude Code not found: install it, or set CLAUDE_CLI to its path")
+        draft = Draft(source, context, out, self.checks)
+
+        def wrap(name, desc, params):
+            async def run(args):
+                kwargs = {k: args[k] for k in params if k in args}
+                text = await asyncio.to_thread(getattr(draft, name), **kwargs)
+                return {"content": [{"type": "text", "text": text}]}
+            return tool(name, desc, _schema(params))(run)
+
+        server = create_sdk_mcp_server("grammar", tools=[wrap(n, d, p) for n, (d, p) in Draft.TOOLS.items()])
+        system, content = prompt(context, self.images, out)
+        options = ClaudeAgentOptions(
+            system_prompt=system, mcp_servers={"grammar": server}, strict_mcp_config=True, tools=[],
+            allowed_tools=[f"mcp__grammar__{n}" for n in Draft.TOOLS], setting_sources=[],
+            env={"ENABLE_CLAUDEAI_MCP_SERVERS": "false"}, cwd=str(out), cli_path=cli,
+            model=self.model, effort=self.effort, max_turns=self.max_turns)
+
+        async def message():
+            yield {"type": "user", "message": {"role": "user", "content": content}, "parent_tool_use_id": None}
+
+        transcript, pending, result = [], [], None
+        async for m in query(prompt=message(), options=options):
+            transcript.append(asdict(m) if is_dataclass(m) else str(m))
+            if isinstance(m, AssistantMessage):
+                for b in m.content:
+                    if isinstance(b, ToolUseBlock):
+                        pending = []            # text before a tool call is thinking aloud
+                    elif isinstance(b, TextBlock) and b.text.strip():
+                        pending.append(b.text.strip())
+            elif isinstance(m, ResultMessage):
+                result = m
+        (out / "transcript.json").write_text(json.dumps(transcript, indent=1, default=str))
+        if result is None:
+            raise RuntimeError("Claude Code returned nothing")
+        if result.is_error:
+            err = result.result or result.subtype
+            raise RuntimeError(("Claude Code is not signed in: run it once and use /login. " if "login" in str(err).lower()
+                                else "") + f"Claude Code error: {err}")
+        u = result.usage or {}
+        usage = {"input_tokens": sum(int(u.get(k) or 0) for k in ("input_tokens", "cache_read_input_tokens",
+                                                                   "cache_creation_input_tokens")),
+                 "output_tokens": int(u.get("output_tokens") or 0), "turns": result.num_turns,
+                 "seconds": round((result.duration_ms or 0) / 1000, 1), "checks": draft.checks}
+        return Proposal(draft.src, " ".join(pending)[:2000], usage)
+
+
+def _schema(params: dict) -> dict:
+    kinds = {int: "integer", str: "string"}
+    return {"type": "object", "additionalProperties": False,
+            "properties": {k: {"type": kinds[t]} for k, (t, _) in params.items()},
+            "required": [k for k, (_, default) in params.items() if default is None]}
