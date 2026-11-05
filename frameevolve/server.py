@@ -221,7 +221,7 @@ def frame_payload(house: House, frame: Frame, source: str) -> dict:
     gone = {m.id for m in frame.removed}
     members = []
     for m in frame.members + frame.removed:
-        w = house.wall(m.surface) if m.surface else None
+        w = house.surface(m.surface) if m.surface else None
         lb = w.local_box(m.box) if w else None
         members.append({
             "id": m.id, "rule": m.rule, "role": m.role, "section": m.section, "surface": m.surface,
@@ -282,11 +282,11 @@ def rule_demo(name: str, source: str, rule: str, firing: int | None = None) -> d
         out["message"] = "This rule did nothing on the toy house."
         return out
     if firing is None:
-        firing = next((k for k, i in enumerate(fired) if steps[i]["wall"] == "w0"), 0)
+        firing = next((k for k, i in enumerate(fired) if steps[i]["wall"] == "1w0"), 0)
     firing = max(0, min(len(fired) - 1, firing))
     i = fired[firing]
     step = steps[i]
-    w = house.wall(step["wall"])
+    w = house.surface(step["wall"])
     placed_at, removed_at = {}, {}
     for k, s in enumerate(steps):
         for mid in s["placed"]:
