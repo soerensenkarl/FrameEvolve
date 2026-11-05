@@ -101,3 +101,25 @@ Minimal grammar, 10 iterations (crashed after 4 on a parent-draw bug, fixed, res
 - Lesson: collinear walls (an exterior wall continuing past a junction) were treated as meeting, so a
   junction wall did not stop short. Parallel walls no longer meet.
 - Tests now take about two minutes; multi-storey houses are slow to build and verify.
+
+## 2026-11-05 Roofs: members at any angle, gable roofs on box houses
+
+- Workbench: Regenerate frames the house from scratch and streams each step's pieces to the 3D view as the
+  server places them, at the build's real speed; then shows build and verify times. Rules are numbered.
+  A build of a two-storey box house takes about 0.5 s of rule firing and another 0.4 s for a last pass
+  that changes nothing (gap matching); verifying takes about 0.5 s.
+- Any member can now be cut by planes and notched (`solid.py`: convex pieces, exact clipping). Rules get
+  put, cut, trim, notch and overlapping. The contact graph is exact at any angle; contacts keep where they
+  are and which way they face. Plain boxes keep the fast path.
+- Roof planes are surfaces; seams (ridges) are derived. Box houses get a gable roof, gable walls and a
+  ceiling. Other houses keep flat tops until valleys come.
+- Seed: rafters at 24" beside the ceiling joists that tie them, a ridge board bevelled to both planes,
+  rafters trimmed plumb against it and birdsmouthed over the top plate (notch around the plate and all
+  below), gable framing cut along the rafters' underside. The toy house and every box house in h000 to
+  h019 frame with no hard faults, except h018's stair trimmer bearing (a floor detail from before).
+- Lessons: a fixed raised heel decides rafter depth (a 2x8 at 8/12 cannot reach the plate under a 9" heel,
+  so it floated); trimming by "the face the middle is furthest outside of" picked a rafter's side face for
+  a stud reaching past it, so trim follows the member's centreline into the other member instead; a
+  rafter's heel cut against the plate face looked like a tie, so a tie must be on the rafter's side face;
+  locating contacts by bounding-box overlap put a ceiling joist's contact mid-span, so the graph now keeps
+  each contact's real centre.

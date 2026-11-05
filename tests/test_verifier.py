@@ -5,7 +5,7 @@ from frameevolve import houses
 from frameevolve.builder import build
 from frameevolve.graph import build_graph
 from frameevolve.model import Frame
-from frameevolve.verifier import CHECKS, verify
+from frameevolve.verifier import verify
 
 ROOT = Path(__file__).resolve().parents[1]
 SEED = ROOT / "grammars/seed.py"
@@ -37,7 +37,7 @@ def frame_bears(frame, top, bottom):
 
 def u_of(house, m):
     """A member's centre along its wall."""
-    b = house.wall(m.surface).local_box(m.box)
+    b = house.wall(m.surface).local_box(m)
     return (b.lo[0] + b.hi[0]) / 2
 
 

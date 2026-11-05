@@ -13,9 +13,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from frameevolve import surface
-from frameevolve.builder import MAX_LINES, State, too_big
-from frameevolve.model import SECTIONS, STOCK, Opening, Wall
+from frameevolve.builder import MAX_LINES, too_big
+from frameevolve.model import SECTIONS, STOCK
 from frameevolve.verifier import CHECKS
 
 
@@ -39,23 +38,24 @@ class ScriptedProposer:
 
 def api_reference() -> str:
     """What a rule can call on `s`, written from the builder's own signatures and docstrings."""
-    lines = ["Rules receive `s`, the design state for one wall. Units are inches. Coordinates on a wall: u along it "
-             "from its start, v up from its base, w inward from its outer face.",
-             "",
-             "s.wall: the current wall, with id, length, height, base, role, openings, start_meets, end_meets "
-             "(the id of the wall meeting this one at its start or end, or None).",
-             "Each opening has id, kind ('window' or 'door'), u0, u1, v0, v1, width, height.",
-             "s.house.walls: every wall. s.SECTIONS (nominal name: actual size): "
-             + ", ".join(f"{k} ({w:g} x {d:g})" for k, (w, d) in SECTIONS.items())
-             + f". s.STOCK: stock lengths {', '.join(map(str, STOCK))} (8 to 20 ft).",
-             "A member has id, section, rule, surface (its wall id), role (a free label), length, box (lo, hi world corners).",
-             ""]
     import frameevolve.builder as builder
     doc = inspect.getdoc(builder)
-    lines += [doc[doc.index("A grammar is"):doc.index("Coordinates in rules")].strip(), ""]
-    for name in ["place", "remove", "members", "local", "bears_on", "carries", "beside", "gaps", "below",
-                 "above", "free"]:
-        fn = getattr(State, name)
+    lines = [doc[doc.index("A grammar is"):].strip(), "",
+             "s.surface: the current surface. A wall has id, length, height, base, role ('exterior' or 'interior'), "
+             "openings, start_meets, end_meets (the wall met at its start or end, or None), tees, above, below, and "
+             "outline (u, v points) when its top is not level (a gable wall). A floor or ceiling has id, role "
+             "('floor' or 'ceiling'), outline_uv, z, openings, bearers, loads. A roof plane has id, pitch, slope, "
+             "size, outline_uv, seams, and height(x, y), its height over a point in plan. Every surface has "
+             "world(u, v, w), local(point), local_dir(vector) and faces.",
+             "Each opening has id, kind ('window', 'door' or 'stair'), u0, u1, v0, v1, width, height.",
+             "s.house.walls, s.house.floors, s.house.roofs, s.house.surface(id). s.SECTIONS (nominal name: actual "
+             "size): " + ", ".join(f"{k} ({w:g} x {d:g})" for k, (w, d) in SECTIONS.items())
+             + f". s.STOCK: stock lengths {', '.join(map(str, STOCK))} (8 to 20 ft).",
+             "A member has id, section, rule, surface (its surface id), role (a free label), length, width, depth, "
+             "start, end, up, box (lo, hi world corners), points, cuts and notches.", ""]
+    for name in ["place", "put", "cut", "trim", "notch", "remove", "members", "local", "overlapping", "bears_on",
+                 "carries", "beside", "gaps", "below", "above", "free"]:
+        fn = getattr(builder.State, name)
         doc = " ".join((inspect.getdoc(fn) or "").split())
         lines.append(f"s.{name}{inspect.signature(fn)}".replace("self, ", "").replace("(self)", "()") + f": {doc}")
     lines += ["", "A gap from s.gaps() has u0, u1, v0, v1, face and kind 'edge' or 'field'.",

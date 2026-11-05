@@ -19,10 +19,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from frameevolve import houses, jobs as jobs_mod, model, surface, verifier
+from frameevolve import houses, jobs as jobs_mod, model, solid, surface, verifier
 from frameevolve.builder import build
 from frameevolve.geometry import EPS
-from frameevolve.model import SECTIONS, Floor, Frame, House, Wall
+from frameevolve.model import SECTIONS, Frame, House, Member, Roof, Wall
 from frameevolve.verifier import CHECKS, verify
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -217,6 +217,18 @@ def grammar_rules(source: str) -> list[dict]:
     return sorted(out, key=lambda r: (r["priority"] if r["priority"] is not None else 1e9, r["name"]))
 
 
+def shape(m: Member, w) -> dict:
+    """How to draw a member: its world box, and where it is not a plain box, a triangle mesh (flat xyz list and
+    index triples) and its outlines on its own surface (u, v polygons)."""
+    out = {"lo": m.box.lo, "hi": m.box.hi}
+    if not m.plain:
+        verts, idx = solid.triangles(m.pieces)
+        out["mesh"] = {"verts": [round(c, 3) for p in verts for c in p], "idx": idx}
+    if w is not None and not w.square(m):
+        out["poly"] = [[[round(u, 3), round(v, 3)] for u, v in poly] for poly in surface.outlines(w, m)]
+    return out
+
+
 def frame_payload(house: House, frame: Frame, source: str) -> dict:
     t = time.perf_counter()
     report = verify(house, frame)
@@ -226,21 +238,21 @@ def frame_payload(house: House, frame: Frame, source: str) -> dict:
     members = []
     for m in frame.members + frame.removed:
         w = house.surface(m.surface) if m.surface else None
-        lb = w.local_box(m.box) if w else None
+        lb = w.local_box(m) if w else None
         members.append({
             "id": m.id, "rule": m.rule, "role": m.role, "section": m.section, "surface": m.surface,
-            "length": round(m.length, 1), "lo": m.box.lo, "hi": m.box.hi, "removed": m.id in gone,
+            "length": round(m.length, 1), **shape(m, w), "removed": m.id in gone,
             "local": [lb.lo, lb.hi] if lb else None,
             "bears": list(g.bears.get(m.id, {})), "carries": list(g.carries.get(m.id, {})),
             "side": list(g.side.get(m.id, {})),
         })
     walls = {w.id: w for w in house.walls}
     level = storeys(house)
-    out = {"walls": [], "floors": []}
+    out = {"walls": [], "floors": [], "roofs": []}
     for x in house.surfaces:
         d = surface.depth(x, frame.members) or 0.0
         gaps = []
-        for side in ("outer", "inner"):
+        for side in x.faces:
             off = -0.2 if side == "outer" else d + 0.2   # drawn just off the face, outside the framing
             for gp in surface.gaps(x, frame.members, face=side, walls=walls):
                 corners = [x.world(u, v, off) for u, v in ((gp.u0, gp.v0), (gp.u1, gp.v0), (gp.u1, gp.v1), (gp.u0, gp.v1))]
@@ -252,13 +264,17 @@ def frame_payload(house: House, frame: Frame, source: str) -> dict:
             face = []   # other walls' members against this wall's face, drawn grey in its elevation
             for m in frame.members:
                 if m.surface != x.id and isinstance(house.surface(m.surface), Wall):
-                    b = x.local_box(m.box)
+                    b = x.local_box(m)
                     if abs(b.lo[2]) <= EPS and b.hi[0] > EPS and b.lo[0] < x.length - EPS and b.hi[1] > EPS and b.lo[1] < x.height - EPS:
                         face.append({"id": m.id, "lo": b.lo, "hi": b.hi})
             item.update({"kind": "wall", "length": x.length, "height": x.height, "base": x.base, "start": x.start,
                          "end": x.end, "start_meets": x.start_meets, "end_meets": x.end_meets, "above": x.above,
                          "below": x.below, "tees": [asdict(t) for t in x.tees], "neighbours": face})
             out["walls"].append(item)
+        elif isinstance(x, Roof):
+            item.update({"kind": "roof", "pitch": x.pitch, "start": x.start, "end": x.end, "z": x.z,
+                         "seams": [asdict(sm) for sm in x.seams]})
+            out["roofs"].append(item)
         else:
             item.update({"kind": "floor", "z": x.z,
                          **{k: [{**asdict(b), "along_u": b.along_u, "depth": surface.depth(walls[b.wall], frame.members) or 0.0}
@@ -283,16 +299,21 @@ def outline_uv(x) -> list:
 
 
 def storeys(house: House) -> dict[str, int]:
-    """Each surface's storey, from 1: walls by their base, a floor with the walls that stand on it."""
+    """Each surface's storey, from 1: walls by their base, a floor with the walls that stand on it, a ceiling and
+    the roof with the top storey."""
     bases = sorted({round(w.base, 3) for w in house.walls})
     out = {w.id: bases.index(round(w.base, 3)) + 1 for w in house.walls}
     for f in house.floors:
         out[f.id] = next((i + 1 for i, b in enumerate(bases) if abs(b - f.z) <= EPS), len(bases) + 1)
+        if f.role == "ceiling":
+            out[f.id] = max([out[b.wall] for b in f.bearers] or [len(bases)])
+    for r in house.roofs:
+        out[r.id] = len(bases)
     return out
 
 
 # which limits each check uses: the constants are read from the source with their comments
-CHECK_LIMITS = {"span": ["MAX_CLEAR_FLAT", "HEADER_CLEAR", "JOIST_CLEAR"], "overhang": ["MAX_OVERHANG"],
+CHECK_LIMITS = {"span": ["MAX_CLEAR_FLAT", "HEADER_CLEAR", "JOIST_CLEAR", "CEILING_CLEAR", "RAFTER_RUN"], "overhang": ["MAX_OVERHANG"],
                 "bearing": ["MIN_BEARING"], "backing": ["MAX_CLEAR", "MAX_EDGE"], "insulation": ["MIN_EXTERIOR_DEPTH"],
                 "too long": ["STOCK"]}
 COST_LIMITS = ["STOCK", "KERF", "PIECE_COST"]
@@ -378,9 +399,12 @@ def rule_demo(name: str, source: str, rule: str, firing: int | None = None) -> d
     allm = {m.id: m for m in frame.members + frame.removed}
 
     def box(m) -> dict:
-        b = w.local_box(m.box)
-        return {"id": m.id, "rule": m.rule, "role": m.role, "u0": b.lo[0], "v0": b.lo[1], "u1": b.hi[0], "v1": b.hi[1],
-                "w0": b.lo[2]}
+        b = w.local_box(m)
+        out = {"id": m.id, "rule": m.rule, "role": m.role, "u0": b.lo[0], "v0": b.lo[1], "u1": b.hi[0], "v1": b.hi[1],
+               "w0": b.lo[2]}
+        if not w.square(m):
+            out["poly"] = [[[round(u, 3), round(v, 3)] for u, v in poly] for poly in surface.outlines(w, m)]
+        return out
 
     before = [m for m in allm.values() if placed_at.get(m.id, -1) < i and removed_at.get(m.id, 10**9) >= i]
     own = [box(m) for m in before if m.surface == w.id]
@@ -391,7 +415,8 @@ def rule_demo(name: str, source: str, rule: str, firing: int | None = None) -> d
         b = box(m)
         if abs(b["w0"]) <= EPS and b["u1"] > EPS and b["u0"] < w.length - EPS:
             near.append(b)
-    shape = {"id": w.id, "kind": "wall" if isinstance(w, Wall) else "floor", "size": w.size, "outline": outline_uv(w),
+    shape = {"id": w.id, "kind": "wall" if isinstance(w, Wall) else "roof" if isinstance(w, Roof) else "floor",
+             "size": w.size, "outline": outline_uv(w),
              "openings": [asdict(o) for o in w.openings], "tees": [asdict(t) for t in getattr(w, "tees", [])],
              "bearers": [{**asdict(b), "depth": surface.depth(house.wall(b.wall), frame.members) or 0.0}
                          for b in getattr(w, "bearers", [])]}
@@ -431,10 +456,9 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.flush()
 
         def on_step(step: dict, members: dict) -> None:
-            placed = [{"id": i, "rule": m.rule, "lo": m.box.lo, "hi": m.box.hi}
-                      for i in step["placed"] if (m := members.get(i))]
-            line({"step": {"rule": step["rule"], "wall": step["wall"], "t": step["t"], "placed": placed,
-                           "removed": step["removed"]}})
+            draw = lambda ids: [{"id": i, "rule": m.rule, **shape(m, None)} for i in ids if (m := members.get(i))]
+            line({"step": {"rule": step["rule"], "wall": step["wall"], "t": step["t"], "placed": draw(step["placed"]),
+                           "removed": step["removed"], "shaped": draw(step.get("shaped", []))}})
 
         try:
             t = time.perf_counter()
