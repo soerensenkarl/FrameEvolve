@@ -416,7 +416,7 @@ def rule_demo(name: str, source: str, rule: str, firing: int | None = None) -> d
         if abs(b["w0"]) <= EPS and b["u1"] > EPS and b["u0"] < w.length - EPS:
             near.append(b)
     shape = {"id": w.id, "kind": "wall" if isinstance(w, Wall) else "roof" if isinstance(w, Roof) else "floor",
-             "size": w.size, "outline": outline_uv(w),
+             "role": w.role, "size": w.size, "outline": outline_uv(w),
              "openings": [asdict(o) for o in w.openings], "tees": [asdict(t) for t in getattr(w, "tees", [])],
              "bearers": [{**asdict(b), "depth": surface.depth(house.wall(b.wall), frame.members) or 0.0}
                          for b in getattr(w, "bearers", [])]}
@@ -427,6 +427,7 @@ def rule_demo(name: str, source: str, rule: str, firing: int | None = None) -> d
         "before": own, "neighbours": near,
         "placed": [box(allm[mid]) for mid in step["placed"] if mid in allm],
         "removed": [box(allm[mid]) for mid in step["removed"] if mid in allm],
+        "shaped": [box(allm[mid]) for mid in step.get("shaped", []) if mid in allm and allm[mid].surface == w.id],
     })
     return out
 

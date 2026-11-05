@@ -74,13 +74,13 @@ h4 small { color: var(--muted); font-weight: 400; }
 .wall svg { width: 100%; height: auto; display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
 svg rect, svg line, svg path { vector-effect: non-scaling-stroke; }
 svg rect.outline { fill: none; stroke: #a9b8c7; stroke-width: 1.5; }
-svg rect.m { stroke: #222; stroke-width: .7; cursor: pointer; }
-svg rect.m.dim { opacity: .18; }
-svg rect.m.sel { stroke: #000; stroke-width: 3; }
-svg rect.m.fault { stroke: var(--err); stroke-width: 2.5; }
-svg rect.m.now { stroke: #000; stroke-width: 1.6; }
-svg rect.m.gone { stroke: var(--err); stroke-width: 1.6; stroke-dasharray: 4 3; }
-svg rect.nb { fill: #e4e2dd; stroke: #aaa; stroke-width: .7; }
+svg :is(rect, path).m { stroke: #222; stroke-width: .7; cursor: pointer; }
+svg :is(rect, path).m.dim { opacity: .18; }
+svg :is(rect, path).m.sel { stroke: #000; stroke-width: 3; }
+svg :is(rect, path).m.fault { stroke: var(--err); stroke-width: 2.5; }
+svg :is(rect, path).m.now { stroke: #000; stroke-width: 1.6; }
+svg :is(rect, path).m.gone { stroke: var(--err); stroke-width: 1.6; stroke-dasharray: 4 3; }
+svg :is(rect, path).nb { fill: #e4e2dd; stroke: #aaa; stroke-width: .7; }
 svg rect.op { fill: none; stroke: #4d6780; stroke-width: 1.2; stroke-dasharray: 6 4; }
 svg rect.gap { stroke-width: 1.2; }
 svg .tee line { stroke: #8aa0b6; stroke-width: 1; stroke-dasharray: 3 3; }
@@ -91,7 +91,7 @@ svg rect.target.trig { fill-opacity: .4; stroke-width: 3; }
 svg rect.target.out { fill: none; stroke-width: 1.5; stroke-dasharray: 5 3; opacity: .7; }
 svg line.target.trig { stroke-width: 6; stroke-linecap: round; }
 svg line.target.out { stroke-width: 2; stroke-dasharray: 5 3; opacity: .7; }
-svg rect.m.hit { stroke: #000; stroke-width: 2.5; }
+svg :is(rect, path).m.hit { stroke: #000; stroke-width: 2.5; }
 .lbl.target { font-weight: 600; color: var(--text); background: rgba(255,255,255,.85); padding: 0 4px; border-radius: 4px; }
 #caption code { font-size: 11.5px; color: var(--text); }
 svg .mark { stroke: var(--err); stroke-width: 3; stroke-linecap: round; }
