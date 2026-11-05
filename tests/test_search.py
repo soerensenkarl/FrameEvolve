@@ -116,3 +116,15 @@ def test_oversized_rules_are_refused(tmp_path):
         return src.replace("SPACING = 12", "SPACING = 16") + long_rule, "wider studs, plus a long rule"
     e = run.step(ScriptedProposer(edit), random.Random(0))
     assert not e["accepted"] and e["error"].startswith("too big: chatty has 20 code lines")
+
+
+def test_parent_is_drawn_from_a_pareto_set_of_several(tmp_path):
+    """With several grammars in the Pareto set, every iteration still finds its parent."""
+    seed = (ROOT / "grammars/seed.py").read_text().replace("SPACING = 16", "SPACING = 12")
+    run = make_run(tmp_path, seed)
+    run.add(Candidate("c001", "c000", 0, {h: [s[0], s[1], s[2] - (1 if i == 0 else -1)]
+                                           for i, (h, s) in enumerate(run.cands[0].scores.items())}))
+    assert len(run.pareto()) == 2
+    rng = random.Random(0)
+    for _ in range(6):
+        run.step(ScriptedProposer(lambda src, ctx: (src, "no change")), rng)

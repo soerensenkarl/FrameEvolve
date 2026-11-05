@@ -153,7 +153,8 @@ class Run:
         t0 = time.time()
         wins = self.pareto()
         ids = list(wins)
-        parent = next(c for c in self.cands if c.id == rng.choices(ids, weights=[len(wins[i]) for i in ids])[0])
+        pick = rng.choices(ids, weights=[len(wins[i]) for i in ids])[0]
+        parent = next(c for c in self.cands if c.id == pick)
         k = min(self.config["minibatch"], len(self.train))
         batch = rng.sample(self.train, k)
         batch_ids = [House.load(h).id for h in batch]

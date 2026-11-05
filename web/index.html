@@ -68,6 +68,7 @@
       <button data-tab="faults">Faults <span id="faultCount"></span></button>
       <button data-tab="editor">Grammar <span id="dirty"></span></button>
       <button data-tab="report">Report</button>
+      <button data-tab="live" title="A running search, as it happens">Live <span id="liveDot"></span></button>
     </nav>
     <div id="inspect" class="pane on"></div>
     <div id="faults" class="pane"></div>
@@ -80,6 +81,15 @@
       </div>
       <div id="edState"></div>
       <textarea id="src" spellcheck="false" autocomplete="off"></textarea>
+    </div>
+    <div id="live" class="pane">
+      <div id="lvHead"><p class="empty">No search is running. Start or continue one in Runs; while it runs, this tab shows
+        what Claude is doing, and the 3D view can follow its draft.</p></div>
+      <div id="lvNews"></div>
+      <div id="lvChart"></div>
+      <h4 id="lvFeedTitle" hidden>What Claude is doing</h4>
+      <div id="lvFeed"></div>
+      <details id="lvDiff" open hidden><summary></summary><div></div></details>
     </div>
     <div id="report" class="pane"><p class="empty">What the verifier says about this frame, in the words the proposer reads.</p><pre class="code" id="reportText"></pre></div>
   </aside>

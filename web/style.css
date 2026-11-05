@@ -285,3 +285,29 @@ button.tool.on { background: #1d1d1b; border-color: #1d1d1b; color: white; }
 .lbl.measure { background: #1d1d1b; color: white; padding: 2px 7px; border-radius: 5px; font-size: 12px; font-weight: 600;
   font-variant-numeric: tabular-nums; }
 .lbl.measure i { font-style: normal; font-weight: 400; opacity: .7; font-size: 11px; }
+
+/* Live: a running search */
+#live.on { display: flex; flex-direction: column; padding: 10px 14px 12px; gap: 6px; overflow: hidden; }
+.lv-status { display: flex; gap: 8px; align-items: baseline; }
+.lv-status .livedot { flex: none; transform: translateY(-1px); }
+.stage { background: #e2f1e6; color: var(--ok); border-radius: 4px; padding: 0 6px; font-weight: 500; }
+.follow { padding: 4px 0; color: var(--text); font-weight: 500; }
+.lv-follow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; }
+.news { border-radius: 6px; padding: 6px 10px; background: var(--chip); font-size: 12.5px; }
+.news.good { background: #dff0e3; color: #22663a; }
+#lvChart { font-size: 12px; }
+#lvChart b { color: var(--text); }
+#lvFeedTitle { margin: 6px 0 2px; }
+#lvFeed { flex: 1; min-height: 140px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; padding: 4px 0; background: var(--code); }
+.fi { display: flex; gap: 8px; padding: 2px 10px; font-size: 12px; line-height: 1.45; }
+.fi i { font-style: normal; color: var(--muted); font-variant-numeric: tabular-nums; flex: none; width: 34px; }
+.fi.edit { color: #1f4f9a; }
+.fi.check b { font-weight: 600; }
+.fi.say { background: var(--panel); margin: 3px 0; padding: 5px 10px; }
+.fi.say span { white-space: pre-wrap; }
+.fi details summary { font-size: 11px; }
+#lvDiff { max-height: 30%; overflow: auto; margin: 0; flex: none; }
+#lvDiff summary { color: var(--text); font-weight: 500; }
+.runlive { margin-top: 8px; border: 1px solid #bfe0c9; background: #f3faf5; border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }
+.runlive .lastfeed { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.runlive .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }

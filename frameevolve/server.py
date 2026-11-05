@@ -8,13 +8,15 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import random
 import re
 import tempfile
+import time
 from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from frameevolve import houses, jobs as jobs_mod, surface
 from frameevolve.builder import build
@@ -26,27 +28,27 @@ ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
 HOUSES = ROOT / "data" / "houses"
 GRAMMARS = ROOT / "grammars"
+RUNS = ROOT / "runs"
+NAME = re.compile(r"^[A-Za-z0-9_\-]+$")
+FILE = re.compile(r"^[A-Za-z0-9_\-]+\.[A-Za-z0-9]+$")
 RUN_GRAMMAR = re.compile(r"^([A-Za-z0-9_\-]+)\.(c\d{3})$")   # "first.c003": a grammar a search kept
+JOBS = jobs_mod.Jobs()
+TYPES = {".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json",
+         ".png": "image/png"}
 
 
 def grammar_file(name: str) -> Path | None:
     """grammars/<name>.py, or for "run.cid" the grammar that run kept. None if there is no such file."""
     m = RUN_GRAMMAR.match(name)
-    p = ROOT / "runs" / m[1] / "grammars" / f"{m[2]}.py" if m else GRAMMARS / f"{name}.py" if NAME.match(name) else None
+    p = RUNS / m[1] / "grammars" / f"{m[2]}.py" if m else GRAMMARS / f"{name}.py" if NAME.match(name) else None
     return p if p and p.is_file() else None
 
 
 def grammar_names() -> list[str]:
     """The saved grammars, then every grammar each run kept, newest run first."""
     out = [p.stem for p in sorted(GRAMMARS.glob("*.py"))]
-    runs = sorted((ROOT / "runs").glob("*/grammars"), key=lambda d: d.stat().st_mtime, reverse=True)
+    runs = sorted(RUNS.glob("*/grammars"), key=lambda d: d.stat().st_mtime, reverse=True)
     return out + [f"{d.parent.name}.{p.stem}" for d in runs for p in sorted(d.glob("c*.py"))]
-RUNS = ROOT / "runs"
-NAME = re.compile(r"^[A-Za-z0-9_\-]+$")
-FILE = re.compile(r"^[A-Za-z0-9_\-]+\.[A-Za-z0-9]+$")
-JOBS = jobs_mod.Jobs()
-TYPES = {".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json",
-         ".png": "image/png"}
 
 
 def jsonl(path: Path) -> list[dict]:
@@ -72,10 +74,21 @@ def total(scores: dict, houses: list[str]) -> list:
     return [sum(scores[h][0] for h in hs), sum(scores[h][1] for h in hs), round(sum(scores[h][2] for h in hs), 2)]
 
 
+def live_now(run: Path) -> bool:
+    """Whether a search is writing to this run: its live files say so and changed in the last ten minutes."""
+    try:
+        live = json.loads((run / "live.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return False
+    files = [run / "live.json", run / "proposals" / str(live.get("proposal", "-")) / "live.jsonl"]
+    newest = max(f.stat().st_mtime for f in files if f.is_file())
+    return live.get("stage") != "stopped" and time.time() - newest < 600
+
+
 def run_summary(p: Path) -> dict:
     config = json.loads((p / "config.json").read_text())
     return {"name": p.name, "model": config.get("model"), "candidates": len(jsonl(p / "candidates.jsonl")),
-            "iterations": len(jsonl(p / "iterations.jsonl"))}
+            "iterations": len(jsonl(p / "iterations.jsonl")), "live": live_now(p)}
 
 
 def run_payload(p: Path) -> dict:
@@ -95,6 +108,46 @@ def run_payload(p: Path) -> dict:
     run = Run(p)
     return {"name": p.name, "config": config, "houses": house_ids, "candidates": cands,
             "iterations": jsonl(p / "iterations.jsonl"), "pareto": pareto(run.cands, house_ids) if run.cands else {}}
+
+
+def jobs_now() -> list[dict]:
+    """Every job; one the workbench lost track of on a restart counts as running while its process lives."""
+    out = JOBS.list()
+    for j in out:
+        if j["status"] == "lost" and j.get("pid"):
+            try:
+                os.kill(j["pid"], 0)
+                j["status"], j["detached"] = "running", True
+            except OSError:
+                pass
+    return out
+
+
+def live_payload(run: Path, proposal: str, after: int) -> dict:
+    """What a search is doing now: live.json, the proposer's actions after the first `after` of `proposal`
+    (all of them when the search has moved to another proposal), its current draft, and the running job."""
+    try:
+        live = json.loads((run / "live.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        live = None   # not written yet, or written by a search older than the live view
+    job = next((j for j in jobs_now() if j["kind"] == "evolve" and j["status"] == "running"
+                and j["settings"].get("run") == run.name), None)
+    out = {"live": live, "job": None, "active": bool(job) or live_now(run), "events": [], "count": 0, "draft": None}
+    if job:
+        # iterations this job has finished, from its log, to say "iteration 3 of 5"
+        log = (JOBS.root / job["id"] / "log.txt").read_text(errors="replace")
+        done = sum(1 for line in log.splitlines() if re.match(r"iteration \d+:", line))
+        out["job"] = {"id": job["id"], "title": job["title"], "started": job["started"], "done": done,
+                      "of": int(job["settings"].get("iterations", 0))}
+    name = (live or {}).get("proposal")
+    if name and FILE.match(name + ".x"):
+        d = run / "proposals" / name
+        events = jsonl(d / "live.jsonl")
+        out["count"] = len(events)
+        out["events"] = events[after:] if name == proposal else events
+        if (d / "draft.py").is_file():
+            out["draft"] = (d / "draft.py").read_text()
+    return out
 
 
 def transcript_summary(path: Path) -> dict:
@@ -308,14 +361,14 @@ class Handler(BaseHTTPRequestHandler):
                 src = grammar_file(name).read_text()
                 return self.send(200, {"name": name, "source": src, "rules": grammar_rules(src)})
             if path == "/api/jobs":
-                return self.send(200, {"jobs": JOBS.list(), "credentials": jobs_mod.credentials()})
+                return self.send(200, {"jobs": jobs_now(), "credentials": jobs_mod.credentials()})
             if path.startswith("/api/job/"):
                 try:
                     return self.send(200, JOBS.get(path.split("/")[3]))
                 except ValueError as e:
                     return self.send(404, {"error": str(e)})
             if path == "/api/runs":
-                runs =[run_summary(p.parent) for p in sorted(RUNS.glob("*/config.json"), key=lambda q: -q.stat().st_mtime)
+                runs = [run_summary(p.parent) for p in sorted(RUNS.glob("*/config.json"), key=lambda q: -q.stat().st_mtime)
                         if NAME.match(p.parent.name)] if RUNS.is_dir() else []
                 return self.send(200, runs)
             if path.startswith("/api/run/"):
@@ -325,6 +378,9 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(404, {"error": "no such run"})
                 if len(parts) == 1:
                     return self.send(200, run_payload(run))
+                if len(parts) == 2 and parts[1] == "live":
+                    q = parse_qs(urlparse(self.path).query)
+                    return self.send(200, live_payload(run, q.get("proposal", [""])[0], int(q.get("after", ["0"])[0])))
                 if len(parts) == 3 and parts[1] == "grammar" and NAME.match(parts[2]):
                     f = run / "grammars" / f"{parts[2]}.py"
                     if not f.is_file():
