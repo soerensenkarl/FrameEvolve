@@ -320,10 +320,12 @@ function setup3d() {
     zoomDrag.y = e.clientY;
   });
   canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+  canvas.addEventListener("pointermove", (e) => { if (measure.on && !e.buttons) measureHover(e); });
   canvas.addEventListener("pointerdown", (e) => { down = [e.clientX, e.clientY, e.button]; });
   canvas.addEventListener("pointerup", (e) => {
     if (zoomDrag) { zoomDrag = null; return; }
     if (!down || down[2] !== 0 || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
+    if (measure.on) return measureClick(e);
     const r = renderer.domElement.getBoundingClientRect();
     const p = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     const ray = new THREE.Raycaster();
@@ -358,6 +360,84 @@ function setup3d() {
     renderer.render(scene, camera);
     labeler.render(scene, camera);
   })();
+}
+
+// ---------------------------------------------------------------- measure: click two points, snapping to members
+
+const measure = { on: false, first: null, group: null, marker: null };
+
+function setMeasure(on) {
+  measure.on = on;
+  measure.first = null;
+  $("#measureBtn").classList.toggle("on", on);
+  $("#view3d").classList.toggle("measuring", on);
+  if (!measure.group) {
+    measure.group = new THREE.Group();
+    measure.marker = new THREE.Mesh(new THREE.SphereGeometry(0.035, 16, 12),
+      new THREE.MeshBasicMaterial({ color: 0x1d1d1b, depthTest: false }));
+    measure.marker.renderOrder = 20;
+    scene.add(measure.group, measure.marker);
+  }
+  measure.marker.visible = false;
+  if (!on) clear(measure.group);    // measurements stay while measuring, go when you stop
+}
+$("#measureBtn").addEventListener("click", () => setMeasure(!measure.on));
+
+function measurePoint(e) {
+  // the point under the cursor on a member (or the ground), snapped to the nearest corner or edge midpoint
+  // of that member within 14 px; returns [point in metres, snapped]
+  const el = renderer.domElement, r = el.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  const rc = new THREE.Raycaster();
+  rc.setFromCamera(ndc, camera);
+  const hit = rc.intersectObjects([...meshes.values()].filter((m) => m.visible), false)[0];
+  if (!hit) {
+    const g = rc.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), new THREE.Vector3());
+    return g ? [g, false] : [null, false];
+  }
+  const m = st.byId[hit.object.userData.id];
+  const xs = [m.lo[0], (m.lo[0] + m.hi[0]) / 2, m.hi[0]], ys = [m.lo[1], (m.lo[1] + m.hi[1]) / 2, m.hi[1]],
+        zs = [m.lo[2], (m.lo[2] + m.hi[2]) / 2, m.hi[2]];
+  let best = null, bestPx = 14;
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) for (let k = 0; k < 3; k++) {
+    if ((i === 1) + (j === 1) + (k === 1) > 1) continue;   // corners and edge midpoints only
+    const p = new THREE.Vector3(xs[i] * S, ys[j] * S, zs[k] * S);
+    const s = p.clone().project(camera);
+    const px = Math.hypot((s.x - ndc.x) * r.width / 2, (s.y - ndc.y) * r.height / 2);
+    if (px < bestPx) { bestPx = px; best = p; }
+  }
+  return best ? [best, true] : [hit.point.clone(), false];
+}
+
+function measureHover(e) {
+  const [p, snapped] = measurePoint(e);
+  measure.marker.visible = !!p;
+  if (!p) return;
+  measure.marker.position.copy(p);
+  measure.marker.material.color.set(snapped ? 0x2f6fdf : 0x1d1d1b);
+}
+
+function measureClick(e) {
+  const [p] = measurePoint(e);
+  if (!p) return;
+  const dot = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 10),
+    new THREE.MeshBasicMaterial({ color: 0x1d1d1b, depthTest: false }));
+  dot.renderOrder = 20;
+  dot.position.copy(p);
+  measure.group.add(dot);
+  if (!measure.first) { measure.first = p; return; }
+  const a = measure.first, d = p.clone().sub(a);
+  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, p]),
+    new THREE.LineBasicMaterial({ color: 0x1d1d1b, depthTest: false }));
+  line.renderOrder = 20;
+  const div = document.createElement("div");
+  div.className = "lbl measure";
+  const inch = (v) => Math.abs(v) / S;
+  div.innerHTML = `${ftin(inch(d.length()))} <i>x ${ftin(inch(d.x))} y ${ftin(inch(d.y))} z ${ftin(inch(d.z))}</i>`;
+  const label = new CSS2DObject(div);
+  label.position.copy(a.clone().add(p).multiplyScalar(0.5));
+  measure.group.add(line, label);
+  measure.first = null;
 }
 
 function orbitBy(dAz, dPol) {
@@ -1730,7 +1810,7 @@ document.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); build(); }
   const typing = ["TEXTAREA", "INPUT", "SELECT"].includes(document.activeElement?.tagName);
   if (typing || runsMode()) return;
-  if (e.key === "Escape") select(null);
+  if (e.key === "Escape") { if (measure.on) setMeasure(false); else select(null); }
   if (e.key === "ArrowLeft") { e.preventDefault(); stopPlay(); goto(st.at - 1); }
   if (e.key === "ArrowRight") { e.preventDefault(); stopPlay(); goto(st.at + 1); }
 });
