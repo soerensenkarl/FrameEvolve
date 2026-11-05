@@ -65,7 +65,7 @@ def command(kind: str, a: dict) -> tuple[list[str], str]:
         argv = py + ["frameevolve", "evolve", f"runs/{run}", "--iterations", str(n), "--seed", str(int(a.get("seed", 0)))]
         if not (ROOT / "runs" / run / "config.json").exists():   # settings that only matter for a new run
             argv += ["--seed-grammar", _grammar(a.get("seed_grammar", "grammars/seed.py")),
-                     "--minibatch", str(int(a.get("minibatch", 3)))]
+                     "--minibatch", str(int(a.get("minibatch", 3))), "--max-lines", str(int(a.get("max_lines", 12)))]
             if a.get("train"):
                 argv += ["--train", *[_house(h) for h in a["train"]]]
         if a.get("dry"):

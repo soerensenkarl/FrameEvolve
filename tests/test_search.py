@@ -104,3 +104,15 @@ def test_claude_proposer_edits_through_its_tools(tmp_path, monkeypatch):
     assert kinds[0] == "text" and kinds.count("image") == 2
     out = run.path / "proposals" / "0001"
     assert (out / "prompt.md").exists() and json.loads((out / "transcript.json").read_text())
+
+
+def test_oversized_rules_are_refused(tmp_path):
+    """A proposal with a function over the line limit is logged as too big and never kept."""
+    seed = (ROOT / "grammars/seed.py").read_text().replace("SPACING = 16", "SPACING = 12")
+    run = make_run(tmp_path, seed)
+    long_rule = "\n\n@rule(95, match='wall')\ndef chatty(s, w):\n" + "".join(f"    x{i} = {i}\n" for i in range(20))
+
+    def edit(src, ctx):
+        return src.replace("SPACING = 12", "SPACING = 16") + long_rule, "wider studs, plus a long rule"
+    e = run.step(ScriptedProposer(edit), random.Random(0))
+    assert not e["accepted"] and e["error"].startswith("too big: chatty has 20 code lines")

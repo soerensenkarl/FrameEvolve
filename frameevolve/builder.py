@@ -301,3 +301,29 @@ def build(grammar, house: House, max_passes: int = 10, max_members: int = 20000)
     else:
         errors.append(f"did not settle after {max_passes} passes")
     return frame()
+
+
+MAX_LINES = 12   # code lines per function in a grammar, by default
+
+
+def sizes(source: str) -> dict[str, int]:
+    """Code lines in each function of a grammar: no docstring, blank lines or comment lines."""
+    import ast
+    lines = source.splitlines()
+    out = {}
+    for node in ast.parse(source).body:
+        if isinstance(node, ast.FunctionDef):
+            body = node.body[1:] if ast.get_docstring(node) else node.body
+            if body:
+                code = lines[body[0].lineno - 1:node.end_lineno]
+                out[node.name] = sum(1 for l in code if l.strip() and not l.strip().startswith("#"))
+    return out
+
+
+def too_big(source: str, max_lines: int = MAX_LINES) -> list[str]:
+    """What breaks the size limit, in words; empty when every function fits. Keeps rules small and readable."""
+    try:
+        return [f"{name} has {n} code lines; the limit is {max_lines}. Split it into smaller rules."
+                for name, n in sizes(source).items() if n > max_lines]
+    except SyntaxError as e:
+        return [f"the grammar does not parse: line {e.lineno}: {e.msg}"]

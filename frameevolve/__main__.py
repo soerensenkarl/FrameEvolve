@@ -29,6 +29,7 @@ def main(argv=None) -> None:
     v.add_argument("--seed-grammar", default="grammars/seed.py")
     v.add_argument("--train", nargs="+", default=[f"data/houses/h{i:03d}.json" for i in range(10)])
     v.add_argument("--minibatch", type=int, default=3)
+    v.add_argument("--max-lines", type=int, default=12, help="code lines allowed per grammar function")
     v.add_argument("--iterations", type=int, default=5)
     v.add_argument("--via", choices=["subscription", "api"], default="subscription",
                    help="subscription: Claude Code signed in with a Claude plan; api: an API key or ant profile")
@@ -52,7 +53,7 @@ def main(argv=None) -> None:
             print(f"continuing {a.run} at iteration {run.iteration}")
         else:
             run = Run.create(Path(a.run), Path(a.seed_grammar), [Path(h) for h in a.train], a.minibatch,
-                             "scripted" if a.dry else a.model)
+                             "scripted" if a.dry else a.model, max_lines=a.max_lines)
             print(f"created {a.run}: seed {a.seed_grammar} scores {run.cands[0].total()} over {len(a.train)} houses")
         if a.dry:
             rng = random.Random(a.seed)

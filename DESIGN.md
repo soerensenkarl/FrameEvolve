@@ -105,6 +105,10 @@ Pareto search keeps the grammars that do well across many houses.
 - Each iteration takes a minibatch of training houses (default 3). The proposer sees the parent on
   those houses and returns a child. The child is kept only if its summed score on the minibatch beats
   the parent's; then it is scored on every training house and joins the pool.
+- A size limit keeps rules atomic: no function in a grammar may exceed the run's `max_lines` code lines
+  (default 12; docstrings, blanks and comments do not count). An oversized proposal is refused before it
+  is evaluated, and the proposer's check tool reports it. Reason: the first real run merged jobs into
+  32-line rules; small rules read better, give finer credit, and step more clearly.
 - Grammars are evaluated in a separate process with a timeout, since a proposed grammar is code no
   person has read. A crash or timeout scores as failed.
 - Everything goes to `runs/<name>/`: config, candidates, grammars, one line per iteration, and per

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Callable
 
 from frameevolve import surface
-from frameevolve.builder import State
+from frameevolve.builder import MAX_LINES, State, too_big
 from frameevolve.model import SECTIONS, STOCK, Opening, Wall
 from frameevolve.verifier import CHECKS
 
@@ -77,7 +77,8 @@ The rules API:
 {api}
 
 Write the grammar so a framer could read it: small rules with one job each, a docstring saying what each
-does, names in framing terms. Prefer general rules over special cases; never refer to a house or opening by
+does, names in framing terms. No function may have more than {max_lines} lines of code (docstrings, blank
+lines and comments do not count); a grammar that breaks this is refused unseen, so split big rules. Prefer general rules over special cases; never refer to a house or opening by
 its id. Members you place record the rule that placed it, and faults name those rules.
 
 Tools: view_grammar shows the current draft with line numbers. edit_grammar replaces one exact piece of text.
@@ -130,6 +131,10 @@ class Draft:
         if self.checks >= self.limit:
             return f"No checks left ({self.limit} used). Finish with what you have."
         self.checks += 1
+        big = too_big(self.src, self.context.get("max_lines", MAX_LINES))
+        if big:
+            return (f"Check {self.checks} of {self.limit}: refused before building, because "
+                    + " ".join(big))
         path = self.out / "draft.py"
         path.write_text(self.src)
         res = evaluate(path, [Path(h) for h in self.context["house_paths"]])
@@ -153,7 +158,8 @@ def prompt(context: dict, images: bool, out: Path) -> tuple[str, list[dict]]:
     content = [{"type": "text", "text": text}]
     if images:
         content += [_image_block(Path(p)) for p in context["images"]]
-    system = SYSTEM.format(checks="\n".join(f"- {k}: {v}" for k, v in CHECKS.items()), api=api_reference())
+    system = SYSTEM.format(checks="\n".join(f"- {k}: {v}" for k, v in CHECKS.items()), api=api_reference(),
+                           max_lines=context.get("max_lines", MAX_LINES))
     (out / "prompt.md").write_text(f"# System\n\n{system}\n\n# User\n\n{text}\n")
     return system, content
 

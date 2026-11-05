@@ -4,7 +4,8 @@ One iteration:
   1. Pick a parent from the Pareto set, weighted by the number of houses it is best on.
   2. Take a minibatch of training houses; build and verify the parent on them.
   3. The proposer reads the parent, its reports and pictures, and returns an edited grammar.
-  4. Build and verify the child on the same minibatch. Keep it only if it beats the parent there.
+  4. Refuse the child if any function in it is longer than the run's line limit, so rules stay small.
+     Otherwise build and verify it on the same minibatch, and keep it only if it beats the parent there.
   5. If kept, evaluate it on every training house and add it to the pool.
 
 A grammar is the best on a house when no other grammar has a better score there. Scores are compared as
@@ -29,7 +30,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from frameevolve import render
-from frameevolve.builder import build
+from frameevolve.builder import MAX_LINES, build, too_big
 from frameevolve.model import House
 from frameevolve.verifier import verify
 
@@ -95,11 +96,12 @@ class Run:
             self.iteration = sum(1 for l in f.read_text().splitlines() if l.strip())
 
     @staticmethod
-    def create(path: Path, seed_grammar: Path, train: list[Path], minibatch: int, model: str, note: str = "") -> "Run":
+    def create(path: Path, seed_grammar: Path, train: list[Path], minibatch: int, model: str, note: str = "",
+               max_lines: int = MAX_LINES) -> "Run":
         path = Path(path)
         (path / "grammars").mkdir(parents=True, exist_ok=False)
         config = {"seed_grammar": str(seed_grammar), "train": [str(h) for h in train], "minibatch": minibatch,
-                  "model": model, "note": note, "created": time.time()}
+                  "model": model, "max_lines": max_lines, "note": note, "created": time.time()}
         (path / "config.json").write_text(json.dumps(config, indent=1))
         run = Run(path)
         src = Path(seed_grammar).read_text()
@@ -107,6 +109,10 @@ class Run:
         res = evaluate(path / "grammars" / "c000.py", run.train)
         run.add(Candidate("c000", None, 0, {h: r["score"] for h, r in res.items()}, f"seed: {Path(seed_grammar).name}"))
         return run
+
+    @property
+    def max_lines(self) -> int:
+        return self.config.get("max_lines", MAX_LINES)
 
     @property
     def train(self) -> list[Path]:
@@ -163,7 +169,7 @@ class Run:
         parent_batch = [round(sum(parent_res[h]["score"][j] for h in batch_ids), 2) for j in range(3)]
         context = {
             "iteration": it, "parent": parent.id, "houses": batch_ids, "house_paths": [str(h) for h in batch],
-            "parent_batch": parent_batch,
+            "parent_batch": parent_batch, "max_lines": self.max_lines,
             "reports": {h: parent_res[h]["text"] for h in batch_ids},
             "parent_scores": parent.scores, "images": [str(p) for p in images],
             "pareto": {cid: hs for cid, hs in wins.items()},
@@ -181,8 +187,11 @@ class Run:
         entry["note"] = proposal.note
         entry["usage"] = proposal.usage
         (out / "proposed.py").write_text(proposal.source)
+        big = too_big(proposal.source, self.max_lines)
         if proposal.source.strip() == parent_src.strip():
             entry["error"] = "the proposal did not change the grammar"
+        elif big:
+            entry["error"] = "too big: " + " ".join(big)
         else:
             child_res = evaluate(out / "proposed.py", batch)
             child_batch = [round(sum(child_res[h]["score"][j] for h in batch_ids), 2) for j in range(3)]
