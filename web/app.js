@@ -246,11 +246,12 @@ function renderRules() {
   $("#rulesHint").textContent = done ? "Click a rule to see what it does and highlight its members."
     : st.at === 0 ? "Step 0: no rule has fired yet."
     : "Marked: the rule at this step. Faded: not fired yet. Grey: what each rule matches.";
-  ul.innerHTML = rules.map((r) => {
+  ul.innerHTML = rules.map((r, i) => {
     const isNow = cur?.rule === r.name;
     const cls = [st.sel?.kind === "rule" && st.sel.id === r.name ? "sel" : "", st.hidden.has(r.name) ? "off" : "",
       isNow ? "now" : "", !done && !fired.has(r.name) ? "notyet" : ""].join(" ");
     return `<li data-rule="${esc(r.name)}" class="${cls}" style="--c:${st.colors[r.name]}" title="${esc(oneLine(r.doc))}">
+      <span class="no" title="rule ${i + 1}, in the order the builder tries them">${i + 1}</span>
       <span class="sw" style="background:${st.colors[r.name]}"></span>
       <span class="nm">${esc(r.name)}${r.match ? `<small>${esc(r.match)}${r.when ? `, when ${esc(r.when)}` : ""}</small>` : ""}</span>
       ${isNow ? `<span class="firing">${trigger() ? "matched" : "fired"}</span>` : ""}

@@ -111,6 +111,7 @@ svg .mark.soft { stroke: #e08a00; }
 #rules li.notyet { opacity: .38; }
 #rules li.now { border-left-color: var(--c); background: #f3f1ec; font-weight: 600; opacity: 1; }
 #rules .firing { font-size: 10px; font-weight: 500; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+#rules .no { width: 16px; flex: none; text-align: right; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 #rules .sw { width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(0,0,0,.25); flex: none; }
 #rules .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 #rules .nm small { display: block; color: var(--muted); font-size: 10.5px; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
