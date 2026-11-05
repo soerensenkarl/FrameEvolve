@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FrameEvolve</title>
+<link rel="stylesheet" href="/web/style.css">
+<script type="importmap">
+{"imports": {"three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+             "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
+</script>
+</head>
+<body>
+<header>
+  <span class="brand">FrameEvolve</span>
+  <label>House <select id="house"></select></label>
+  <button id="newHouse" title="Generate a random house and build it">New house</button>
+  <label>Grammar <select id="grammar"></select></label>
+  <button id="rebuild" class="primary" title="Build the frame (Cmd+Enter)">Build</button>
+  <span id="status"></span>
+</header>
+<main>
+  <aside id="left">
+    <section>
+      <h3>Frame <small>this house, this grammar</small></h3>
+      <div id="stats"><p class="empty">Building...</p></div>
+    </section>
+    <section>
+      <h3>Rules <small>by priority, lowest first</small></h3>
+      <p id="rulesHint" class="hint"></p>
+      <ul id="rules"></ul>
+    </section>
+  </aside>
+  <section id="center">
+    <nav class="tabs">
+      <button data-tab="view3d" class="on">3D</button>
+      <button data-tab="elev">Elevations</button>
+      <button data-tab="runs" title="The search: runs, grammars it kept, what the proposer did">Runs <span id="runDot"></span></button>
+      <span class="spacer"></span>
+      <label class="chk viewopt" title="The input: each wall is the plane of its outer face, with its openings"><input type="checkbox" id="showSurfaces" checked> wall surfaces</label>
+      <label class="chk viewopt" title="Fault markers on the finished frame"><input type="checkbox" id="showFaults" checked> faults</label>
+    </nav>
+    <div id="stage">
+      <div id="view3d" class="pane on"><div id="hint">drag to orbit, right-drag to pan, scroll to zoom, click a member</div></div>
+      <div id="elev" class="pane"></div>
+      <div id="runs" class="pane">
+        <div id="runsSide"></div>
+        <div id="runsMain"></div>
+        <div id="runsDetail"></div>
+      </div>
+      <div id="caption" hidden></div>
+      <div id="tip" hidden></div>
+    </div>
+    <div id="timeline">
+      <button id="tlStart" title="Back to the bare house">&#x23EE;</button>
+      <button id="tlPrev" title="Previous step (left arrow)">&#x2039;</button>
+      <button id="tlPlay" title="Play the build">&#x25B6;</button>
+      <button id="tlNext" title="Next step (right arrow)">&#x203A;</button>
+      <button id="tlEnd" title="The finished frame">&#x23ED;</button>
+      <div id="stripWrap"><div id="strip"></div></div>
+      <span id="tlLabel"></span>
+    </div>
+  </section>
+  <aside id="right">
+    <nav class="tabs">
+      <button data-tab="inspect" class="on">Inspect</button>
+      <button data-tab="faults">Faults <span id="faultCount"></span></button>
+      <button data-tab="editor">Grammar <span id="dirty"></span></button>
+      <button data-tab="report">Report</button>
+    </nav>
+    <div id="inspect" class="pane on"></div>
+    <div id="faults" class="pane"></div>
+    <div id="editor" class="pane">
+      <div class="bar">
+        <button id="edBuild" class="primary" title="Build with the text below (Cmd+Enter)">Build with this</button>
+        <button id="edSave" title="Write the text below to the grammar file">Save</button>
+        <button id="edRevert" title="Throw away unsaved edits">Revert</button>
+        <button id="edScore" title="Build and verify the saved grammar on every house, as a background job">Score on all houses</button>
+      </div>
+      <div id="edState"></div>
+      <textarea id="src" spellcheck="false" autocomplete="off"></textarea>
+    </div>
+    <div id="report" class="pane"><p class="empty">What the verifier says about this frame, in the words the proposer reads.</p><pre class="code" id="reportText"></pre></div>
+  </aside>
+</main>
+<script type="module" src="/web/app.js"></script>
+</body>
+</html>
