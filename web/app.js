@@ -2483,7 +2483,60 @@ document.querySelectorAll("nav.tabs").forEach((nav) => nav.addEventListener("cli
 
 $("#showFaults").addEventListener("change", () => { look3d(); renderElev(); });
 $("#showSurfaces").addEventListener("change", () => { remember("surfaces", $("#showSurfaces").checked ? "1" : "0"); look3d(); renderElev(); });
-$("#rebuild").addEventListener("click", build);
+$("#rebuild").addEventListener("click", regenerate);
+
+// Regenerate: frame the house from scratch and draw each piece the moment the server places it, at the
+// build's own speed; the full frame and its verification follow when the build is done
+async function regenerate() {
+  stopPlay();
+  status("framing...");
+  const body = { house: $("#house").value, grammar: $("#grammar").value };
+  if (dirty()) body.source = $("#src").value;
+  const t0 = performance.now();
+  const res = await fetch("/api/build_live", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!res.ok || !res.body) { status((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`, true); return; }
+  clear(group);
+  meshes.clear();
+  gapGroup.visible = markGroup.visible = false;
+  const colors = { ...st.colors }, mat = new THREE.LineBasicMaterial({ color: 0x1d1d1b, transparent: true, opacity: 0.35 });
+  const colorOf = (r) => colors[r] || (colors[r] = PALETTE[Object.keys(colors).length % PALETTE.length]);
+  const reader = res.body.getReader(), dec = new TextDecoder();
+  let buf = "", pieces = 0, frame = null, built = 0;
+  const handle = (msg) => {
+    if (msg.step) {
+      for (const m of msg.step.placed) {
+        const geo = new THREE.BoxGeometry(...[0, 1, 2].map((k) => (m.hi[k] - m.lo[k]) * S));
+        const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ roughness: 0.85, color: colorOf(m.rule) }));
+        mesh.position.set(...[0, 1, 2].map((k) => ((m.lo[k] + m.hi[k]) / 2) * S));
+        mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), mat));
+        group.add(mesh);
+        meshes.set(m.id, mesh);
+      }
+      for (const id of msg.step.removed) { const x = meshes.get(id); if (x) { group.remove(x); meshes.delete(id); } }
+      pieces += msg.step.placed.length - msg.step.removed.length;
+      status(`framing: ${Math.round(1000 * msg.step.t)} ms, ${pieces} pieces, ${msg.step.rule}`);
+    } else if (msg.built != null) {
+      built = msg.built;
+      status(`framed in ${Math.round(1000 * built)} ms, ${pieces} pieces; verifying...`);
+    } else if (msg.frame) frame = msg.frame;
+  };
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop();
+    for (const l of lines) if (l.trim()) handle(JSON.parse(l));
+  }
+  if (!frame) { status(frame?.error || "the build stopped before it finished", true); return; }
+  if (frame.error) { status(frame.error, true); return; }
+  st.data = frame;
+  index();
+  renderAll();
+  const ms = (x) => `${Math.round(1000 * x)} ms`;
+  status(`framed from scratch in ${ms(built)}, verified in ${ms(frame.timing.verify)}, ` +
+         `${ms((performance.now() - t0) / 1000)} in all${dirty() ? ", from unsaved edits" : ""}`);
+}
 $("#house").addEventListener("change", () => { remember("house", $("#house").value); build(); });
 $("#grammar").addEventListener("change", async () => {
   setFollow(false);

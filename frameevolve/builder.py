@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import importlib.util
 import itertools
+import time
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
@@ -266,7 +267,8 @@ def _where(e: Exception, path: Path) -> str:
     return f" (line {lines[-1]})" if lines else ""
 
 
-def build(grammar, house: House, max_passes: int = 10, max_members: int = 20000) -> Frame:
+def build(grammar, house: House, max_passes: int = 10, max_members: int = 20000, on_step=None) -> Frame:
+    """on_step(step, members): called as each step happens, with the members placed so far by id."""
     path = Path(grammar).resolve()
     try:
         rules = load_rules(path)
@@ -276,6 +278,7 @@ def build(grammar, house: House, max_passes: int = 10, max_members: int = 20000)
     errors: list[str] = []
     steps: list[dict] = []
     fired: set = set()
+    t0 = time.perf_counter()
 
     def frame() -> Frame:
         removed = [m for k, m in s._removed.items() if k not in s._members]
@@ -309,7 +312,10 @@ def build(grammar, house: House, max_passes: int = 10, max_members: int = 20000)
                 if s._placed_now or s._removed_now:
                     steps.append({"pass": p, "rule": r.__name__, "wall": wall.id,
                                   "match": f"{r.match} {' '.join(map(str, key))}", "target": target(s, r.match, wall, x),
-                                  "placed": s._placed_now, "removed": s._removed_now})
+                                  "placed": s._placed_now, "removed": s._removed_now,
+                                  "t": round(time.perf_counter() - t0, 4)})
+                    if on_step:
+                        on_step(steps[-1], s._members)
                 if len(s._members) > max_members:
                     errors.append(f"stopped: more than {max_members} members")
                     return frame()

@@ -342,11 +342,11 @@ def verifier_info() -> dict:
             "sections": {k: v[1] for k, v in SECTIONS.items()}, "about": inspect.getdoc(verifier)}
 
 
-def build_source(name: str, source: str, house: House) -> Frame:
+def build_source(name: str, source: str, house: House, on_step=None) -> Frame:
     with tempfile.TemporaryDirectory() as d:
         p = Path(d) / f"{name.replace('.', '_')}.py"
         p.write_text(source)
-        return build(p, house)
+        return build(p, house, on_step=on_step)
 
 
 def rule_demo(name: str, source: str, rule: str, firing: int | None = None) -> dict:
@@ -418,6 +418,34 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(data)
+
+    def build_live(self, name: str, source: str, house: House) -> None:
+        """Build and stream it as it happens: one JSON line per step with the boxes it placed, then the frame."""
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-ndjson")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+
+        def line(d: dict) -> None:
+            self.wfile.write(json.dumps(d).encode() + b"\n")
+            self.wfile.flush()
+
+        def on_step(step: dict, members: dict) -> None:
+            placed = [{"id": i, "rule": m.rule, "lo": m.box.lo, "hi": m.box.hi}
+                      for i in step["placed"] if (m := members.get(i))]
+            line({"step": {"rule": step["rule"], "wall": step["wall"], "t": step["t"], "placed": placed,
+                           "removed": step["removed"]}})
+
+        try:
+            t = time.perf_counter()
+            frame = build_source(name, source, house, on_step)
+            build_s = time.perf_counter() - t
+            line({"built": build_s})
+            out = frame_payload(house, frame, source)
+            out["timing"]["build"] = build_s
+            line({"frame": out})
+        except Exception as e:   # the headers are sent: report it in the stream
+            line({"frame": {"error": f"{type(e).__name__}: {e}"}})
 
     def body(self) -> dict:
         n = int(self.headers.get("Content-Length") or 0)
@@ -498,7 +526,7 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         try:
             b = self.body()
-            if path == "/api/build":
+            if path in ("/api/build", "/api/build_live"):
                 if not NAME.match(str(b.get("house", ""))):
                     return self.send(400, {"error": "bad house name"})
                 house = House.load(HOUSES / f"{b['house']}.json")
@@ -508,6 +536,8 @@ class Handler(BaseHTTPRequestHandler):
                 source = b.get("source")
                 if source is None:
                     source = grammar_file(name).read_text()
+                if path == "/api/build_live":
+                    return self.build_live(name, source, house)
                 t = time.perf_counter()
                 frame = build_source(name, source, house)
                 build_s = time.perf_counter() - t
