@@ -50,3 +50,23 @@ Minimal grammar (plates and studs only), 3 iterations, minibatch 3, 10 training 
 
 - The 12-line cap is crude (line count depends on style) but simple and working; kept. Alternatives
   (one job per rule, complexity cap, size as cost) go into the planned ablations in DESIGN.md.
+
+## 2026-11-05 Second run (`runs/atomic`): 12-line limit
+
+Minimal grammar, 10 iterations (crashed after 4 on a parent-draw bug, fixed, resumed), minibatch 3.
+
+| | hard | soft | cost, 10 training houses | held-out 10 houses |
+|---|---|---|---|---|
+| c004 (iteration 4) | 8 | 0 | 19,863 | |
+| c010 (iteration 10) | 0 | 0 | 17,938 | 0 hard, 0 soft, 18,012 |
+| first run's best | 0 | 0 | 19,776 | 0 hard, 0 soft |
+| seed (hand-written) | 0 | 47 | 17,485 | 0 hard, 46 soft |
+
+- All 10 proposals were kept; 20 to 80 s each after the first (3 min). No proposal hit the size limit:
+  Claude wrote 17 to 23 small functions, largest 8 lines.
+- Under the limit it took 5 iterations to reach zero hard faults (the first run took 1), then kept cutting
+  cost: 9% below the first run's best, within 3% of the hand-written seed, with no soft faults.
+- Minibatch acceptance lets a child that is better on its 3 houses be worse elsewhere: c001 had 74 hard
+  faults over all 10 houses. The Pareto set and later iterations recovered. Worth measuring.
+- Bug: the parent was drawn inside a generator, so a fresh random choice was compared with each
+  candidate; with two grammars in the Pareto set it could match none and crash. Fixed, with a test.
