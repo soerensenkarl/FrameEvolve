@@ -281,6 +281,13 @@ function setup3d() {
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.15;
+  // as in AutoDesignIterator and Rhino for Mac: left clicks select, right drag orbits (Shift: pans), middle
+  // drag pans, Cmd/Ctrl + right drag zooms; wheel and trackpad are handled below
+  controls.mouseButtons = { LEFT: -1, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
+  controls.enableZoom = false;
+  const shiftPans = (e) => { controls.mouseButtons.RIGHT = e.shiftKey ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE; };
+  window.addEventListener("keydown", shiftPans);
+  window.addEventListener("keyup", shiftPans);
   scene.add(new THREE.HemisphereLight(0xffffff, 0x8a877e, 1.7));
   const sun = new THREE.DirectionalLight(0xffffff, 1.3);
   sun.position.set(-6, -9, 14);
@@ -297,10 +304,25 @@ function setup3d() {
   scene.add(group, gapGroup, markGroup, surfGroup, targetGroup);
 
   new ResizeObserver(resize).observe(el);
-  let down = null;
-  renderer.domElement.addEventListener("pointerdown", (e) => { down = [e.clientX, e.clientY]; });
-  renderer.domElement.addEventListener("pointerup", (e) => {
-    if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
+  const canvas = renderer.domElement;
+  let down = null, zoomDrag = null;
+  canvas.addEventListener("pointerdown", (e) => {     // Cmd/Ctrl + right drag zooms, before the orbit controls see it
+    if (e.button === 2 && (e.ctrlKey || e.metaKey)) {
+      e.stopImmediatePropagation();
+      canvas.setPointerCapture(e.pointerId);
+      zoomDrag = { y: e.clientY, at: { clientX: e.clientX, clientY: e.clientY } };
+    }
+  }, true);
+  canvas.addEventListener("pointermove", (e) => {
+    if (!zoomDrag) return;
+    zoomAt(Math.exp((e.clientY - zoomDrag.y) * 0.01), zoomDrag.at);
+    zoomDrag.y = e.clientY;
+  });
+  canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+  canvas.addEventListener("pointerdown", (e) => { down = [e.clientX, e.clientY, e.button]; });
+  canvas.addEventListener("pointerup", (e) => {
+    if (zoomDrag) { zoomDrag = null; return; }
+    if (!down || down[2] !== 0 || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
     const r = renderer.domElement.getBoundingClientRect();
     const p = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     const ray = new THREE.Raycaster();
@@ -308,12 +330,72 @@ function setup3d() {
     const hit = ray.intersectObjects([...meshes.values()].filter((m) => m.visible), false)[0];
     select(hit ? { kind: "member", id: hit.object.userData.id } : null);
   });
+  // wheel and trackpad, as in Rhino for Mac: two fingers orbit, Shift + two fingers pan, pinch zooms; a wheel
+  // mouse zooms to the cursor (Shift: pan). A trackpad sends fine pixel steps, often sideways too; once a trackpad
+  // gesture starts it stays one until it rests, so its momentum is never read as a wheel.
+  let padUntil = 0;
+  const fromTrackpad = (e) => {
+    const now = performance.now(), wd = e.wheelDeltaY ?? 0;
+    const pad = e.deltaMode === 0 && (e.deltaX !== 0 || (wd !== 0 && wd === -3 * e.deltaY) ||
+      (wd % 120 !== 0 && !Number.isInteger(e.deltaY)));
+    if (pad) padUntil = now + 250;
+    return pad || now < padUntil;
+  };
+  canvas.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const px = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1;
+    const dx = e.deltaX * px, dy = e.deltaY * px;
+    if (e.ctrlKey) zoomAt(Math.exp(dy * 0.01), e);                       // pinch
+    else if (fromTrackpad(e)) e.shiftKey ? panBy(dx, dy) : orbitBy(dx * 0.006, dy * 0.006);
+    else if (e.shiftKey) panBy(dx, dy);
+    else zoomAt(Math.exp(dy * 0.0015), e);
+    controls.update();
+  }, { passive: false });
   (function loop() {
     requestAnimationFrame(loop);
     controls.update();
     renderer.render(scene, camera);
     labeler.render(scene, camera);
   })();
+}
+
+function orbitBy(dAz, dPol) {
+  const off = camera.position.clone().sub(controls.target);
+  const r = off.length();
+  let az = Math.atan2(off.y, off.x), pol = Math.acos(THREE.MathUtils.clamp(off.z / r, -1, 1));
+  az += dAz;
+  pol = THREE.MathUtils.clamp(pol + dPol, 0.02, Math.PI - 0.02);
+  off.set(r * Math.sin(pol) * Math.cos(az), r * Math.sin(pol) * Math.sin(az), r * Math.cos(pol));
+  camera.position.copy(controls.target).add(off);
+  camera.lookAt(controls.target);
+}
+
+function panBy(dx, dy) {
+  const el = renderer.domElement;
+  const dist = camera.position.distanceTo(controls.target);
+  const perPx = 2 * dist * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / el.clientHeight;
+  const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0);
+  const up = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1);
+  const move = right.multiplyScalar(dx * perPx).add(up.multiplyScalar(-dy * perPx));
+  camera.position.add(move);
+  controls.target.add(move);
+}
+
+function zoomAt(factor, e) {
+  // dolly toward the point under the cursor: the member there, else the ground, else the view's target plane
+  const r = renderer.domElement.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  const rc = new THREE.Raycaster();
+  rc.setFromCamera(ndc, camera);
+  const hit = rc.intersectObjects([...meshes.values()].filter((m) => m.visible), false)[0];
+  const focus = hit?.point
+    || rc.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), new THREE.Vector3())
+    || rc.ray.intersectPlane(new THREE.Plane().setFromNormalAndCoplanarPoint(
+      camera.getWorldDirection(new THREE.Vector3()), controls.target), new THREE.Vector3())
+    || controls.target.clone();
+  if (factor < 1 && camera.position.distanceTo(controls.target) < 0.3) return;
+  camera.position.sub(focus).multiplyScalar(factor).add(focus);
+  controls.target.sub(focus).multiplyScalar(factor).add(focus);
 }
 
 function resize() {
