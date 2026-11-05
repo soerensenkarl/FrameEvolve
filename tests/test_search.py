@@ -124,6 +124,7 @@ def test_parent_is_drawn_from_a_pareto_set_of_several(tmp_path):
     run = make_run(tmp_path, seed)
     run.add(Candidate("c001", "c000", 0, {h: [s[0], s[1], s[2] - (1 if i == 0 else -1)]
                                            for i, (h, s) in enumerate(run.cands[0].scores.items())}))
+    run.grammar("c001").write_text(seed)
     assert len(run.pareto()) == 2
     rng = random.Random(0)
     for _ in range(6):
