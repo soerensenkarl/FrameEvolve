@@ -46,17 +46,17 @@ def test_evaluate_survives_a_grammar_that_hangs(tmp_path):
 
 def test_search_keeps_only_improvements(tmp_path):
     """Kept children beat their parent on the minibatch; unchanged and worse proposals are logged, not kept."""
-    seed = (ROOT / "grammars/seed.py").read_text().replace("SPACING = 16", "SPACING = 12")
+    seed = (ROOT / "grammars/seed.py").read_text().replace("SPACING = 24", "SPACING = 16")
     run = make_run(tmp_path, seed)
-    choices = iter([16, 16, 8])
+    choices = iter([24, 24, 12])
 
     def edit(src, ctx):
         return re.sub(r"SPACING = \d+", f"SPACING = {next(choices)}", src), "spacing"
     rng = random.Random(0)
     entries = [run.step(ScriptedProposer(edit), rng) for _ in range(3)]
     assert entries[0]["accepted"] and entries[0]["child"] == "c001"
-    assert not entries[1]["accepted"]    # same grammar again, or a parent already at 16
-    assert not entries[2]["accepted"]    # 8 in. is dearer
+    assert not entries[1]["accepted"]    # same grammar again, or a parent already at 24
+    assert not entries[2]["accepted"]    # 12 in. is dearer
     lines = (run.path / "iterations.jsonl").read_text().splitlines()
     assert len(lines) == 3
     assert len(Run(run.path).cands) == len(run.cands)
@@ -82,21 +82,21 @@ def test_claude_proposer_edits_through_its_tools(tmp_path, monkeypatch):
     def tool_runner(**kw):
         seen.update(kw)
         tools = {t.name: t for t in kw["tools"]}
-        assert "SPACING = 12" in tools["view_grammar"].call({})
-        assert tools["edit_grammar"].call({"old": "SPACING = 12", "new": "SPACING = 16"}) == "Changed."
+        assert "SPACING = 16" in tools["view_grammar"].call({})
+        assert tools["edit_grammar"].call({"old": "SPACING = 16", "new": "SPACING = 24"}) == "Changed."
         assert "occurs 0 times" in tools["edit_grammar"].call({"old": "nothing like this", "new": "x"})
         seen["check"] = tools["check_grammar"].call({})
         yield FakeMessage("", "tool_use")
-        yield FakeMessage("Widened the stud module to 16 in.; fewer studs, same backing.")
+        yield FakeMessage("Widened the stud module to 24 in.; fewer studs, same backing.")
 
     import anthropic
     fake = SimpleNamespace(beta=SimpleNamespace(messages=SimpleNamespace(tool_runner=tool_runner)))
     monkeypatch.setattr(anthropic, "Anthropic", lambda *a, **k: fake)
-    seed = (ROOT / "grammars/seed.py").read_text().replace("SPACING = 16", "SPACING = 12")
+    seed = (ROOT / "grammars/seed.py").read_text().replace("SPACING = 24", "SPACING = 16")
     run = make_run(tmp_path, seed)
     e = run.step(ClaudeProposer(model="claude-opus-5-5", checks=2), random.Random(1))
     assert e["accepted"], e
-    assert "SPACING = 16" in run.grammar(e["child"]).read_text()
+    assert "SPACING = 24" in run.grammar(e["child"]).read_text()
     assert e["note"].startswith("Widened")
     assert seen["model"] == "claude-opus-5-5" and seen["output_config"] == {"effort": "medium"}
     assert seen["check"].startswith("Check 1 of 2")
@@ -108,19 +108,19 @@ def test_claude_proposer_edits_through_its_tools(tmp_path, monkeypatch):
 
 def test_oversized_rules_are_refused(tmp_path):
     """A proposal with a function over the line limit is logged as too big and never kept."""
-    seed = (ROOT / "grammars/seed.py").read_text().replace("SPACING = 16", "SPACING = 12")
+    seed = (ROOT / "grammars/seed.py").read_text().replace("SPACING = 24", "SPACING = 16")
     run = make_run(tmp_path, seed)
     long_rule = "\n\n@rule(95, match='wall')\ndef chatty(s, w):\n" + "".join(f"    x{i} = {i}\n" for i in range(20))
 
     def edit(src, ctx):
-        return src.replace("SPACING = 12", "SPACING = 16") + long_rule, "wider studs, plus a long rule"
+        return src.replace("SPACING = 16", "SPACING = 24") + long_rule, "wider studs, plus a long rule"
     e = run.step(ScriptedProposer(edit), random.Random(0))
     assert not e["accepted"] and e["error"].startswith("too big: chatty has 20 code lines")
 
 
 def test_parent_is_drawn_from_a_pareto_set_of_several(tmp_path):
     """With several grammars in the Pareto set, every iteration still finds its parent."""
-    seed = (ROOT / "grammars/seed.py").read_text().replace("SPACING = 16", "SPACING = 12")
+    seed = (ROOT / "grammars/seed.py").read_text().replace("SPACING = 24", "SPACING = 16")
     run = make_run(tmp_path, seed)
     run.add(Candidate("c001", "c000", 0, {h: [s[0], s[1], s[2] - (1 if i == 0 else -1)]
                                            for i, (h, s) in enumerate(run.cands[0].scores.items())}))

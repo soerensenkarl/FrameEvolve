@@ -12,16 +12,21 @@ design state (the house plus every member placed so far), and calls the rule onc
 rule whose condition only becomes true after other rules have acted still fires. A rule never fires twice
 on the same match. Every member records the rule that placed it; every step records the match.
 
-Match kinds (what the rule receives as its second argument; `s.wall` is set to the wall it is on):
+Match kinds (what the rule receives as its second argument; `s.surface` is set to the surface it is on,
+a wall or a floor):
   wall     every wall
+  floor    every floor
   opening  every door and window
   corner   every wall end that meets another wall's end: .end ('start' or 'end'), .other (wall id)
-  tee      every partition end meeting a wall along its length (s.wall is the wall met): .wall, .u, .side
+  tee      every partition end meeting a wall along its length (s.surface is the wall met): .wall, .u, .side
+  bearer   every wall under a floor (s.surface is the floor): .wall, .role, .a, .b (its line in the floor's
+           u, v), .side (the direction its framing lies), .along_u
+  load     every wall standing on a floor (s.surface is the floor), with the same fields
   gap      every stretch of a face with no backing: .face ('outer' or 'inner'), .kind, .u0, .u1, .v0, .v1
   member   every member placed so far
 
-Coordinates in rules are the current wall's: u along the wall from its start, v up from its base,
-w into the framing from the wall's surface. Inches.
+Coordinates in rules are the current surface's. On a wall: u along it from its start, v up from its base,
+w into the framing from the surface. On a floor: u along x, v along y, w down from the floor's top. Inches.
 """
 from __future__ import annotations
 
@@ -34,10 +39,10 @@ from pathlib import Path
 from frameevolve import surface
 from frameevolve.geometry import EPS, Box
 from frameevolve.graph import GROUND, Graph, build_graph
-from frameevolve.model import SECTIONS, STOCK, THICK, Frame, House, Member, Wall
+from frameevolve.model import SECTIONS, STOCK, THICK, Frame, House, Member
 
 
-MATCHES = ("wall", "opening", "corner", "tee", "gap", "member")
+MATCHES = ("wall", "floor", "opening", "corner", "tee", "bearer", "load", "gap", "member")
 
 
 def rule(priority: int, match: str, when=None):
@@ -58,16 +63,19 @@ class Corner:
     other: str   # the wall it meets there
 
 
-def target(s: "State", kind: str, wall: Wall, x) -> dict:
-    """Where a match is, for drawing what triggered a rule: a rectangle on the wall (u0, u1, v0, v1, and the
-    face for a gap) or, for a member, its id. A tee is a line at its u (u0 == u1)."""
-    full = {"wall": wall.id, "u0": 0.0, "u1": wall.length, "v0": 0.0, "v1": wall.height}
-    if kind == "wall":
+def target(s: "State", kind: str, wall, x) -> dict:
+    """Where a match is, for drawing what triggered a rule: a rectangle on the surface (u0, u1, v0, v1, and the
+    face for a gap) or, for a member, its id. A tee is a line at its u (u0 == u1); a bearer or load is its line
+    on the floor. The key "wall" names the surface, wall or floor."""
+    full = {"wall": wall.id, "u0": 0.0, "u1": wall.size[0], "v0": 0.0, "v1": wall.size[1]}
+    if kind in ("wall", "floor"):
         return {"kind": kind, **full}
+    if kind in ("bearer", "load"):
+        return {"kind": kind, "wall": wall.id, "u0": x.a[0], "u1": x.b[0], "v0": x.a[1], "v1": x.b[1], "other": x.wall}
     if kind == "opening":
         return {"kind": kind, "wall": wall.id, "u0": x.u0, "u1": x.u1, "v0": x.v0, "v1": x.v1}
     if kind == "corner":
-        u = 0.0 if x.end == "start" else wall.length
+        u = 0.0 if x.end == "start" else wall.size[0]
         return {"kind": kind, **full, "u0": u, "u1": u, "other": x.other}
     if kind == "tee":
         return {"kind": kind, **full, "u0": x.u, "u1": x.u, "other": x.wall}
@@ -76,13 +84,17 @@ def target(s: "State", kind: str, wall: Wall, x) -> dict:
     return {"kind": kind, "wall": wall.id, "member": x.id}
 
 
-def matches(s: "State", kind: str) -> list[tuple[Wall, object, tuple]]:
+def matches(s: "State", kind: str) -> list[tuple[object, object, tuple]]:
     """Every match of a kind in the design state now: (the wall it is on, the thing, a key that names it)."""
-    walls = s.house.walls
+    walls, surfaces = s.house.walls, s.house.surfaces
     if kind == "wall":
         return [(w, w, (w.id,)) for w in walls]
+    if kind == "floor":
+        return [(f, f, (f.id,)) for f in s.house.floors]
+    if kind in ("bearer", "load"):
+        return [(f, b, (f.id, b.wall)) for f in s.house.floors for b in (f.bearers if kind == "bearer" else f.loads)]
     if kind == "opening":
-        return [(w, o, (o.id,)) for w in walls for o in w.openings]
+        return [(w, o, (o.id,)) for w in surfaces for o in w.openings]
     if kind == "corner":
         by_id = {w.id: w for w in walls}
         return [(w, Corner(end, other), (w.id, end)) for w in walls for end in ("start", "end")
@@ -92,10 +104,10 @@ def matches(s: "State", kind: str) -> list[tuple[Wall, object, tuple]]:
     if kind == "gap":
         ms = list(s._members.values())
         by_id = {w.id: w for w in walls}
-        return [(w, g, (w.id, face, round(g.u0, 3), round(g.v0, 3), g.kind)) for w in walls
+        return [(w, g, (w.id, face, round(g.u0, 3), round(g.v0, 3), g.kind)) for w in surfaces
                 for face in ("outer", "inner") for g in surface.gaps(w, ms, face=face, walls=by_id)]
     if kind == "member":
-        by_id = {w.id: w for w in walls}
+        by_id = {w.id: w for w in surfaces}
         return [(by_id.get(m.surface, walls[0]), m, (m.id,)) for m in s._members.values()]
     raise ValueError(kind)
 
@@ -111,14 +123,14 @@ def load_rules(path) -> list:
 
 
 class State:
-    """The design state as rules see it, for the current wall `s.wall`."""
+    """The design state as rules see it, for the current surface `s.surface` (a wall or a floor)."""
     SECTIONS = SECTIONS
     THICK = THICK
     STOCK = STOCK
 
     def __init__(self, house: House):
         self.house = house
-        self.wall: Wall = house.walls[0]
+        self.surface = house.walls[0]
         self.changes = 0
         self._members: dict[str, Member] = {}
         self._ids = itertools.count(1)
@@ -128,17 +140,22 @@ class State:
         self._placed_now: list[str] = []
         self._removed_now: list[str] = []
 
+    @property
+    def wall(self):
+        """The current surface, under its first name: grammars written before floors call it s.wall."""
+        return self.surface
+
     # reading ---------------------------------------------------------------------------------------
 
     def members(self, wall: str | None = None, role: str | None = None, rule: str | None = None) -> list[Member]:
         """Members on a wall (default this one, '*' for all), optionally of one role or one rule."""
-        w = self.wall.id if wall is None else wall
+        w = self.surface.id if wall is None else wall
         return [m for m in self._members.values() if (w == "*" or m.surface == w)
                 and (role is None or m.role == role) and (rule is None or m.rule == rule)]
 
     def local(self, m: Member) -> Box:
         """A member's box in this wall's coordinates: lo = (u0, v0, w0), hi = (u1, v1, w1)."""
-        return self.wall.local_box(m.box)
+        return self.surface.local_box(m.box)
 
     @property
     def graph(self) -> Graph:
@@ -161,7 +178,7 @@ class State:
     def gaps(self, max_clear: float = surface.MAX_CLEAR, face: str = "outer") -> list[surface.Gap]:
         """Where a face of this wall ('outer' or 'inner') has no backing for its boards: edges with nothing
         behind, or spans over max_clear. Edges include where another wall's framing meets the face."""
-        return surface.gaps(self.wall, list(self._members.values()), max_clear, face,
+        return surface.gaps(self.surface, list(self._members.values()), max_clear, face,
                             {w.id: w for w in self.house.walls})
 
     def below(self, u0: float, u1: float, v: float) -> float:
@@ -171,26 +188,26 @@ class State:
             b = self.local(m)
             if b.lo[0] < u1 - EPS and b.hi[0] > u0 + EPS and b.hi[1] <= v + EPS:
                 best = max(best, b.hi[1])
-        for o in self.wall.openings:
+        for o in self.surface.openings:
             if o.u0 < u1 - EPS and o.u1 > u0 + EPS and o.v1 <= v + EPS:
                 best = max(best, o.v1)
         return best
 
     def above(self, u0: float, u1: float, v: float) -> float:
         """Height of the nearest thing over v across u0..u1 on this wall: a member, an opening, or the top."""
-        best = self.wall.height
+        best = self.surface.size[1]
         for m in self.members():
             b = self.local(m)
             if b.lo[0] < u1 - EPS and b.hi[0] > u0 + EPS and b.lo[1] >= v - EPS:
                 best = min(best, b.lo[1])
-        for o in self.wall.openings:
+        for o in self.surface.openings:
             if o.u0 < u1 - EPS and o.u1 > u0 + EPS and o.v0 >= v - EPS:
                 best = min(best, o.v0)
         return best
 
     def free(self, u0: float, u1: float, v0: float, v1: float, w0: float = 0.0, w1: float = 3.5) -> bool:
         """True if no member of any wall and no opening of this wall occupies this box."""
-        for o in self.wall.openings:
+        for o in self.surface.openings:
             if min(u1, o.u1) - max(u0, o.u0) > EPS and min(v1, o.v1) - max(v0, o.v0) > EPS:
                 return False
         q = Box((u0, v0, w0), (u1, v1, w1))
@@ -204,7 +221,7 @@ class State:
 
     def place(self, section: str, u0: float, u1: float, v0: float, v1: float, w0: float = 0.0,
               role: str = "") -> Member:
-        """Place a member by its rectangle in this wall's elevation, from w0 inward.
+        """Place a member by its rectangle in this surface's u, v plane, from w0 into the framing.
 
         The rectangle's short side says how the section is turned: equal to the width (1 1/2") means flat or
         upright, with the depth running through the wall; equal to the depth means on edge, 1 1/2" through.
@@ -216,11 +233,11 @@ class State:
         v0, v1 = sorted((v0, v1))
         along_u = (u1 - u0) >= (v1 - v0)
         short = (v1 - v0) if along_u else (u1 - u0)
-        w = self.wall
+        w = self.surface
         if abs(short - width) <= EPS:
-            through, up = depth, w.normal
+            through, up = depth, w.ew
         elif abs(short - depth) <= EPS:
-            through, up = width, ((0.0, 0.0, 1.0) if along_u else w.dir)
+            through, up = width, (w.ev if along_u else w.eu)
         else:
             raise ValueError(f"a {section} shows {width:g} or {depth:g} in. in elevation, not {short:g}")
         wc = w0 + through / 2
@@ -276,7 +293,7 @@ def build(grammar, house: House, max_passes: int = 10, max_members: int = 20000)
             for wall, x, key in matches(s, r.match):
                 if (r.__name__, key) in fired:
                     continue
-                s.wall = wall
+                s.surface = wall
                 try:
                     if r.when is not None and not r.when(s, x):
                         continue      # not yet: a later pass may make it true

@@ -1,10 +1,11 @@
-"""What a wall's faces see of the frame: where sheathing or drywall would have nothing behind it.
+"""What a surface's faces see of the frame: where sheathing, subfloor or drywall would have nothing behind it.
 
-Each wall has two faces: the outer face (its surface, w = 0) and the inner face (w = the framing depth).
-Along any height, backing must reach every edge of a face and must not leave more than MAX_CLEAR between
-members. Edges are the wall ends, the opening sides, and the sides of any stretch where another wall's
-framing sits against the face (a corner or a partition), since the board stops there. Members of other walls
-count as backing too, which is how a corner backs the end of the wall that butts into it.
+Each surface has two faces: the outer face (the surface itself, w = 0: sheathing on a wall, subfloor on a
+floor) and the inner face (w = the framing depth: drywall, or a ceiling under a floor). A board needs support
+within 24" in at least one direction, as advanced framing allows: a stretch is a fault only if it is wider
+than MAX_CLEAR both along u and along v. A board edge (a wall end, an opening side, or where another wall's
+framing meets a wall's face) needs backing at least every MAX_EDGE along it, so ladder blocking or clips
+will do. Members of other surfaces count as backing, which is how a corner backs the wall butting into it.
 """
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ from frameevolve.geometry import EPS
 from frameevolve.model import Member, Wall
 
 MAX_CLEAR = 22.5  # 24" stud centres less one 1 1/2" stud
+MAX_EDGE = 24.0   # longest stretch of a board edge with nothing behind it
 
 
 @dataclass(frozen=True)
@@ -44,6 +46,15 @@ def subtract(intervals, cuts):
     return out
 
 
+def in_the_way(wall: Wall, other: Wall | None, end: str, members: list[Member]) -> float:
+    """How far another wall's framing reaches into this wall's face at an end: its depth if it lies across
+    the face's path there, else nothing."""
+    if other is None:
+        return 0.0
+    across = wall.dir[0] * other.normal[0] + wall.dir[1] * other.normal[1]
+    return (depth(other, members) or 0.0) if (across > 0 if end == "start" else across < 0) else 0.0
+
+
 def depth(wall: Wall, members: list[Member]) -> float | None:
     """The wall's framing depth: how far its own members most often reach in from the surface."""
     reach = Counter(round(b.hi[2], 3) for m in members if m.surface == wall.id
@@ -53,18 +64,18 @@ def depth(wall: Wall, members: list[Member]) -> float | None:
 
 def gaps(wall: Wall, members: list[Member], max_clear: float = MAX_CLEAR, face: str = "outer",
          walls: dict[str, Wall] | None = None) -> list[Gap]:
-    """walls: every wall of the house by id, needed to stop a face at the walls it meets."""
-    L, H = wall.length, wall.height
+    """`wall` is any surface, a wall or a floor. walls: every wall of the house by id, needed to stop a wall's
+    face at the walls it meets."""
+    L, H = wall.size
+    is_wall = isinstance(wall, Wall)
     f = 0.0 if face == "outer" else depth(wall, members)
     if f is None:
         return []
     out = face == "outer"            # the board is on the -w side of the outer face, the +w side of the inner
     first, last = 0.0, L             # a face inside the house stops at the inner face of the walls it meets
-    if (not out or wall.role == "interior") and walls:
-        if wall.start_meets in walls:
-            first = depth(walls[wall.start_meets], members) or 0.0
-        if wall.end_meets in walls:
-            last = L - (depth(walls[wall.end_meets], members) or 0.0)
+    if is_wall and (not out or wall.role == "interior") and walls:
+        first = in_the_way(wall, walls.get(wall.start_meets), "start", members)
+        last = L - in_the_way(wall, walls.get(wall.end_meets), "end", members)
     backing, covered = [], []
     for m in members:
         b = wall.local_box(m.box)
@@ -72,7 +83,7 @@ def gaps(wall: Wall, members: list[Member], max_clear: float = MAX_CLEAR, face: 
             continue
         if abs((b.lo[2] if out else b.hi[2]) - f) <= EPS:
             backing.append(b)
-        elif m.surface != wall.id and (b.lo[2] < f - EPS <= b.hi[2] if out else b.lo[2] <= f + EPS < b.hi[2]):
+        elif is_wall and m.surface != wall.id and (b.lo[2] < f - EPS <= b.hi[2] if out else b.lo[2] <= f + EPS < b.hi[2]):
             covered.append(b)        # another wall's framing against or through this face: no board there
     levels = {0.0, H} | {o.v0 for o in wall.openings} | {o.v1 for o in wall.openings}
     levels |= {min(max(v, 0.0), H) for b in backing + covered for v in (b.lo[1], b.hi[1])}
@@ -98,4 +109,5 @@ def gaps(wall: Wall, members: list[Member], max_clear: float = MAX_CLEAR, face: 
             merged[-1] = Gap(p.u0, p.u1, p.v0, g.v1, p.kind, face)
         else:
             merged.append(g)
-    return merged
+    return [g for g in merged if (g.v1 - g.v0 > MAX_EDGE if g.kind == "edge"
+                                  else min(g.u1 - g.u0, g.v1 - g.v0) > max_clear)]

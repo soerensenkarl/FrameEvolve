@@ -15,14 +15,17 @@ from dataclasses import asdict, dataclass, field
 from frameevolve import surface
 from frameevolve.geometry import EPS, Vec
 from frameevolve.graph import GROUND, Graph, build_graph
-from frameevolve.model import SECTIONS, STOCK, Frame, House, Member
+from frameevolve.model import SECTIONS, STOCK, Floor, Frame, House, Member, Wall
 from frameevolve.units import ftin, inches
 
 # Simplified limits, in inches. Placeholders until each is checked against the tables.
-MAX_CLEAR_FLAT = 22.5    # flat plate between supports: 24" centres less a stud
+MAX_CLEAR_FLAT = 24.0    # flat plate between supports: the 24" module
 # On-edge header clear span by depth: roughly IRC Table R602.7(1) for two plies carrying roof and ceiling,
 # 20 ft building width, 30 psf ground snow (2x4 3'-6", 2x6 5'-5", 2x8 6'-10", 2x10 8'-5", 2x12 9'-9").
 HEADER_CLEAR = {3.5: 42.0, 5.5: 65.0, 7.25: 82.0, 9.25: 101.0, 11.25: 117.0}
+# Floor joist clear span by depth: roughly IRC Table R502.3.1(2), 40 psf live load, 16" centres, #2 grade.
+JOIST_CLEAR = {7.25: 144.0, 9.25: 180.0, 11.25: 210.0}
+MIN_EXTERIOR_DEPTH = 5.5 # 2x6: room for the R-20 cavity insulation the energy code asks of exterior walls
 MAX_OVERHANG = 2.0       # a loaded member past its last support
 MIN_BEARING = 0.75       # half a stud
 KERF = 0.125             # saw cut
@@ -33,14 +36,14 @@ CHECKS = {
     "too long": "longer than the longest stock length",
     "opening": "a member runs into a door or window",
     "clash": "two members occupy the same space",
-    "floating": "no chain of bearing down to the ground",
+    "floating": "no chain of bearing down to the ground (a horizontal piece nailed at both ends counts)",
     "span": "a loaded member spans too far between supports",
     "overhang": "a loaded member runs too far past its last support",
     "bearing": "a member bears on too little of its support",
-    "backing": "sheathing or drywall with nothing behind it",
+    "backing": "sheathing, subfloor, drywall or ceiling with nothing behind it",
     "head": "the top of an opening has nothing over it",
     "sill": "the bottom of a window has nothing under it",
-    "single top plate": "IRC R602.3.2 asks for a double top plate",
+    "insulation": "an exterior wall framed shallower than 2x6 leaves no room for R-20 cavity insulation",
 }
 
 
@@ -135,14 +138,40 @@ def purchase(lengths: list[float]) -> tuple[float, int]:
     return sum(b[0] for b in boards), len(boards)
 
 
+def supported(g, by_id: dict[str, Member]) -> set[str]:
+    """Members held up: a chain of bearing down to the ground, where a horizontal piece nailed between two
+    held-up members at both ends (blocking, a flat head between kings) also counts."""
+    held = g.grounded()
+    while True:
+        new = set()
+        for mid, m in by_id.items():
+            if mid in held or not m.aligned or _axis(m) == 2:
+                continue
+            k = _axis(m)
+            sides = [by_id[n] for n in g.side.get(mid, {}) if n in held]
+            if (any(abs(n.box.hi[k] - m.box.lo[k]) <= EPS for n in sides)
+                    and any(abs(n.box.lo[k] - m.box.hi[k]) <= EPS for n in sides)):
+                new.add(mid)
+        if not new:
+            return held
+        held |= new
+        todo = list(new)
+        while todo:              # and whatever bears on what was just held up
+            for a in g.carries.get(todo.pop(), {}):
+                if a not in held:
+                    held.add(a)
+                    todo.append(a)
+
+
 def verify(house: House, frame: Frame) -> Report:
     g = build_graph(frame.members)
     by_id = {m.id: m for m in frame.members}
     walls = {w.id: w for w in house.walls}
+    surfs = {x.id: x for x in house.surfaces}
     faults: list[Fault] = []
 
     def at_wall(m: Member, p: Vec, check: str, hard: bool, message: str, others=()) -> Fault:
-        w = walls.get(m.surface)
+        w = surfs.get(m.surface)
         u = v = None
         if w:
             u, v, _ = w.local(p)
@@ -161,7 +190,7 @@ def verify(house: House, frame: Frame) -> Report:
         if m.length > max(STOCK) + EPS:
             faults.append(at_wall(m, centre, "too long", True,
                                   f"{_name(m)} is {ftin(m.length)}, longer than the {ftin(max(STOCK))} stock"))
-        w = walls.get(m.surface)
+        w = surfs.get(m.surface)
         if w:
             b = w.local_box(m.box)
             for o in w.openings:
@@ -180,7 +209,7 @@ def verify(house: House, frame: Frame) -> Report:
         faults.append(at_wall(ma, p, "clash", True, f"{_name(ma)} and {_name(mb)} overlap by {vol:.1f} cubic inches", [mb]))
 
     # support
-    grounded = g.grounded()
+    grounded = supported(g, by_id)
     for m in frame.members:
         if m.id not in grounded and m.aligned:
             centre = tuple((m.box.lo[k] + m.box.hi[k]) / 2 for k in range(3))
@@ -193,16 +222,18 @@ def verify(house: House, frame: Frame) -> Report:
         k = _axis(m)
         if k == 2:
             continue   # vertical members: no span check yet
-        w = walls.get(m.surface)
-        roof = w is not None and abs(m.box.hi[2] - (w.base + w.height)) <= EPS
-        if not (g.carries[m.id] or roof):
+        w = surfs.get(m.surface)
+        floor = isinstance(w, Floor)   # floor framing carries the floor's own load
+        roof = (isinstance(w, Wall) and w.role == "exterior" and w.above is None
+                and abs(m.box.hi[2] - (w.base + w.height)) <= EPS)
+        if not (g.carries[m.id] or roof or floor):
             continue
         a0, a1 = m.box.lo[k], m.box.hi[k]
         sup = sorted((max(a0, by_id[s].box.lo[k]), min(a1, by_id[s].box.hi[k]), s) for s in g.bears[m.id])
         if not sup:
             continue
         flat = abs(m.box.size[2] - m.width) <= EPS
-        limit = MAX_CLEAR_FLAT if flat else HEADER_CLEAR.get(m.depth, MAX_CLEAR_FLAT)
+        limit = MAX_CLEAR_FLAT if flat else (JOIST_CLEAR if floor else HEADER_CLEAR).get(m.depth, MAX_CLEAR_FLAT)
         kind = f"flat {m.section}" if flat else f"{m.section} on edge"
 
         def point(x: float) -> Vec:
@@ -227,19 +258,22 @@ def verify(house: House, frame: Frame) -> Report:
                 faults.append(at_wall(m, point(x), "overhang", True,
                                       f"{_name(m)} runs {ftin(over)} past its last support, limit {inches(MAX_OVERHANG)}"))
 
-    # walls: sheathing backing, opening heads and sills, top plates
-    for w in house.walls:
-        own = [m for m in frame.members if m.surface == w.id]
+    # faces of every surface: sheathing and drywall on walls, subfloor and ceiling on floors
+    for w in house.surfaces:
         for face in ("outer", "inner"):
-            board = "sheathing" if face == "outer" and w.role == "exterior" else "drywall"
+            board = {("outer", True): "subfloor", ("inner", True): "ceiling"}.get((face, isinstance(w, Floor))) or (
+                "sheathing" if face == "outer" and w.role == "exterior" else "drywall")
             for gp in surface.gaps(w, frame.members, face=face, walls=walls):
                 u, v = (gp.u0 + gp.u1) / 2, (gp.v0 + gp.v1) / 2
                 where = f"u {ftin(gp.u0)} to {ftin(gp.u1)}, v {ftin(gp.v0)} to {ftin(gp.v1)}"
                 msg = (f"{w.id} {face} face: {board} edge at {where} has nothing behind it" if gp.kind == "edge" else
-                       f"{w.id} {face} face: {board} spans {ftin(gp.u1 - gp.u0)} between backing at {where}, "
-                       f"limit {ftin(surface.MAX_CLEAR)}")
+                       f"{w.id} {face} face: {board} spans {ftin(gp.u1 - gp.u0)} by {ftin(gp.v1 - gp.v0)} with "
+                       f"nothing behind it at {where}; it needs support within {ftin(surface.MAX_CLEAR)} one way")
                 faults.append(Fault("backing", True, msg, w.id, u, v, w.world(u, v, 0), [], []))
-        boxes = [(m, w.local_box(m.box)) for m in own]
+
+    # walls: opening heads and sills, exterior wall depth
+    for w in house.walls:
+        boxes = [(m, w.local_box(m.box)) for m in frame.members if m.surface == w.id]
         for o in w.openings:
             edges = [("head", o.v1, lambda b, o=o: abs(b.lo[1] - o.v1) <= EPS)]
             if o.kind == "window":
@@ -253,16 +287,12 @@ def verify(house: House, frame: Frame) -> Report:
                     faults.append(Fault(check, True, f"{w.id}: {what} of {o.kind} {o.id} has nothing along "
                                         f"u {ftin(missing[0][0])} to {ftin(missing[0][1])}", w.id, u, v, w.world(u, v, 0),
                                         [], []))
-        top = [(m, b) for m, b in boxes if abs(b.hi[1] - w.height) <= EPS]
-        if top:
-            under = [(b.lo[0], b.hi[0]) for m, b in boxes
-                     if any(abs(b.hi[1] - tb.lo[1]) <= EPS and b.hi[0] - b.lo[0] > b.hi[1] - b.lo[1] for _, tb in top)]
-            single = surface.subtract([(0.0, w.length)], under)
-            if sum(b - a for a, b in single) > w.length / 2:
-                u = w.length / 2
-                faults.append(Fault("single top plate", False, f"{w.id}: the top plate is single along most of the wall",
-                                    w.id, u, w.height, w.world(u, w.height, 0), [m.id for m, _ in top],
-                                    sorted({m.rule for m, _ in top})))
+        d = surface.depth(w, frame.members)
+        if w.role == "exterior" and d is not None and d < MIN_EXTERIOR_DEPTH - EPS:
+            u, v = w.length / 2, w.height / 2
+            faults.append(Fault("insulation", True, f"{w.id}: framed {inches(d)} deep; an exterior wall needs "
+                                f"{inches(MIN_EXTERIOR_DEPTH)} (2x6) for R-20 cavity insulation", w.id, u, v,
+                                w.world(u, v, 0), [m.id for m, _ in boxes[:1]], sorted({m.rule for m, _ in boxes})))
 
     # cost
     by_section = defaultdict(list)
