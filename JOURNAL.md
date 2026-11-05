@@ -45,3 +45,8 @@ Minimal grammar (plates and studs only), 3 iterations, minibatch 3, 10 training 
   one general rule matched on backing gaps. General, but coarse for credit and reading.
 - Decision: a size limit, 12 code lines per grammar function (rules and helpers), checked before
   evaluation; oversized proposals are refused and logged. Seed's largest function is 9 lines.
+
+## 2026-11-05 Rule size, for later
+
+- The 12-line cap is crude (line count depends on style) but simple and working; kept. Alternatives
+  (one job per rule, complexity cap, size as cost) go into the planned ablations in DESIGN.md.

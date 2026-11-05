@@ -147,3 +147,16 @@ Pareto search keeps the grammars that do well across many houses.
   a member's contacts from the graph, the faults, the builder log, and an editor for the grammar.
   Builds use unsaved edits, so a rule can be tried before it is saved.
 - Reason: the project is spatial, and both of us need to see a frame and its graph, not read it.
+
+## Planned ablations
+
+Each varies one thing in the loop, same houses, same budget; compare learning curves, held-out scores and
+the readability of the final grammar.
+
+- Rule size: no limit; code lines per function (current, 12); one job per rule (one role per firing,
+  scored as a soft fault); a complexity cap; grammar size as a last tiebreak in the score.
+- Feedback: text reports only; text plus elevations (current); plus the contact graph around faults.
+- Proposer: Opus vs Sonnet vs Haiku; effort low, medium, high; draft checks 0 vs 3.
+- Selection: Pareto set (current) vs greedy best.
+- Start: minimal grammar vs hand-written seed.
+- Baseline: a frontier model framing each house directly, zero-shot, scored by the same verifier.
