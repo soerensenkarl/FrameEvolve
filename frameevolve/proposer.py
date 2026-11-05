@@ -109,6 +109,24 @@ class Draft:
 
     def __init__(self, source: str, context: dict, out: Path, checks: int):
         self.src, self.context, self.out, self.limit, self.checks = source, context, out, checks, 0
+        (out / "draft.py").write_text(source)
+
+    def event(self, kind: str, **data) -> None:
+        """One line in live.jsonl: what the proposer just did, for anyone watching."""
+        import time
+        with open(self.out / "live.jsonl", "a") as f:
+            f.write(json.dumps({"time": time.time(), "kind": kind, **data}) + "\n")
+
+    def call(self, name: str, **kwargs) -> str:
+        """Run a tool, logging the call, its result and, after an edit, the new draft."""
+        brief = {k: (v if len(str(v)) <= 300 else str(v)[:300] + "...") for k, v in kwargs.items()}
+        self.event("tool", tool=name, input=brief)
+        result = getattr(self, name)(**kwargs)
+        self.event("result", tool=name, text=result if len(result) <= 1500 else result[:1500] + "...")
+        if name in ("edit_grammar", "write_grammar") and not result.startswith("Not changed"):
+            (self.out / "draft.py").write_text(self.src)
+            self.event("draft", lines=len(self.src.splitlines()))
+        return result
 
     def view_grammar(self, start: int = 1, end: int = 0) -> str:
         lines = self.src.splitlines()
@@ -135,7 +153,7 @@ class Draft:
         if big:
             return (f"Check {self.checks} of {self.limit}: refused before building, because "
                     + " ".join(big))
-        path = self.out / "draft.py"
+        path = self.out / "check.py"
         path.write_text(self.src)
         res = evaluate(path, [Path(h) for h in self.context["house_paths"]])
         total = [sum(r["score"][j] for r in res.values()) for j in range(3)]
@@ -177,7 +195,11 @@ class ClaudeProposer:
         from anthropic.lib.tools import BetaFunctionTool
 
         draft = Draft(source, context, out, self.checks)
-        tools = [BetaFunctionTool(getattr(draft, name), name=name, description=desc,
+        def bound(name):
+            def run(**kwargs):
+                return draft.call(name, **kwargs)
+            return run
+        tools = [BetaFunctionTool(bound(name), name=name, description=desc,
                                   input_schema=_schema(params)) for name, (desc, params) in Draft.TOOLS.items()]
         system, content = prompt(context, self.images, out)
         extra = {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"} if self.fallbacks else {}
@@ -185,9 +207,13 @@ class ClaudeProposer:
             model=self.model, max_tokens=16000, system=system, messages=[{"role": "user", "content": content}],
             tools=tools, max_iterations=self.max_turns, output_config={"effort": self.effort}, **extra)
         transcript, usage, last = [], {"input_tokens": 0, "output_tokens": 0, "turns": 0}, None
+        draft.event("start", model=self.model, effort=self.effort, via="api")
         for message in runner:
             last = message
             transcript.append(message.to_dict())
+            for b in message.content:
+                if b.type == "text" and b.text.strip():
+                    draft.event("say", text=b.text.strip())
             usage["turns"] += 1
             usage["input_tokens"] += message.usage.input_tokens
             usage["output_tokens"] += message.usage.output_tokens
@@ -241,7 +267,7 @@ class ClaudeCodeProposer:
         def wrap(name, desc, params):
             async def run(args):
                 kwargs = {k: args[k] for k in params if k in args}
-                text = await asyncio.to_thread(getattr(draft, name), **kwargs)
+                text = await asyncio.to_thread(draft.call, name, **kwargs)
                 return {"content": [{"type": "text", "text": text}]}
             return tool(name, desc, _schema(params))(run)
 
@@ -257,6 +283,7 @@ class ClaudeCodeProposer:
             yield {"type": "user", "message": {"role": "user", "content": content}, "parent_tool_use_id": None}
 
         transcript, pending, result = [], [], None
+        draft.event("start", model=self.model, effort=self.effort, via="subscription")
         async for m in query(prompt=message(), options=options):
             transcript.append(asdict(m) if is_dataclass(m) else str(m))
             if isinstance(m, AssistantMessage):
@@ -265,6 +292,7 @@ class ClaudeCodeProposer:
                         pending = []            # text before a tool call is thinking aloud
                     elif isinstance(b, TextBlock) and b.text.strip():
                         pending.append(b.text.strip())
+                        draft.event("say", text=b.text.strip())
             elif isinstance(m, ResultMessage):
                 result = m
         (out / "transcript.json").write_text(json.dumps(transcript, indent=1, default=str))

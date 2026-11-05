@@ -17,7 +17,9 @@ Everything is written to a run folder, which the workbench reads:
   runs/<name>/candidates.jsonl   one line per kept grammar: id, parent, scores per house, note
   runs/<name>/grammars/<id>.py   the grammars
   runs/<name>/iterations.jsonl   one line per iteration, kept or not
-  runs/<name>/proposals/<n>/     what the proposer saw and did in iteration n
+  runs/<name>/proposals/<n>/     what the proposer saw and did in iteration n; live.jsonl streams its actions
+                                 as they happen and draft.py holds its current draft
+  runs/<name>/live.json          what the search is doing right now (stage, iteration, parent, houses)
 """
 from __future__ import annotations
 
@@ -134,6 +136,10 @@ class Run:
         with open(self.path / "iterations.jsonl", "a") as f:
             f.write(json.dumps(entry) + "\n")
 
+    def stage(self, stage: str, **info) -> None:
+        """Say what the search is doing now, for anyone watching (the workbench)."""
+        (self.path / "live.json").write_text(json.dumps({"stage": stage, "time": time.time(), **info}))
+
     def pareto(self) -> dict[str, list[str]]:
         return pareto(self.cands, self.house_ids)
 
@@ -154,6 +160,8 @@ class Run:
         out = self.path / "proposals" / f"{it:04d}"
         out.mkdir(parents=True, exist_ok=True)
 
+        now = {"iteration": it, "parent": parent.id, "houses": batch_ids, "proposal": out.name, "started": t0}
+        self.stage("reading the parent", **now)
         # what the proposer sees: the parent's reports and elevations on the minibatch
         parent_src = self.grammar(parent.id).read_text()
         parent_res = evaluate(self.grammar(parent.id), batch)
@@ -177,12 +185,14 @@ class Run:
         entry = {"iteration": it, "parent": parent.id, "batch": batch_ids, "accepted": False, "child": None,
                  "parent_batch": None, "child_batch": None, "note": "", "error": None}
         entry["parent_batch"] = parent_batch
+        self.stage("proposing", **now)
         try:
             proposal = proposer.propose(parent_src, context, out)
         except Exception as e:
             entry["error"] = f"proposer failed: {type(e).__name__}: {e}"
             entry["seconds"] = round(time.time() - t0, 1)
             self.log(entry)
+            self.stage("between iterations", **now, accepted=False, child=None)
             return entry
         entry["note"] = proposal.note
         entry["usage"] = proposal.usage
@@ -193,17 +203,20 @@ class Run:
         elif big:
             entry["error"] = "too big: " + " ".join(big)
         else:
+            self.stage("testing the proposal", **now)
             child_res = evaluate(out / "proposed.py", batch)
             child_batch = [round(sum(child_res[h]["score"][j] for h in batch_ids), 2) for j in range(3)]
             entry["child_batch"] = child_batch
             if better(child_batch, parent_batch):
                 cid = f"c{len(self.cands):03d}"
+                self.stage("scoring on every house", **now, child=cid)
                 self.grammar(cid).write_text(proposal.source)
                 full = evaluate(self.grammar(cid), self.train)
                 self.add(Candidate(cid, parent.id, it, {h: r["score"] for h, r in full.items()}, proposal.note))
                 entry["accepted"], entry["child"] = True, cid
         entry["seconds"] = round(time.time() - t0, 1)
         self.log(entry)
+        self.stage("between iterations", **now, accepted=entry["accepted"], child=entry["child"])
         return entry
 
 
@@ -222,6 +235,7 @@ def run_search(run: Run, proposer, iterations: int, seed: int = 0, say=None) -> 
         verdict = f"kept as {e['child']}" if e["accepted"] else (e["error"] or "not better")
         say(f"iteration {e['iteration']}: parent {e['parent']} on {', '.join(e['batch'])}: {verdict}"
             f"  ({e['parent_batch']} -> {e['child_batch']}, {e.get('seconds')} s)", flush=True)
+    run.stage("stopped")
     b = run.best()
     say(f"best so far: {b.id} with {b.total()} (hard, soft, cost) over {len(run.house_ids)} houses; "
         f"Pareto set: {', '.join(f'{c} ({len(h)})' for c, h in run.pareto().items())}")
