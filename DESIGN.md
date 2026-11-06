@@ -98,7 +98,7 @@ Pareto search keeps the grammars that do well across many houses.
   snow for Cambridge); a tie (something level nailed to the rafter's side in the lower third of its rise)
   unless the rafter also rests on something high up (a gable wall, a beam). Tie continuity across the
   house (lapped or spliced joists) is not checked yet. Ceiling joists have their own span table.
-- Every fault carries where it is (wall, u, v, world point), the members involved, and the rules that
+- Every fault carries where it is (surface, u, v, world point), the members involved, and the rules that
   placed them. A missing member has no rule to blame, and the report says so.
 - Score per house: (hard faults, soft faults, cost), compared in that order. Reason: with soft faults
   outside the score, the search would never spend timber to fix a single top plate. Cost is timber bought (first fit decreasing into stock lengths,
@@ -200,7 +200,9 @@ Pareto search keeps the grammars that do well across many houses.
 ## Workbench
 
 - The main place to look at and work on the project: `uv run python -m frameevolve serve`, then
-  http://localhost:8765. Standard library server, one page with Three.js from a CDN.
+  http://localhost:8765. Standard library server; one page of ES modules (one per concern, see CLAUDE.md)
+  with Three.js from a CDN. Every build streams: the house's surfaces first, then each step's pieces as the
+  builder places them, then the frame with its verification; the page draws pieces as they arrive.
 - Shows a house built by a grammar in 3D and as wall elevations, the rules with their member counts,
   a member's contacts from the graph, the faults, the builder log, and an editor for the grammar.
   Builds use unsaved edits, so a rule can be tried before it is saved.

@@ -1,14 +1,10 @@
 """Roofs: members at any angle, cut and notched; roof planes, gable walls and ceilings; rafter checks."""
-from pathlib import Path
-
 import pytest
 
 from frameevolve import houses, solid
-from frameevolve.builder import State, build
 from frameevolve.graph import build_graph
+from frameevolve.model import Frame
 from frameevolve.verifier import verify
-
-ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_cuts_and_notches_take_off_exact_volumes():
@@ -21,14 +17,8 @@ def test_cuts_and_notches_take_off_exact_volumes():
     assert sum(map(solid.volume, pieces)) == pytest.approx(52.5 - 2 * 1.5 * 1.5)
 
 
-def toy_state():
-    house = houses.toy()
-    s = State(house)
-    return house, s
-
-
-def test_a_sloped_rafter_clashes_with_a_plate_until_notched_then_rests_on_it():
-    house, s = toy_state()
+def test_a_sloped_rafter_clashes_with_a_plate_until_notched_then_rests_on_it(toy_state):
+    house, s = toy_state
     s.surface = house.wall("2w0")
     plate = s.place("2x6", 0, 168, 95.625, 97.125)
     s.surface = house.surface("r1")
@@ -41,8 +31,8 @@ def test_a_sloped_rafter_clashes_with_a_plate_until_notched_then_rests_on_it():
     assert 1.5 * 1.5 < g.bears[rafter.id][plate.id] < 1.5 * 5.5      # a seat on part of the plate's width
 
 
-def test_trim_cuts_a_rafter_plumb_against_the_ridge():
-    house, s = toy_state()
+def test_trim_cuts_a_rafter_plumb_against_the_ridge(toy_state):
+    house, s = toy_state
     s.surface = house.surface("r1")
     rafter = s.place("2x10", 24.75, 26.25, 0, house.surface("r1").size[1], role="rafter")
     up = s.surface.local_dir((0, 0, 1))
@@ -69,13 +59,11 @@ def test_box_houses_get_a_gable_roof_gable_walls_and_a_ceiling():
         assert min(r.height(top[0], top[1]) for r in house.roofs) == pytest.approx(top[2])
 
 
-def test_seed_frames_the_toy_roof_cleanly_and_ties_every_rafter():
-    house = houses.toy()
-    frame = build(ROOT / "grammars/seed.py", house)
+def test_seed_frames_the_toy_roof_cleanly_and_ties_every_rafter(toy_seeded):
+    house, frame = toy_seeded
     report = verify(house, frame)
     assert not frame.errors and report.hard == 0, report.text()
     rafters = [m for m in frame.members if m.role == "rafter"]
     assert rafters and all(m.notches or m.cuts for m in rafters)
-    untied = [m for m in frame.members if m.role != "ceiling joist"]
-    frame.members = untied
-    assert any(f.check == "thrust" for f in verify(house, frame).faults)
+    untied = Frame(house.id, frame.grammar, [m for m in frame.members if m.role != "ceiling joist"])
+    assert any(f.check == "thrust" for f in verify(house, untied).faults)

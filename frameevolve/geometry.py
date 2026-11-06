@@ -1,8 +1,8 @@
 """Exact geometry for framing members, in inches with z up.
 
 A member is an oriented box: a centreline from start to end, a section of width x depth, and an up
-vector giving the direction its depth faces. Contacts are computed on axis-aligned boxes, which are
-exact for every member of an orthogonal plan.
+vector giving the direction its depth faces. Cut or notched members are solids (solid.py); how members
+meet is worked out in graph.py.
 """
 from __future__ import annotations
 
@@ -55,6 +55,10 @@ class Box:
     def size(self) -> Vec:
         return sub(self.hi, self.lo)
 
+    @property
+    def centre(self) -> Vec:
+        return mul(add(self.lo, self.hi), 0.5)
+
     @staticmethod
     def around(points) -> "Box":
         xs, ys, zs = zip(*points)
@@ -80,9 +84,14 @@ def overlaps(a: Box, b: Box) -> Vec:
 Pt = tuple[float, float]
 
 
+def edges(poly: list) -> list:
+    """A polygon's edges as (a, b) pairs, the last closing back to the first point."""
+    return list(zip(poly, poly[1:] + poly[:1]))
+
+
 def on_boundary(p: Pt, poly: list[Pt]) -> bool:
     """True if p lies on an edge of the polygon."""
-    for a, b in zip(poly, poly[1:] + poly[:1]):
+    for a, b in edges(poly):
         cross_ = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])
         if abs(cross_) <= EPS * math.dist(a, b) and min(a[0], b[0]) - EPS <= p[0] <= max(a[0], b[0]) + EPS \
                 and min(a[1], b[1]) - EPS <= p[1] <= max(a[1], b[1]) + EPS:
@@ -95,7 +104,7 @@ def inside(p: Pt, poly: list[Pt]) -> bool:
     if on_boundary(p, poly):
         return True
     hit = False
-    for a, b in zip(poly, poly[1:] + poly[:1]):
+    for a, b in edges(poly):
         if (a[1] > p[1]) != (b[1] > p[1]) and p[0] < a[0] + (p[1] - a[1]) * (b[0] - a[0]) / (b[1] - a[1]):
             hit = not hit
     return hit
@@ -104,5 +113,5 @@ def inside(p: Pt, poly: list[Pt]) -> bool:
 def scan(poly: list[Pt], v: float) -> list[tuple[float, float]]:
     """The u-intervals where the horizontal line at height v lies inside the polygon."""
     xs = sorted(a[0] + (v - a[1]) * (b[0] - a[0]) / (b[1] - a[1])
-                for a, b in zip(poly, poly[1:] + poly[:1]) if (a[1] > v) != (b[1] > v))
+                for a, b in edges(poly) if (a[1] > v) != (b[1] > v))
     return list(zip(xs[0::2], xs[1::2]))

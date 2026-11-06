@@ -24,39 +24,40 @@ def colours(frame: Frame) -> dict:
 
 def elevations(house: House, frame: Frame, path, marks: list[tuple[str, float, float, str]] = ()) -> None:
     """Each wall seen from outside, and each roof plane from above, in its own u, v coordinates. Red hatching:
-    sheathing without backing. marks: (wall id, u, v, label) drawn as red crosses, for faults."""
+    sheathing without backing. marks: (surface id, u, v, label) drawn as red crosses, for faults."""
     col = colours(frame)
     sides = [*house.walls, *house.roofs]
-    span = max(w.size[0] for w in sides)
-    rows = [14 * (w.size[1] + 12) / (span + 12) + 0.5 for w in sides]
+    walls = {w.id: w for w in house.walls}
+    span = max(x.size[0] for x in sides)
+    rows = [14 * (x.size[1] + 12) / (span + 12) + 0.5 for x in sides]
     fig, axes = plt.subplots(len(sides), 1, figsize=(14, sum(rows) + 0.6),
                              gridspec_kw={"height_ratios": rows})
-    for ax, wall in zip(axes, sides):
-        L, H = wall.size
-        ax.add_patch(Polygon(wall.outline_uv, closed=True, fill=False, ec="0.75", lw=0.6))
+    for ax, x in zip(axes, sides):
+        L, H = x.size
+        ax.add_patch(Polygon(x.outline_uv, closed=True, fill=False, ec="0.75", lw=0.6))
         for m in frame.members:
-            b = wall.local_box(m)
-            if m.surface == wall.id:
-                for poly in surface.outlines(wall, m):
+            b = x.local_box(m)
+            if m.surface == x.id:
+                for poly in surface.outlines(x, m):
                     ax.add_patch(Polygon(poly, closed=True, fc=col[m.rule], ec="k", lw=0.3))
-            elif abs(b.lo[2]) <= EPS and b.hi[0] > EPS and b.lo[0] < L - EPS and wall.square(m):
+            elif abs(b.lo[2]) <= EPS and b.hi[0] > EPS and b.lo[0] < L - EPS and x.square(m):
                 ax.add_patch(Rectangle((b.lo[0], b.lo[1]), b.hi[0] - b.lo[0], b.hi[1] - b.lo[1],
                                        fc="0.85", ec="0.5", lw=0.3))
-        for o in wall.openings:
+        for o in x.openings:
             ax.add_patch(Rectangle((o.u0, o.v0), o.width, o.height, fill=False, ec="0.3", ls="--", lw=0.8))
             ax.text((o.u0 + o.u1) / 2, (o.v0 + o.v1) / 2, o.id, ha="center", va="center", fontsize=7, color="0.3")
-        for g in surface.gaps(wall, frame.members):
+        for g in surface.gaps(x, frame.members, walls=walls):
             ax.add_patch(Rectangle((g.u0, g.v0), g.u1 - g.u0, g.v1 - g.v0, fill=False, ec="red",
                                    hatch="////", lw=0.6))
-        for wid, u, v, label in marks:
-            if wid == wall.id:
+        for sid, u, v, label in marks:
+            if sid == x.id:
                 ax.plot(u, v, "x", color="red", ms=8, mew=2)
                 ax.text(u, v + 2.5, label, color="red", fontsize=7, ha="center")
         ax.set_xlim(-6, span + 6)
         ax.set_ylim(-6, H + 6)
         ax.set_aspect("equal")
-        seen = "from above, eave at the bottom" if wall in house.roofs else "from outside, start on the left"
-        ax.set_title(f"{wall.id}  {ftin(L)} x {ftin(H)}  (seen {seen}; axes in inches)", loc="left", fontsize=9)
+        seen = "from above, eave at the bottom" if x in house.roofs else "from outside, start on the left"
+        ax.set_title(f"{x.id}  {ftin(L)} x {ftin(H)}  (seen {seen}; axes in inches)", loc="left", fontsize=9)
         ax.tick_params(labelsize=7)
     axes[0].legend(handles=[Patch(fc=c, ec="k", label=r) for r, c in col.items()], fontsize=7,
                    loc="lower left", bbox_to_anchor=(0, 1.15), ncol=min(len(col), 6), frameon=False)

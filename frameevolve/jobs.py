@@ -17,6 +17,10 @@ import threading
 import time
 from pathlib import Path
 
+from frameevolve.builder import MAX_LINES
+from frameevolve.proposer import DEFAULT_MODEL
+from frameevolve.search import SEED_GRAMMAR
+
 ROOT = Path(__file__).resolve().parents[1]
 JOBS = ROOT / "jobs"
 NAME = re.compile(r"^[A-Za-z0-9_\-]+$")
@@ -38,18 +42,20 @@ def credentials() -> dict:
                                 "in, or set ANTHROPIC_API_KEY. Dry runs work without them."}
 
 
-def _house(path: str) -> str:
+def _inside(path: str, suffix: str, what: str) -> str:
+    """A file of this kind inside the project, as a path relative to it; anything else is refused."""
     p = (ROOT / path).resolve()
-    if ROOT not in p.parents or p.suffix != ".json" or not p.is_file():
-        raise ValueError(f"not a house file: {path}")
+    if ROOT not in p.parents or p.suffix != suffix or not p.is_file():
+        raise ValueError(f"not a {what} file: {path}")
     return str(p.relative_to(ROOT))
+
+
+def _house(path: str) -> str:
+    return _inside(path, ".json", "house")
 
 
 def _grammar(path: str) -> str:
-    p = (ROOT / path).resolve()
-    if ROOT not in p.parents or p.suffix != ".py" or not p.is_file():
-        raise ValueError(f"not a grammar file: {path}")
-    return str(p.relative_to(ROOT))
+    return _inside(path, ".py", "grammar")
 
 
 def command(kind: str, a: dict) -> tuple[list[str], str]:
@@ -64,14 +70,14 @@ def command(kind: str, a: dict) -> tuple[list[str], str]:
             raise ValueError("iterations must be 1 to 500")
         argv = py + ["frameevolve", "evolve", f"runs/{run}", "--iterations", str(n), "--seed", str(int(a.get("seed", 0)))]
         if not (ROOT / "runs" / run / "config.json").exists():   # settings that only matter for a new run
-            argv += ["--seed-grammar", _grammar(a.get("seed_grammar", "grammars/seed.py")),
-                     "--minibatch", str(int(a.get("minibatch", 3))), "--max-lines", str(int(a.get("max_lines", 12)))]
+            argv += ["--seed-grammar", _grammar(a.get("seed_grammar", SEED_GRAMMAR)),
+                     "--minibatch", str(int(a.get("minibatch", 3))), "--max-lines", str(int(a.get("max_lines", MAX_LINES)))]
             if a.get("train"):
                 argv += ["--train", *[_house(h) for h in a["train"]]]
         if a.get("dry"):
             argv.append("--dry")
         else:
-            model = a.get("model", "claude-opus-5-5")
+            model = a.get("model", DEFAULT_MODEL)
             if not re.match(r"^claude-[a-z0-9\-]+$", model):
                 raise ValueError(f"not a Claude model id: {model}")
             effort = a.get("effort", "medium")
@@ -87,7 +93,7 @@ def command(kind: str, a: dict) -> tuple[list[str], str]:
     if kind == "tests":
         return [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"], "test suite"
     if kind == "evaluate":
-        g = _grammar(a.get("grammar", "grammars/seed.py"))
+        g = _grammar(a.get("grammar", SEED_GRAMMAR))
         houses = [_house(h) for h in a.get("houses", [])]
         if not houses:
             raise ValueError("choose at least one house")
@@ -114,11 +120,11 @@ class Jobs:
             if kind == "evolve" and any(m["kind"] == "evolve" and m["settings"].get("run") == settings.get("run")
                                         and m["status"] == "running" for m in self.list()):
                 raise ValueError(f"run {settings.get('run')} already has a running search")
-            jid = time.strftime("%Y%m%d-%H%M%S") + f"-{kind}"
-            n = 1
+            stamp = time.strftime("%Y%m%d-%H%M%S") + f"-{kind}"
+            jid, n = stamp, 1
             while (self.root / jid).exists():
                 n += 1
-                jid = time.strftime("%Y%m%d-%H%M%S") + f"-{kind}{n}"
+                jid = f"{stamp}{n}"
             (self.root / jid).mkdir()
             log = open(self.root / jid / "log.txt", "w")
             env = {**os.environ, "PYTHONUNBUFFERED": "1"}
@@ -147,7 +153,7 @@ class Jobs:
         out = []
         for d in sorted(self.root.iterdir(), reverse=True):
             if (d / "job.json").exists():
-                meta = json.loads((d / "job.json").read_text())
+                meta = self._meta(d.name)
                 if meta["status"] == "running" and d.name not in self.procs:
                     meta["status"] = "lost"     # the workbench restarted while it ran
                 out.append(meta)

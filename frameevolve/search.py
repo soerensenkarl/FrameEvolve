@@ -51,6 +51,7 @@ from frameevolve.builder import MAX_LINES, too_big
 from frameevolve.model import House
 
 ROOT = Path(__file__).resolve().parents[1]
+SEED_GRAMMAR = "grammars/seed.py"   # where a run starts unless told otherwise
 FAILED = [10**6, 10**6, 1e12]   # the score of a grammar that crashed or timed out
 INSPIRATIONS = 2                # other Pareto grammars shown to the proposer
 REJECTED = 3                    # earlier children of the parent that were not kept, shown to the proposer
@@ -67,9 +68,13 @@ class Candidate:
     created: float = field(default_factory=time.time)
 
     def total(self, houses=None) -> list:
-        hs = houses or list(self.scores)
-        return [sum(self.scores[h][0] for h in hs), sum(self.scores[h][1] for h in hs),
-                round(sum(self.scores[h][2] for h in hs), 2)]
+        return total(self.scores, houses or list(self.scores))
+
+
+def total(scores: dict, houses) -> list:
+    """Scores summed over houses: [hard, soft, cost]."""
+    return [sum(scores[h][0] for h in houses), sum(scores[h][1] for h in houses),
+            round(sum(scores[h][2] for h in houses), 2)]
 
 
 @lru_cache(maxsize=None)
@@ -308,13 +313,13 @@ class Run:
             if cid == parent.id:
                 continue
             c = self.cand(cid)
-            beats = sum(tuple(c.scores[h]) < tuple(parent.scores[h]) for h in self.val_ids)
+            beats = sum(better(c.scores[h], parent.scores[h]) for h in self.val_ids)
             if beats:
                 rivals.append((beats, len(wins[cid]), c))
         rivals.sort(key=lambda r: (-r[0], -r[1], r[2].id))
         out = []
         for _, _, c in rivals[:n]:
-            better_on = [h for h in self.house_ids if tuple(c.scores[h]) < tuple(parent.scores[h])]
+            better_on = [h for h in self.house_ids if better(c.scores[h], parent.scores[h])]
             out.append({"id": c.id, "total": c.total(self.house_ids), "better_on": better_on, "note": c.note[:600],
                         "source": self.grammar(c.id).read_text()})
         return out
@@ -332,79 +337,84 @@ class Run:
             return f"smoke test on {hid}: {rule_errors(r)} rule errors (parent {rule_errors(parent_res[hid])}): {first}"
         return None
 
+    def context(self, it: int, parent: Candidate, batch: list[Path], out: Path) -> tuple[dict, dict]:
+        """What the proposer sees for one iteration, and the parent's results on the minibatch: its reports and
+        pictures there, its scores on every training house, the Pareto set, rejected siblings, inspirations."""
+        batch_ids = [house_id(h) for h in batch]
+        parent_res = evaluate(self.grammar(parent.id), batch, cache=self.cache, images=out)
+        wins = self.pareto()
+        context = {
+            "iteration": it, "parent": parent.id, "houses": batch_ids, "house_paths": [str(h) for h in batch],
+            "parent_batch": batch_total(parent_res, batch_ids), "max_lines": self.max_lines, "cache": str(self.cache),
+            "reports": {h: parent_res[h]["text"] for h in batch_ids},
+            "parent_scores": {h: parent.scores[h] for h in self.house_ids},
+            "images": [parent_res[h][name] for h in batch_ids for name in ("image3d", "image")
+                       if parent_res[h].get(name)],
+            "pareto": dict(wins),
+            "rejected": self.rejected(parent.id),
+            "inspirations": self.inspirations(parent, wins, self.config.get("inspirations", INSPIRATIONS)),
+        }
+        return context, parent_res
+
+    def judge(self, source: str, parent_src: str, parent_res: dict, batch: list[Path], proposed: Path,
+              now: dict) -> tuple[str | None, list | None]:
+        """Why a proposal is refused, or None; and its minibatch total when it got that far. Cheap tests first:
+        unchanged, does not compile, too big, smoke test; then the whole minibatch."""
+        if source.strip() == parent_src.strip():
+            return "the proposal did not change the grammar", None
+        if bad := compiles(source):
+            return bad, None
+        if big := too_big(source, self.max_lines):
+            return "too big: " + " ".join(big), None
+        self.stage("smoke test", **now)
+        if bad := self.smoke(proposed, batch, parent_res):
+            return bad, None
+        self.stage("testing the proposal", **now)
+        return None, batch_total(evaluate(proposed, batch, cache=self.cache), [house_id(h) for h in batch])
+
     def step(self, proposer, rng: random.Random) -> dict:
         """One iteration. Returns the logged entry."""
         self.iteration += 1
         it = self.iteration
         t0 = time.time()
         wins = self.pareto()
-        ids = list(wins)
-        pick = rng.choices(ids, weights=[len(wins[i]) for i in ids])[0]
-        parent = self.cand(pick)
-        k = min(self.config["minibatch"], len(self.train))
-        batch = rng.sample(self.train, k)
+        parent = self.cand(rng.choices(list(wins), weights=[len(h) for h in wins.values()])[0])
+        batch = rng.sample(self.train, min(self.config["minibatch"], len(self.train)))
         batch_ids = [house_id(h) for h in batch]
         out = self.path / "proposals" / f"{it:04d}"
         out.mkdir(parents=True, exist_ok=True)
-
         now = {"iteration": it, "parent": parent.id, "houses": batch_ids, "proposal": out.name, "started": t0}
         self.stage("reading the parent", **now)
-        # what the proposer sees: the parent's reports and elevations on the minibatch
         parent_src = self.grammar(parent.id).read_text()
-        parent_res = evaluate(self.grammar(parent.id), batch, cache=self.cache, images=out)
-        parent_batch = batch_total(parent_res, batch_ids)
-        context = {
-            "iteration": it, "parent": parent.id, "houses": batch_ids, "house_paths": [str(h) for h in batch],
-            "parent_batch": parent_batch, "max_lines": self.max_lines, "cache": str(self.cache),
-            "reports": {h: parent_res[h]["text"] for h in batch_ids},
-            "parent_scores": {h: parent.scores[h] for h in self.house_ids},
-            "images": [parent_res[h][name] for h in batch_ids for name in ("image3d", "image")
-                       if parent_res[h].get(name)],
-            "pareto": {cid: hs for cid, hs in wins.items()},
-            "rejected": self.rejected(parent.id),
-            "inspirations": self.inspirations(parent, wins, self.config.get("inspirations", INSPIRATIONS)),
-        }
+        context, parent_res = self.context(it, parent, batch, out)
         entry = {"iteration": it, "parent": parent.id, "batch": batch_ids, "accepted": False, "child": None,
-                 "parent_batch": parent_batch, "child_batch": None, "note": "", "error": None,
+                 "parent_batch": context["parent_batch"], "child_batch": None, "note": "", "error": None,
                  "inspirations": [i["id"] for i in context["inspirations"]]}
+
+        def done() -> dict:
+            entry["seconds"] = round(time.time() - t0, 1)
+            self.log(entry)
+            self.stage("between iterations", **now, accepted=entry["accepted"], child=entry["child"])
+            return entry
+
         self.stage("proposing", **now)
         try:
             proposal = proposer.propose(parent_src, context, out)
         except Exception as e:
             entry["error"] = f"proposer failed: {type(e).__name__}: {e}"
-            entry["seconds"] = round(time.time() - t0, 1)
-            self.log(entry)
-            self.stage("between iterations", **now, accepted=False, child=None)
-            return entry
-        entry["note"] = proposal.note
-        entry["usage"] = proposal.usage
+            return done()
+        entry["note"], entry["usage"] = proposal.note, proposal.usage
         proposed = out / "proposed.py"
         proposed.write_text(proposal.source)
-        if proposal.source.strip() == parent_src.strip():
-            entry["error"] = "the proposal did not change the grammar"
-        elif bad := compiles(proposal.source):
-            entry["error"] = bad
-        elif big := too_big(proposal.source, self.max_lines):
-            entry["error"] = "too big: " + " ".join(big)
-        else:
-            self.stage("smoke test", **now)
-            entry["error"] = self.smoke(proposed, batch, parent_res)
-        if not entry["error"]:
-            self.stage("testing the proposal", **now)
-            child_res = evaluate(proposed, batch, cache=self.cache)
-            child_batch = batch_total(child_res, batch_ids)
-            entry["child_batch"] = child_batch
-            if better(child_batch, parent_batch):
-                cid = f"c{len(self.cands):03d}"
-                self.stage("scoring on every house", **now, child=cid)
-                self.grammar(cid).write_text(proposal.source)
-                full = evaluate(self.grammar(cid), self.scored, cache=self.cache)
-                self.add(Candidate(cid, parent.id, it, {h: r["score"] for h, r in full.items()}, proposal.note))
-                entry["accepted"], entry["child"] = True, cid
-        entry["seconds"] = round(time.time() - t0, 1)
-        self.log(entry)
-        self.stage("between iterations", **now, accepted=entry["accepted"], child=entry["child"])
-        return entry
+        entry["error"], entry["child_batch"] = self.judge(proposal.source, parent_src, parent_res, batch, proposed, now)
+        if not entry["error"] and better(entry["child_batch"], entry["parent_batch"]):
+            cid = f"c{len(self.cands):03d}"
+            self.stage("scoring on every house", **now, child=cid)
+            self.grammar(cid).write_text(proposal.source)
+            full = evaluate(self.grammar(cid), self.scored, cache=self.cache)
+            self.add(Candidate(cid, parent.id, it, {h: r["score"] for h, r in full.items()}, proposal.note))
+            entry["accepted"], entry["child"] = True, cid
+        return done()
 
     def report_test(self) -> dict | None:
         """Score the best grammar on the test houses and write test.json. None when the run has no test set."""
@@ -414,7 +424,7 @@ class Run:
         res = evaluate(self.grammar(b.id), self.test, cache=self.cache)
         scores = {h: r["score"] for h, r in res.items()}
         out = {"candidate": b.id, "val_total": b.total(self.val_ids), "scores": scores,
-               "total": Candidate(b.id, None, 0, scores).total(), "time": time.time()}
+               "total": total(scores, list(scores)), "time": time.time()}
         (self.path / "test.json").write_text(json.dumps(out, indent=1))
         return out
 
@@ -433,7 +443,7 @@ def run_search(run: Run, proposer, iterations: int, seed: int = 0, say=None) -> 
         e = run.step(proposer, rng)
         verdict = f"kept as {e['child']}" if e["accepted"] else (e["error"] or "not better")
         say(f"iteration {e['iteration']}: parent {e['parent']} on {', '.join(e['batch'])}: {verdict}"
-            f"  ({e['parent_batch']} -> {e['child_batch']}, {e.get('seconds')} s)", flush=True)
+            f"  ({e['parent_batch']} -> {e['child_batch']}, {e.get('seconds')} s)")
     run.stage("stopped")
     b = run.best()
     say(f"best on validation: {b.id} with {b.total(run.val_ids)} (hard, soft, cost) over {len(run.val_ids)} houses; "

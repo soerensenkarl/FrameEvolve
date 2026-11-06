@@ -1,34 +1,43 @@
-"""Command line: python -m frameevolve houses | build | serve"""
+"""Command line: python -m frameevolve houses | build | evaluate | evolve | serve
+
+houses makes the dataset, build frames houses with a grammar and draws them, evaluate prints a grammar's
+reports as JSON (the search runs it in its own process), evolve runs the search, serve opens the workbench.
+"""
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict
 from pathlib import Path
 
 from frameevolve import houses
-from frameevolve.builder import build
+from frameevolve.builder import MAX_LINES, build
 from frameevolve.model import House
+from frameevolve.proposer import DEFAULT_MODEL
+from frameevolve.search import INSPIRATIONS, PICTURES, SEED_GRAMMAR
 from frameevolve.verifier import verify
 
 
-def pictures(house, frame, report, folder: Path) -> tuple[str | None, str | None]:
-    """The proposer's pictures of one house, hard faults marked: elevations, and the whole frame in 3D from two
-    opposite corners. A picture that fails is left out; it must never fail the evaluation."""
+def pictures(house, frame, report, folder: Path) -> dict:
+    """The proposer's pictures of one house, hard faults marked, by name as in search.PICTURES: "image" is the
+    elevations, "image3d" the whole frame from two opposite corners. A picture that fails is None; it must
+    never fail the evaluation."""
     import sys
     from frameevolve import render
     folder.mkdir(parents=True, exist_ok=True)
-    out = []
-    marks = [(f.wall, f.u, f.v, f.check) for f in report.faults if f.hard and f.wall and f.u is not None]
+    marks = [(f.surface, f.u, f.v, f.check) for f in report.faults if f.hard and f.surface and f.u is not None]
     points = [(*f.at, f.check) for f in report.faults if f.hard and f.at is not None]
-    for path, draw in [(folder / f"{house.id}.png", lambda p: render.elevations(house, frame, p, marks=marks)),
-                       (folder / f"{house.id}.3d.png", lambda p: render.axonometric(
-                           house, frame, p, marks=points, views=[(28, -58), (28, 122)]))]:
+    draw = {"image": lambda p: render.elevations(house, frame, p, marks=marks),
+            "image3d": lambda p: render.axonometric(house, frame, p, marks=points, views=[(28, -58), (28, 122)])}
+    out = {}
+    for name, suffix in PICTURES.items():
+        path = folder / f"{house.id}{suffix}"
         try:
-            draw(str(path))
-            out.append(str(path))
+            draw[name](str(path))
+            out[name] = str(path)
         except Exception as e:
             print(f"{house.id}: no picture {path.name}: {type(e).__name__}: {e}", file=sys.stderr)
-            out.append(None)
-    return out[0], out[1]
+            out[name] = None
+    return out
 
 
 def main(argv=None) -> None:
@@ -48,19 +57,19 @@ def main(argv=None) -> None:
     e.add_argument("--images", help="folder for each house's elevations, hard faults marked")
     v = sub.add_parser("evolve", help="run the search; creates the run folder on first use")
     v.add_argument("run", help="run folder, e.g. runs/gable")
-    v.add_argument("--seed-grammar", default="grammars/seed.py")
+    v.add_argument("--seed-grammar", default=SEED_GRAMMAR)
     v.add_argument("--train", nargs="+", default=[f"data/houses/h{i:03d}.json" for i in range(10)],
                    help="houses the proposer reads reports on")
     v.add_argument("--val", nargs="*", default=[f"data/houses/h{i:03d}.json" for i in range(10, 20)],
                    help="houses that decide the Pareto set and the final grammar; none: use the training houses")
     v.add_argument("--test", nargs="*", default=[], help="houses scored only for the final grammar")
-    v.add_argument("--inspirations", type=int, default=2, help="other Pareto grammars shown to the proposer")
+    v.add_argument("--inspirations", type=int, default=INSPIRATIONS, help="other Pareto grammars shown to the proposer")
     v.add_argument("--minibatch", type=int, default=3)
-    v.add_argument("--max-lines", type=int, default=12, help="code lines allowed per grammar function")
+    v.add_argument("--max-lines", type=int, default=MAX_LINES, help="code lines allowed per grammar function")
     v.add_argument("--iterations", type=int, default=5)
     v.add_argument("--via", choices=["subscription", "api"], default="subscription",
                    help="subscription: Claude Code signed in with a Claude plan; api: an API key or ant profile")
-    v.add_argument("--model", default="claude-opus-5-5")
+    v.add_argument("--model", default=DEFAULT_MODEL)
     v.add_argument("--effort", default="medium")
     v.add_argument("--checks", type=int, default=3, help="draft checks the proposer may run per iteration")
     v.add_argument("--no-images", action="store_true", help="proposer reads text only")
@@ -103,13 +112,10 @@ def main(argv=None) -> None:
             house = House.load(hp)
             frame = build(a.grammar, house)
             report = verify(house, frame)
-            image = image3d = None
-            if a.images:
-                image, image3d = pictures(house, frame, report, Path(a.images))
-            out[house.id] = {"score": list(report.score), "hard": report.hard, "soft": report.soft,
-                             "image": image, "image3d": image3d, "metrics": report.metrics, "text": report.text(),
-                             "faults": [{"check": f.check, "hard": f.hard, "wall": f.wall, "u": f.u, "v": f.v,
-                                         "message": f.message, "rules": f.rules} for f in report.faults]}
+            pics = pictures(house, frame, report, Path(a.images)) if a.images else {k: None for k in PICTURES}
+            out[house.id] = {"score": list(report.score), "hard": report.hard, "soft": report.soft, **pics,
+                             "metrics": report.metrics, "text": report.text(),
+                             "faults": [asdict(f) for f in report.faults]}
         print(json.dumps(out))
     elif a.cmd == "serve":
         from frameevolve.server import serve

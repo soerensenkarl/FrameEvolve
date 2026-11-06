@@ -9,7 +9,7 @@ from functools import cached_property
 from pathlib import Path
 
 from frameevolve import solid
-from frameevolve.geometry import EPS, Box, Vec, add, axis_aligned, corners, cross, dot, inside, mul, sub, unit
+from frameevolve.geometry import EPS, Box, Vec, add, axis_aligned, corners, cross, dot, edges, inside, mul, sub, unit
 
 THICK = 1.5
 # nominal name: (actual width, actual depth), inches
@@ -125,7 +125,7 @@ class Wall(Surface):
     @property
     def outline_uv(self) -> list[tuple[float, float]]:
         if self.outline:
-            return [tuple(p) for p in self.outline]
+            return list(self.outline)
         L, H = self.length, self.height
         return [(0.0, 0.0), (L, 0.0), (L, H), (0.0, H)]
 
@@ -250,7 +250,7 @@ class Roof(Surface):
 
     @property
     def outline_uv(self) -> list[tuple[float, float]]:
-        return [tuple(p) for p in self.outline]
+        return list(self.outline)
 
     @property
     def size(self) -> tuple[float, float]:
@@ -339,7 +339,8 @@ class House:
         return next(w for w in self.walls if w.id == id)
 
     def link(self) -> None:
-        """Find where walls meet each other (corners and Ts) and where they meet floors (under or on them)."""
+        """Find where walls meet each other (corners and Ts), where they meet floors (under or on them), and
+        where roof planes meet (seams)."""
         for w in self.walls:
             w.start_meets, w.end_meets, w.tees, w.above, w.below = None, None, [], None, None
         for w in self.walls:
@@ -376,8 +377,8 @@ class House:
         for r in self.roofs:
             r.seams = []
         for r, q in ((r, q) for r in self.roofs for q in self.roofs if r.id < q.id):
-            for a, b in zip(r.outline_uv, r.outline_uv[1:] + r.outline_uv[:1]):
-                for c, d in zip(q.outline_uv, q.outline_uv[1:] + q.outline_uv[:1]):
+            for a, b in edges(r.outline_uv):
+                for c, d in edges(q.outline_uv):
                     seam = _shared(r, a, b, q, c, d)
                     if seam:
                         r.seams.append(seam)
@@ -491,7 +492,8 @@ class Member:
 class Frame:
     """The members a grammar built for a house, and how it got there.
 
-    steps: every rule firing that changed something, in order: {pass, rule, wall, placed, removed}.
+    steps: every rule firing that changed something, in order: {pass, rule, surface, match, target, placed,
+    removed, shaped, t}; see builder.build.
     removed: members placed and later removed, so the build can be replayed.
     """
     house: str

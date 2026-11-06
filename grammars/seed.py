@@ -14,7 +14,7 @@ Inches.
 import math
 
 from frameevolve.builder import rule
-from frameevolve.geometry import inside, on_boundary, scan
+from frameevolve.geometry import edges, inside, on_boundary, scan
 from frameevolve.model import Roof, Wall
 
 T = 1.5
@@ -47,9 +47,8 @@ def is_gable(w):
 
 def rake(w, u):
     """How high a gable wall reaches at u: the top of its outline there."""
-    pts = w.outline_uv
     return max(a[1] + (b[1] - a[1]) * (u - a[0]) / (b[0] - a[0])
-               for a, b in zip(pts, pts[1:] + pts[:1]) if min(a[0], b[0]) <= u <= max(a[0], b[0]) and a[0] != b[0])
+               for a, b in edges(w.outline_uv) if min(a[0], b[0]) <= u <= max(a[0], b[0]) and a[0] != b[0])
 
 
 def bearing(w):
@@ -271,7 +270,7 @@ def minus(runs, cuts):
 def runs_at(s, f, c, rim=T):
     """Where a joist at u = c can run: inside the rim, cut over interior walls below that cross it, and
     stopped at the headers of any floor opening it would cross."""
-    runs = [(a + rim, b - rim) for a, b in scan([(v, u) for u, v in f.outline_uv], c)]
+    runs = [(a + rim, b - rim) for a, b in scan_v(f, c)]
     cuts = sorted(b.a[1] + b.side[1] * depth(s.house.wall(b.wall)) / 2 for b in f.bearers
                   if b.role == "interior" and b.along_u and min(b.a[0], b.b[0]) < c < max(b.a[0], b.b[0]))
     runs = [r for v0, v1 in runs for r in zip([v0, *[x for x in cuts if v0 < x < v1]],
@@ -282,8 +281,12 @@ def runs_at(s, f, c, rim=T):
 
 def edges_v(f):
     """The outline's edges that run along v, where rims stand."""
-    pts = f.outline_uv
-    return [(a, b) for a, b in zip(pts, pts[1:] + pts[:1]) if a[0] == b[0]]
+    return [(a, b) for a, b in edges(f.outline_uv) if a[0] == b[0]]
+
+
+def scan_v(x, u):
+    """The v-runs where the line at u lies inside the surface's outline."""
+    return scan([(v, u_) for u_, v in x.outline_uv], u)
 
 
 def joist(s, f, c, role="joist"):
@@ -313,8 +316,7 @@ def stock(a, b):
 @rule(60, match="floor", when=lambda s, f: f.role == "floor")
 def rim(s, f):
     """A rim joist along every edge of the floor's outline, on the walls below; those along v fit between."""
-    pts = f.outline_uv
-    for (u0, v0), (u1, v1) in zip(pts, pts[1:] + pts[:1]):
+    for (u0, v0), (u1, v1) in edges(f.outline_uv):
         inward = 1 if (u1 > u0 or v1 < v0) else -1       # the floor lies left of each counter-clockwise edge
         if v0 == v1:
             for a, b in stock(min(u0, u1), max(u0, u1)):
@@ -417,7 +419,7 @@ def rafter_section(s, r):
 
 def spans(r, u0, u1):
     """Where a rafter from u0 to u1 can run up the plane: the outline's v-runs across both its sides."""
-    runs = [(v0, v1) for u in (u0 + 0.01, u1 - 0.01) for v0, v1 in scan([(v, u) for u, v in r.outline_uv], u)]
+    runs = [(v0, v1) for u in (u0 + 0.01, u1 - 0.01) for v0, v1 in scan_v(r, u)]
     out = []
     for v0, v1 in sorted(runs):
         if out and v0 <= out[-1][1]:
@@ -495,7 +497,7 @@ def fit_under_roof(s, m):
     """Gable wall framing that runs up into the roof framing, cut along the rafters' underside and under the
     ridge board; a piece wholly above the rafters comes out."""
     for roof in s.house.roofs:
-        d = max([n.depth for n in s.members(wall=roof.id, role="rafter")] or [0])
+        d = max([n.depth for n in s.members(surface=roof.id, role="rafter")] or [0])
         if d and above_underside(m, roof, d):
             try:
                 s.cut(m, (0, 0, d), (0, 0, -1), surface=roof)
@@ -510,12 +512,12 @@ def blocking_under_plate_ends(s, b):
     """A block between joists under each end of a bottom plate upstairs that runs across the joists."""
     across = sorted((m_.lo[0], m_.hi[0]) for m_ in map(s.local, s.members()) if m_.hi[1] - m_.lo[1] > 24)
     bays = set()
-    for p in map(s.local, s.members(wall=b.wall, role="bottom plate")):
+    for p in map(s.local, s.members(surface=b.wall, role="bottom plate")):
+        v = (p.lo[1] + p.hi[1]) / 2
         for u in (p.lo[0], p.hi[0]):
             if not any(a - 0.01 <= u <= c + 0.01 for a, c in across):
-                bays.add((max(c for a, c in across if c < u), min(a for a, c in across if a > u)))
-    v = (p.lo[1] + p.hi[1]) / 2
-    for left, right in bays:
+                bays.add((max(c for a, c in across if c < u), min(a for a, c in across if a > u), v))
+    for left, right, v in bays:
         s.place(JOIST, left, right, v - T / 2, v + T / 2, role="block")
 
 

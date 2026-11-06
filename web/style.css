@@ -48,9 +48,9 @@ h4 small { color: var(--muted); font-weight: 400; }
 #view3d .labels { position: absolute; inset: 0; pointer-events: none; }
 #hint { position: absolute; right: 12px; bottom: 10px; color: var(--muted); font-size: 11px; pointer-events: none; z-index: 2; }
 .lbl { font-size: 11px; color: #4d6780; white-space: nowrap; transition: opacity .2s; }
-.lbl.wall { font-weight: 600; font-size: 12px; background: rgba(255,255,255,.75); padding: 0 5px; border-radius: 4px; }
-.lbl.wall i { font-style: normal; font-weight: 400; color: var(--muted); font-size: 11px; }
-.lbl.wall.active { color: var(--text); background: #fff; box-shadow: 0 0 0 1.5px #4d6780; }
+.lbl.surf { font-weight: 600; font-size: 12px; background: rgba(255,255,255,.75); padding: 0 5px; border-radius: 4px; }
+.lbl.surf i { font-style: normal; font-weight: 400; color: var(--muted); font-size: 11px; }
+.lbl.surf.active { color: var(--text); background: #fff; box-shadow: 0 0 0 1.5px #4d6780; }
 .lbl.op { font-size: 10px; color: #5f7790; }
 .lbl.faint { opacity: .45; }
 #caption { position: absolute; top: 10px; left: 12px; max-width: min(560px, calc(100% - 24px)); z-index: 3; pointer-events: none;
@@ -65,13 +65,13 @@ h4 small { color: var(--muted); font-weight: 400; }
 /* elevations */
 #elev { padding: 10px 16px 30px; }
 #center.stepping #elev { padding-top: 120px; scroll-padding-top: 120px; }
-.wall { margin-bottom: 18px; transition: opacity .2s; }
-.wall.rest { opacity: .55; }
-.wall .cap { color: var(--muted); font-size: 12px; margin-bottom: 2px; }
-.wall .cap b { color: var(--text); }
-.wall.active svg { border-color: #8aa4bf; box-shadow: 0 0 0 2px #dde7f1; }
+.surface { margin-bottom: 18px; transition: opacity .2s; }
+.surface.rest { opacity: .55; }
+.surface .cap { color: var(--muted); font-size: 12px; margin-bottom: 2px; }
+.surface .cap b { color: var(--text); }
+.surface.active svg { border-color: #8aa4bf; box-shadow: 0 0 0 2px #dde7f1; }
 .steptag { margin-left: 6px; color: var(--text); }
-.wall svg { width: 100%; height: auto; display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+.surface svg { width: 100%; height: auto; display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
 svg rect, svg line, svg path { vector-effect: non-scaling-stroke; }
 svg rect.outline { fill: none; stroke: #a9b8c7; stroke-width: 1.5; }
 svg :is(rect, path).m { stroke: #222; stroke-width: .7; cursor: pointer; }
@@ -351,7 +351,7 @@ svg .tk { font-size: 10px; fill: var(--muted); }
 #storeys button { font-size: 11.5px; padding: 1px 8px; }
 #elev h3.storey { margin: 14px 0 6px; }
 #elev h3.storey:first-child { margin-top: 0; }
-.wall.floor svg { max-width: 560px; }
+.surface.floor svg, .surface.roof svg { max-width: 560px; }
 svg path.outline { fill: none; stroke: #a9b8c7; stroke-width: 1.5; }
 svg polygon.under { fill: #e4e2dd; fill-opacity: .6; stroke: #b9b5ad; stroke-width: .7; }
 svg polygon.onit { fill: none; stroke: #8aa0b6; stroke-width: 1; stroke-dasharray: 4 3; }

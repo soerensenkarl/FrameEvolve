@@ -1,10 +1,13 @@
 """Proposers: what turns a parent grammar and its reports into a child grammar.
 
-ClaudeProposer is the real one: a Claude agent that sees the parent grammar, the verifier's reports and
-elevations with the faults marked, and edits the grammar with a few small tools. ScriptedProposer applies
-a fixed function, for testing the search without calling Claude.
+ClaudeCodeProposer (the default, through the Claude Agent SDK on a Claude subscription) and ClaudeProposer
+(through the API) are the same agent: it sees the parent grammar, the verifier's reports and pictures with
+the faults marked, and edits the grammar with a few small tools. ScriptedProposer applies a fixed function,
+for testing the search without calling Claude.
 """
 from __future__ import annotations
+
+DEFAULT_MODEL = "claude-opus-5-5"
 
 import base64
 import inspect
@@ -63,7 +66,7 @@ def api_reference() -> str:
     return "\n".join(lines)
 
 
-SYSTEM = """You improve a grammar: a Python file of small rules that frames the timber walls of houses.
+SYSTEM = """You improve a grammar: a Python file of small rules that frames the timber walls, floors and roofs of houses.
 
 The builder applies the grammar to a house. A deterministic verifier then checks the frame and scores it as
 (hard faults, soft faults, cost), compared in that order. The goal is a grammar that gives every house zero
@@ -222,7 +225,7 @@ def prompt(context: dict, images: bool, out: Path) -> tuple[str, list[dict]]:
 class ClaudeProposer:
     """Claude through the Anthropic API (an API key or an `ant auth login` profile)."""
 
-    def __init__(self, model: str = "claude-opus-5-5", effort: str = "medium", checks: int = 3,
+    def __init__(self, model: str = DEFAULT_MODEL, effort: str = "medium", checks: int = 3,
                  max_turns: int = 24, images: bool = True, fallbacks: bool = True):
         self.model, self.effort, self.checks = model, effort, checks
         self.max_turns, self.images, self.fallbacks = max_turns, images, fallbacks
@@ -280,7 +283,7 @@ def find_claude() -> str | None:
 class ClaudeCodeProposer:
     """Claude through Claude Code (the Claude Agent SDK), signed in with a Claude subscription."""
 
-    def __init__(self, model: str = "claude-opus-5-5", effort: str = "medium", checks: int = 3,
+    def __init__(self, model: str = DEFAULT_MODEL, effort: str = "medium", checks: int = 3,
                  max_turns: int = 24, images: bool = True):
         self.model, self.effort, self.checks = model, effort, checks
         self.max_turns, self.images = max_turns, images

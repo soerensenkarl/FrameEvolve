@@ -18,8 +18,8 @@ a wall, a floor or a roof plane):
   floor    every floor, and the ceiling under a roof (role "ceiling")
   roof     every roof plane
   seam     every line where two roof planes meet, on the plane with the lower id: .other (the other plane's
-           id), .a, .b (the line in this plane's u, v), .kind ('ridge' or 'hip')
-  opening  every door and window
+           id), .a, .b (the line in this plane's u, v), .kind ('ridge', 'hip' or 'valley')
+  opening  every door, window and stair opening
   corner   every wall end that meets another wall's end: .end ('start' or 'end'), .other (wall id)
   tee      every partition end meeting a wall along its length (s.surface is the wall met): .wall, .u, .side
   bearer   every wall under a floor (s.surface is the floor): .wall, .role, .a, .b (its line in the floor's
@@ -65,35 +65,35 @@ def rule(priority: int, match: str, when=None):
 
 @dataclass(frozen=True)
 class Corner:
-    end: str     # which end of s.wall: "start" or "end"
+    end: str     # which end of s.surface: "start" or "end"
     other: str   # the wall it meets there
 
 
-def target(s: "State", kind: str, wall, x) -> dict:
+def target(kind: str, surf, x) -> dict:
     """Where a match is, for drawing what triggered a rule: a rectangle on the surface (u0, u1, v0, v1, and the
     face for a gap) or, for a member, its id. A tee is a line at its u (u0 == u1); a bearer or load is its line
-    on the floor. The key "wall" names the surface, wall or floor."""
-    full = {"wall": wall.id, "u0": 0.0, "u1": wall.size[0], "v0": 0.0, "v1": wall.size[1]}
+    on the floor. "surface" names the surface it is on; "other" another surface involved."""
+    full = {"surface": surf.id, "u0": 0.0, "u1": surf.size[0], "v0": 0.0, "v1": surf.size[1]}
     if kind in ("wall", "floor", "roof"):
         return {"kind": kind, **full}
     if kind == "seam":
-        return {"kind": kind, "wall": wall.id, "u0": x.a[0], "u1": x.b[0], "v0": x.a[1], "v1": x.b[1], "other": x.other}
+        return {"kind": kind, "surface": surf.id, "u0": x.a[0], "u1": x.b[0], "v0": x.a[1], "v1": x.b[1], "other": x.other}
     if kind in ("bearer", "load"):
-        return {"kind": kind, "wall": wall.id, "u0": x.a[0], "u1": x.b[0], "v0": x.a[1], "v1": x.b[1], "other": x.wall}
+        return {"kind": kind, "surface": surf.id, "u0": x.a[0], "u1": x.b[0], "v0": x.a[1], "v1": x.b[1], "other": x.wall}
     if kind == "opening":
-        return {"kind": kind, "wall": wall.id, "u0": x.u0, "u1": x.u1, "v0": x.v0, "v1": x.v1}
+        return {"kind": kind, "surface": surf.id, "u0": x.u0, "u1": x.u1, "v0": x.v0, "v1": x.v1}
     if kind == "corner":
-        u = 0.0 if x.end == "start" else wall.size[0]
+        u = 0.0 if x.end == "start" else surf.size[0]
         return {"kind": kind, **full, "u0": u, "u1": u, "other": x.other}
     if kind == "tee":
         return {"kind": kind, **full, "u0": x.u, "u1": x.u, "other": x.wall}
     if kind == "gap":
-        return {"kind": kind, "wall": wall.id, "u0": x.u0, "u1": x.u1, "v0": x.v0, "v1": x.v1, "face": x.face}
-    return {"kind": kind, "wall": wall.id, "member": x.id}
+        return {"kind": kind, "surface": surf.id, "u0": x.u0, "u1": x.u1, "v0": x.v0, "v1": x.v1, "face": x.face}
+    return {"kind": kind, "surface": surf.id, "member": x.id}
 
 
 def matches(s: "State", kind: str) -> list[tuple[object, object, tuple]]:
-    """Every match of a kind in the design state now: (the wall it is on, the thing, a key that names it)."""
+    """Every match of a kind in the design state now: (the surface it is on, the thing, a key that names it)."""
     walls, surfaces = s.house.walls, s.house.surfaces
     if kind == "wall":
         return [(w, w, (w.id,)) for w in walls]
@@ -135,7 +135,7 @@ def load_rules(path) -> list:
 
 
 class State:
-    """The design state as rules see it, for the current surface `s.surface` (a wall or a floor)."""
+    """The design state as rules see it, for the current surface `s.surface` (a wall, a floor or a roof plane)."""
     SECTIONS = SECTIONS
     THICK = THICK
     STOCK = STOCK
@@ -153,16 +153,11 @@ class State:
         self._removed_now: list[str] = []
         self._shaped_now: list[str] = []
 
-    @property
-    def wall(self):
-        """The current surface, under its first name: grammars written before floors call it s.wall."""
-        return self.surface
-
     # reading ---------------------------------------------------------------------------------------
 
-    def members(self, wall: str | None = None, role: str | None = None, rule: str | None = None) -> list[Member]:
+    def members(self, surface: str | None = None, role: str | None = None, rule: str | None = None) -> list[Member]:
         """Members on a surface (default this one, '*' for all), optionally of one role or one rule."""
-        w = self.surface.id if wall is None else wall
+        w = self.surface.id if surface is None else surface
         return [m for m in self._members.values() if (w == "*" or m.surface == w)
                 and (role is None or m.role == role) and (rule is None or m.rule == rule)]
 
@@ -396,10 +391,10 @@ def build(grammar, house: House, max_passes: int = 10, max_members: int = 20000,
         before = s.changes
         for r in rules:
             s._rule = r.__name__
-            for wall, x, key in matches(s, r.match):
+            for surf, x, key in matches(s, r.match):
                 if (r.__name__, key) in fired:
                     continue
-                s.surface = wall
+                s.surface = surf
                 try:
                     if r.when is not None and not r.when(s, x):
                         continue      # not yet: a later pass may make it true
@@ -413,8 +408,8 @@ def build(grammar, house: House, max_passes: int = 10, max_members: int = 20000,
                 except Exception as e:
                     error(r, key, e)
                 if s._placed_now or s._removed_now or s._shaped_now:
-                    steps.append({"pass": p, "rule": r.__name__, "wall": wall.id,
-                                  "match": f"{r.match} {' '.join(map(str, key))}", "target": target(s, r.match, wall, x),
+                    steps.append({"pass": p, "rule": r.__name__, "surface": surf.id,
+                                  "match": f"{r.match} {' '.join(map(str, key))}", "target": target(r.match, surf, x),
                                   "placed": s._placed_now, "removed": s._removed_now,
                                   "shaped": sorted(set(s._shaped_now)),
                                   "t": round(time.perf_counter() - t0, 4)})

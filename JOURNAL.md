@@ -166,3 +166,23 @@ further than both in checking its own drafts and in faults that name the rule to
 - New house now streams like Regenerate: the build stream opens with the house's surfaces, so the view
   shows and frames the new house at once and pieces appear about 25 ms after the click. The house list
   reloads after the build, since a concurrent reload slowed the build (one Python process, one GIL).
+
+## 2026-11-05: Refactor for agents
+
+The project is worked on by agents as much as by me, so it was tidied for them: one name per thing, one
+path per job, files an agent can read whole, and a map (CLAUDE.md).
+- One build path: `/api/build` streams every build (house surfaces, then each step's pieces, then the
+  frame); the page's `build()` is the streaming one, and Regenerate and New house call it.
+- `surface` end to end: steps, targets, faults and rule demos name the surface they are on as `surface`;
+  "wall" now means only a wall. `State.wall` (an old alias) and `members(wall=)` are gone.
+- Three bugs the survey found: a joist hanger counted an ungrounded neighbour as support (an `and`/`or`
+  precedence slip); `blocking_under_plate_ends` used a loop variable after the loop; the Runs page totalled
+  and ranked candidates over the training houses while the search judges by validation houses.
+- Long functions split where they were several things: `verify` into one function per check family,
+  `houses.roofs` into planes, gable walls and ceilings, `Run.step` into `context` and `judge`.
+- Defaults live in one place each (`DEFAULT_MODEL`, `MAX_LINES`, `INSPIRATIONS`, `SEED_GRAMMAR`);
+  `geometry.edges` and `Box.centre` replace copies; shims for keys the server always sends are gone.
+- Tests: `conftest.py` builds the seed and minimal frames once per session; overlapping tests merged. The
+  core, verifier and roof tests run in 21 s instead of 75.
+- The page is split into ES modules by concern (state, 3D view, elevations, inspect, editor, runs), with
+  the duplicated SVG, raycast and member-mesh code shared.

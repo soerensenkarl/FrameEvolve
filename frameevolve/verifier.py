@@ -59,8 +59,8 @@ class Fault:
     check: str
     hard: bool
     message: str
-    wall: str | None = None
-    u: float | None = None      # where on the wall, for drawing
+    surface: str | None = None  # the surface the member is on
+    u: float | None = None      # where on that surface, for drawing
     v: float | None = None
     at: Vec | None = None       # where in the world
     members: list[str] = field(default_factory=list)
@@ -174,7 +174,7 @@ def supported(g, by_id: dict[str, Member]) -> set[str]:
 
 
 def rafter(m: Member, roof: Roof, g: Graph, by_id: dict[str, Member], held: set[str], framing: set[str],
-           roofs: set[str], at_wall) -> list[Fault]:
+           roofs: set[str], at) -> list[Fault]:
     """A sloped member of a roof. Its span is measured level between what it rests on, and what it butts against
     at its top (a ridge board). Unless it also rests on something in the top third of its rise (a gable wall,
     a beam), it needs a tie against thrust: something level nailed to its side in the lower third."""
@@ -197,7 +197,7 @@ def rafter(m: Member, roof: Roof, g: Graph, by_id: dict[str, Member], held: set[
     limit = RAFTER_RUN.get(m.depth)
     for t0, t1 in zip(sup, sup[1:]):
         if limit is None or (t1 - t0) * run > limit + EPS:
-            out.append(at_wall(m, point((t0 + t1) / 2), "span", True,
+            out.append(at(m, point((t0 + t1) / 2), "span", True,
                                f"{_name(m)} spans {ftin((t1 - t0) * run)} level between supports, limit "
                                f"{ftin(limit) if limit else 'none for a ' + m.section + ' rafter'}"))
     lo, hi = m.box.lo[2], m.box.hi[2]
@@ -216,65 +216,57 @@ def rafter(m: Member, roof: Roof, g: Graph, by_id: dict[str, Member], held: set[
         return (n in held and abs(o.end[2] - o.start[2]) < 0.05 * o.length and o.surface in framing
                 and point(where(n))[2] <= lo + (hi - lo) / 3)
     if not any(map(tie, [*g.side[m.id], *g.bears[m.id]])):
-        out.append(at_wall(m, point(m.length / 4), "thrust", True,
+        out.append(at(m, point(m.length / 4), "thrust", True,
                            f"{_name(m)} has no tie nailed to it in the lower third of its rise (a ceiling joist or "
                            f"rafter tie), so it pushes its wall out"))
     return out
 
 
-def verify(house: House, frame: Frame) -> Report:
-    g = build_graph(frame.members)
-    by_id = {m.id: m for m in frame.members}
-    walls = {w.id: w for w in house.walls}
-    surfs = {x.id: x for x in house.surfaces}
-    faults: list[Fault] = []
-
-    def at_wall(m: Member, p: Vec, check: str, hard: bool, message: str, others=()) -> Fault:
+def _locator(surfs: dict):
+    """A Fault maker: the fault is at world point p on member m, located on m's surface for drawing."""
+    def at(m: Member, p: Vec, check: str, hard: bool, message: str, others=()) -> Fault:
         w = surfs.get(m.surface)
-        u = v = None
-        if w:
-            u, v, _ = w.local(p)
+        u, v = w.local(p)[:2] if w else (None, None)
         ms = [m, *others]
-        return Fault(check, hard, message, m.surface or None, u, v, p, [x.id for x in ms],
-                     sorted({x.rule for x in ms}))
+        return Fault(check, hard, message, m.surface or None, u, v, p, [x.id for x in ms], sorted({x.rule for x in ms}))
+    return at
 
-    # rule errors
-    for e in frame.errors:
-        rule = e.split(" ", 1)[0]
-        faults.append(Fault("rule error", True, e, rules=[rule]))
 
-    # per member
+def _members(frame: Frame, surfs: dict, at) -> list[Fault]:
+    """Each member on its own: too long for any stock, or running into an opening."""
+    out = []
     for m in frame.members:
-        centre = tuple((m.box.lo[k] + m.box.hi[k]) / 2 for k in range(3))
         if m.length > max(STOCK) + EPS:
-            faults.append(at_wall(m, centre, "too long", True,
-                                  f"{_name(m)} is {ftin(m.length)}, longer than the {ftin(max(STOCK))} stock"))
+            out.append(at(m, m.box.centre, "too long", True,
+                          f"{_name(m)} is {ftin(m.length)}, longer than the {ftin(max(STOCK))} stock"))
         w = surfs.get(m.surface)
-        if w:
-            b = w.local_box(m)
-            for o in w.openings:
-                du = min(b.hi[0], o.u1) - max(b.lo[0], o.u0)
-                dv = min(b.hi[1], o.v1) - max(b.lo[1], o.v0)
-                if du > EPS and dv > EPS:
-                    u = (max(b.lo[0], o.u0) + min(b.hi[0], o.u1)) / 2
-                    v = (max(b.lo[1], o.v0) + min(b.hi[1], o.v1)) / 2
-                    faults.append(at_wall(m, w.world(u, v, 0), "opening", True,
-                                          f"{_name(m)} on {w.id} runs {ftin(du)} into {o.kind} {o.id}"))
+        if not w:
+            continue
+        b = w.local_box(m)
+        for o in w.openings:
+            du = min(b.hi[0], o.u1) - max(b.lo[0], o.u0)
+            dv = min(b.hi[1], o.v1) - max(b.lo[1], o.v0)
+            if du > EPS and dv > EPS:
+                u = (max(b.lo[0], o.u0) + min(b.hi[0], o.u1)) / 2
+                v = (max(b.lo[1], o.v0) + min(b.hi[1], o.v1)) / 2
+                out.append(at(m, w.world(u, v, 0), "opening", True,
+                              f"{_name(m)} on {w.id} runs {ftin(du)} into {o.kind} {o.id}"))
+    return out
 
-    # clashes
+
+def _clashes(g: Graph, by_id: dict, at) -> list[Fault]:
+    out = []
     for a, b, vol in g.clashes:
         ma, mb = by_id[a], by_id[b]
         p = tuple((max(ma.box.lo[k], mb.box.lo[k]) + min(ma.box.hi[k], mb.box.hi[k])) / 2 for k in range(3))
-        faults.append(at_wall(ma, p, "clash", True, f"{_name(ma)} and {_name(mb)} overlap by {vol:.1f} cubic inches", [mb]))
+        out.append(at(ma, p, "clash", True, f"{_name(ma)} and {_name(mb)} overlap by {vol:.1f} cubic inches", [mb]))
+    return out
 
-    # support
-    grounded = supported(g, by_id)
-    for m in frame.members:
-        if m.id not in grounded:
-            centre = tuple((m.box.lo[k] + m.box.hi[k]) / 2 for k in range(3))
-            faults.append(at_wall(m, centre, "floating", True, f"{_name(m)} has no chain of bearing to the ground"))
 
-    # spans, overhangs and bearing of loaded horizontal members
+def _spans(frame: Frame, g: Graph, by_id: dict, surfs: dict, grounded: set, at) -> list[Fault]:
+    """Spans, overhangs and bearing of loaded level members: what carries something, roof-bearing top plates,
+    and floor and ceiling framing (which carries the boards on it)."""
+    out = []
     for m in frame.members:
         if not m.aligned or m.id not in grounded or GROUND in g.bears[m.id]:
             continue
@@ -282,7 +274,7 @@ def verify(house: House, frame: Frame) -> Report:
         if k == 2:
             continue   # vertical members: no span check yet
         w = surfs.get(m.surface)
-        floor = isinstance(w, Floor)   # floor framing carries the floor's own load; ceiling framing its own
+        floor = isinstance(w, Floor)
         roof = (isinstance(w, Wall) and w.role == "exterior" and w.above is None
                 and abs(m.box.hi[2] - (w.base + w.height)) <= EPS)
         if not (g.carries[m.id] or roof or floor):
@@ -291,7 +283,7 @@ def verify(house: House, frame: Frame) -> Report:
         sup = sorted((max(a0, by_id[s].box.lo[k]), min(a1, by_id[s].box.hi[k]), s) for s in g.bears[m.id])
         if floor:   # a joist end butting into the side of a header or rim hangs from it (a hanger)
             sup += [(x, x, n) for n in g.side.get(m.id, {}) for x in (a0, a1) if n in grounded
-                    and abs(by_id[n].box.lo[k] - x) <= EPS or abs(by_id[n].box.hi[k] - x) <= EPS]
+                    and (abs(by_id[n].box.lo[k] - x) <= EPS or abs(by_id[n].box.hi[k] - x) <= EPS)]
             sup.sort()
         if not sup:
             continue
@@ -301,36 +293,35 @@ def verify(house: House, frame: Frame) -> Report:
         kind = f"flat {m.section}" if flat else f"{m.section} on edge"
 
         def point(x: float) -> Vec:
-            p = [(m.box.lo[j] + m.box.hi[j]) / 2 for j in range(3)]
+            p = list(m.box.centre)
             p[k] = x
             return tuple(p)
 
         for s0, s1, s in sup:
             if s0 < s1 and s1 - s0 < MIN_BEARING - EPS:
-                faults.append(at_wall(m, point((s0 + s1) / 2), "bearing", True,
-                                      f"{_name(m)} bears only {inches(s1 - s0)} on {_name(by_id[s])}, minimum {inches(MIN_BEARING)}",
-                                      [by_id[s]]))
+                out.append(at(m, point((s0 + s1) / 2), "bearing", True,
+                              f"{_name(m)} bears only {inches(s1 - s0)} on {_name(by_id[s])}, minimum {inches(MIN_BEARING)}",
+                              [by_id[s]]))
         reach = sup[0][1]
         for s0, s1, s in sup[1:]:
             if s0 - reach > limit + EPS:
-                faults.append(at_wall(m, point((reach + s0) / 2), "span", True,
-                                      f"{_name(m)} spans {ftin(s0 - reach)} clear between supports, limit {ftin(limit)} for {kind}"))
+                out.append(at(m, point((reach + s0) / 2), "span", True,
+                              f"{_name(m)} spans {ftin(s0 - reach)} clear between supports, limit {ftin(limit)} for {kind}"))
             reach = max(reach, s1)
         for over in (sup[0][0] - a0, a1 - max(s1 for _, s1, _ in sup)):
             if over > MAX_OVERHANG + EPS:
                 x = a0 + over / 2 if over == sup[0][0] - a0 else a1 - over / 2
-                faults.append(at_wall(m, point(x), "overhang", True,
-                                      f"{_name(m)} runs {ftin(over)} past its last support, limit {inches(MAX_OVERHANG)}"))
+                out.append(at(m, point(x), "overhang", True,
+                              f"{_name(m)} runs {ftin(over)} past its last support, limit {inches(MAX_OVERHANG)}"))
+    return out
 
-    # rafters: span, measured level between supports, and a tie against thrust
-    for m in frame.members:
-        if isinstance(surfs.get(m.surface), Roof) and m.id in grounded and not _vertical(m):
-            faults += rafter(m, surfs[m.surface], g, by_id, grounded, {x.id for x in house.floors + house.roofs},
-                             {x.id for x in house.roofs}, at_wall)
 
-    # faces of every surface: sheathing and drywall on walls, subfloor and ceiling on floors, roof sheathing
+def _backing(house: House, frame: Frame) -> list[Fault]:
+    """The faces of every surface: sheathing and drywall on walls, subfloor and ceiling on floors, roof sheathing."""
     boards = {("roof", "outer"): "roof sheathing", ("ceiling", "outer"): "ceiling", ("floor", "outer"): "subfloor",
               ("floor", "inner"): "ceiling", ("exterior", "outer"): "sheathing"}
+    walls = {w.id: w for w in house.walls}
+    out = []
     for w in house.surfaces:
         for face in w.faces:
             board = boards.get((w.role, face), "drywall")
@@ -340,9 +331,13 @@ def verify(house: House, frame: Frame) -> Report:
                 msg = (f"{w.id} {face} face: {board} edge at {where} has nothing behind it" if gp.kind == "edge" else
                        f"{w.id} {face} face: {board} spans {ftin(gp.u1 - gp.u0)} by {ftin(gp.v1 - gp.v0)} with "
                        f"nothing behind it at {where}; it needs support within {ftin(surface.MAX_CLEAR)} one way")
-                faults.append(Fault("backing", True, msg, w.id, u, v, w.world(u, v, 0), [], []))
+                out.append(Fault("backing", True, msg, w.id, u, v, w.world(u, v, 0), [], []))
+    return out
 
-    # walls: opening heads and sills, exterior wall depth
+
+def _walls(house: House, frame: Frame) -> list[Fault]:
+    """Walls: opening heads and sills, and the depth of exterior walls."""
+    out = []
     for w in house.walls:
         boxes = [(m, w.local_box(m)) for m in frame.members if m.surface == w.id]
         for o in w.openings:
@@ -355,17 +350,20 @@ def verify(house: House, frame: Frame) -> Report:
                 if missing:
                     u = (missing[0][0] + missing[0][1]) / 2
                     what = "top" if check == "head" else "bottom"
-                    faults.append(Fault(check, True, f"{w.id}: {what} of {o.kind} {o.id} has nothing along "
-                                        f"u {ftin(missing[0][0])} to {ftin(missing[0][1])}", w.id, u, v, w.world(u, v, 0),
-                                        [], []))
+                    out.append(Fault(check, True, f"{w.id}: {what} of {o.kind} {o.id} has nothing along "
+                                     f"u {ftin(missing[0][0])} to {ftin(missing[0][1])}", w.id, u, v, w.world(u, v, 0),
+                                     [], []))
         d = surface.depth(w, frame.members)
         if w.role == "exterior" and d is not None and d < MIN_EXTERIOR_DEPTH - EPS:
             u, v = w.length / 2, w.height / 2
-            faults.append(Fault("insulation", True, f"{w.id}: framed {inches(d)} deep; an exterior wall needs "
-                                f"{inches(MIN_EXTERIOR_DEPTH)} (2x6) for R-20 cavity insulation", w.id, u, v,
-                                w.world(u, v, 0), [m.id for m, _ in boxes[:1]], sorted({m.rule for m, _ in boxes})))
+            out.append(Fault("insulation", True, f"{w.id}: framed {inches(d)} deep; an exterior wall needs "
+                             f"{inches(MIN_EXTERIOR_DEPTH)} (2x6) for R-20 cavity insulation", w.id, u, v,
+                             w.world(u, v, 0), [m.id for m, _ in boxes[:1]], sorted({m.rule for m, _ in boxes})))
+    return out
 
-    # cost
+
+def _metrics(frame: Frame) -> dict:
+    """Timber bought in stock lengths, waste, and the cost: linear feet of 2x4 equivalent plus a cost per piece."""
     by_section = defaultdict(list)
     for m in frame.members:
         by_section[m.section].append(m.length)
@@ -378,10 +376,31 @@ def verify(house: House, frame: Frame) -> Report:
         cost += b / 12 * SECTIONS[sec][1] / 3.5
         sections[sec] = {"pieces": len(lengths), "boards": n, "bought_ft": round(b / 12, 2)}
     cost += PIECE_COST * len(frame.members)
-    metrics = {
+    return {
         "members": len(frame.members), "bought_ft": round(bought / 12, 2), "used_ft": round(used / 12, 2),
         "waste_ft": round((bought - used) / 12, 2), "waste_pct": round(100 * (bought - used) / bought, 1) if bought else 0.0,
         "cost": round(cost, 2), "by_section": sections,
         "by_rule": dict(Counter(m.rule for m in frame.members)),
     }
-    return Report(house.id, faults, metrics, g)
+
+
+def verify(house: House, frame: Frame) -> Report:
+    """Every check on a frame, in the order of CHECKS, and its metrics."""
+    g = build_graph(frame.members)
+    by_id = {m.id: m for m in frame.members}
+    surfs = {x.id: x for x in house.surfaces}
+    at = _locator(surfs)
+    grounded = supported(g, by_id)
+    framing, roofs = {x.id for x in house.floors + house.roofs}, {x.id for x in house.roofs}
+    faults = [Fault("rule error", True, e, rules=[e.split(" ", 1)[0]]) for e in frame.errors]
+    faults += _members(frame, surfs, at)
+    faults += _clashes(g, by_id, at)
+    faults += [at(m, m.box.centre, "floating", True, f"{_name(m)} has no chain of bearing to the ground")
+               for m in frame.members if m.id not in grounded]
+    faults += _spans(frame, g, by_id, surfs, grounded, at)
+    for m in frame.members:   # rafters: span measured level between supports, and a tie against thrust
+        if isinstance(surfs.get(m.surface), Roof) and m.id in grounded and not _vertical(m):
+            faults += rafter(m, surfs[m.surface], g, by_id, grounded, framing, roofs, at)
+    faults += _backing(house, frame)
+    faults += _walls(house, frame)
+    return Report(house.id, faults, _metrics(frame), g)

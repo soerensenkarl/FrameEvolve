@@ -174,20 +174,40 @@ def generate(seed: int) -> House:
     return house
 
 
+def base(b: Block) -> float:
+    """The base of a block's top storey."""
+    return (b.storeys - 1) * LEVEL
+
+
 def roofs(rng, house: House, blocks: list[Block], top: float, pitch: float | None = None) -> None:
-    """A gable roof over every block, a ceiling on its top storey, gable walls at its free ends."""
-    main, O = blocks[0], EAVE
-    W, D = main.x1, main.y1
-    pitch = pitch or pitch_for(rng, D / 2, 1e9)
-    eave = lambda b: (b.storeys - 1) * LEVEL + top + HEEL - O * pitch_of[b.name] / 12
-    pitch_of = {"main": pitch}
+    """A gable roof over every block, gable walls at its free ends, and a ceiling on its top storey."""
+    main = blocks[0]
+    pitch = pitch or pitch_for(rng, main.y1 / 2, 1e9)
     tall = [b for b in blocks[1:] if b.name != "ell" and b.storeys == main.storeys]
+    pitch_of = {"main": pitch}
     for b in blocks[1:]:
         gap = (main.storeys - b.storeys) * LEVEL - HEEL - 12   # a lower wing's ridge stays under the main eave
         half = (b.x1 - b.x0 if b.name != "ell" else b.y1 - b.y0) / 2
         pitch_of[b.name] = pitch if b in tall else pitch_for(rng, half, gap / half * 12)
+    for rid, a, e, b, pts in roof_planes(blocks, tall):
+        z = base(b) + top + HEEL - EAVE * pitch_of[b.name] / 12
+        house.roofs.append(plane(rid, a, e, z, pitch_of[b.name], pts))
+    for b in blocks:
+        across = b.name in ("main", "ell")      # the gable ends: across the ridge
+        gable_walls(house, b, top + HEEL, pitch_of[b.name] / 12, across)
+        house.floors.append(Floor("c" if b.name == "main" else f"c{b.name[0]}",
+                                  [(b.x0, b.y0), (b.x1, b.y0), (b.x1, b.y1), (b.x0, b.y1)],
+                                  base(b) + top, role="ceiling", axis=(1.0, 0.0) if across else (0.0, 1.0)))
 
-    def profile(x):     # the main back plane's eave edge, giving way to the valleys of tall wings
+
+def roof_planes(blocks: list[Block], tall: list[Block]) -> list[tuple]:
+    """Each roof plane as (id, eave start, eave end, its block, outline in plan). The main block's two planes
+    first; a tall wing's planes run into the main back plane, whose eave edge gives way to their valleys; a
+    lower wing's stop against the main wall; an ell's ridge runs along x against the main side wall."""
+    main, O = blocks[0], EAVE
+    W, D = main.x1, main.y1
+
+    def profile(x):     # the main back plane's eave edge
         return min([D + O] + [D - (w.x1 - w.x0) / 2 + abs(x - (w.x0 + w.x1) / 2) for w in tall
                               if w.x0 - O <= x <= w.x1 + O])
     xs = sorted({0.0, W} | {x for w in tall for x in (w.x0 - O, (w.x0 + w.x1) / 2, w.x1 + O) if 0 < x < W}, reverse=True)
@@ -195,7 +215,7 @@ def roofs(rng, house: House, blocks: list[Block], top: float, pitch: float | Non
               ("r2", (W, D + O), (0.0, D + O), main, [(0.0, D / 2), (W, D / 2)] + [(x, profile(x)) for x in xs])]
     for b in blocks[1:]:
         k = b.name[0]
-        if b.name == "ell":         # ridge along x, against the main block's side wall at x = W
+        if b.name == "ell":
             yc = (b.y0 + b.y1) / 2
             planes += [(f"r{k}1", (b.x0, b.y0 - O), (b.x1, b.y0 - O), b, [(b.x0, b.y0 - O), (b.x1, b.y0 - O), (b.x1, yc), (b.x0, yc)]),
                        (f"r{k}2", (b.x1, b.y1 + O), (b.x0, b.y1 + O), b, [(b.x1, b.y1 + O), (b.x0, b.y1 + O), (b.x0, yc), (b.x1, yc)])]
@@ -204,18 +224,15 @@ def roofs(rng, house: House, blocks: list[Block], top: float, pitch: float | Non
         near, top_ = ((D + O, D - half) if b in tall else (D, D))
         planes += [(f"r{k}1", (b.x0 - O, b.y1), (b.x0 - O, D), b, [(b.x0 - O, b.y1), (b.x0 - O, near), (xc, top_), (xc, b.y1)]),
                    (f"r{k}2", (b.x1 + O, D), (b.x1 + O, b.y1), b, [(b.x1 + O, near), (b.x1 + O, b.y1), (xc, b.y1), (xc, top_)])]
-    for rid, a, e, b, pts in planes:
-        house.roofs.append(plane(rid, a, e, eave(b), pitch_of[b.name], pts))
-    for b in blocks:
-        H, sb = top + HEEL, pitch_of[b.name] / 12
-        across = b.name in ("main", "ell")      # the gable ends: across the ridge
-        for w in house.walls:
-            if w.base == (b.storeys - 1) * LEVEL and w.role == "exterior" and gable_end(w, b, across):
-                L = w.length
-                w.height, w.outline = H, [(0.0, 0.0), (L, 0.0), (L, H), (L / 2, H + sb * L / 2), (0.0, H)]
-        house.floors.append(Floor("c" if b.name == "main" else f"c{b.name[0]}",
-                                  [(b.x0, b.y0), (b.x1, b.y0), (b.x1, b.y1), (b.x0, b.y1)],
-                                  (b.storeys - 1) * LEVEL + top, role="ceiling", axis=(1.0, 0.0) if across else (0.0, 1.0)))
+    return planes
+
+
+def gable_walls(house: House, b: Block, H: float, slope: float, across: bool) -> None:
+    """Raise the exterior walls at the free ends of block b's roof to gables: their top follows the roof."""
+    for w in house.walls:
+        if w.base == base(b) and w.role == "exterior" and gable_end(w, b, across):
+            L = w.length
+            w.height, w.outline = H, [(0.0, 0.0), (L, 0.0), (L, H), (L / 2, H + slope * L / 2), (0.0, H)]
 
 
 def gable_end(w: Wall, b: Block, across: bool) -> bool:

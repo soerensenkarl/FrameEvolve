@@ -22,7 +22,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from frameevolve import houses, jobs as jobs_mod, model, solid, surface, verifier
 from frameevolve.builder import build
 from frameevolve.geometry import EPS
-from frameevolve.model import SECTIONS, Frame, House, Member, Roof, Wall
+from frameevolve.model import SECTIONS, Floor, Frame, House, Member, Roof, Wall
 from frameevolve.verifier import CHECKS, verify
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -43,6 +43,14 @@ def grammar_file(name: str) -> Path | None:
     m = RUN_GRAMMAR.match(name)
     p = RUNS / m[1] / "grammars" / f"{m[2]}.py" if m else GRAMMARS / f"{name}.py" if NAME.match(name) else None
     return p if p and p.is_file() else None
+
+
+def source_of(b: dict) -> str | None:
+    """The grammar source a request means: the one it sends (unsaved edits), else the file it names, else None."""
+    if b.get("source") is not None:
+        return b["source"]
+    f = grammar_file(str(b.get("grammar", "")))
+    return f.read_text() if f else None
 
 
 def grammar_names() -> list[str]:
@@ -70,11 +78,6 @@ def run_dir(name: str) -> Path | None:
     return p if NAME.match(name) and (p / "config.json").is_file() else None
 
 
-def total(scores: dict, houses: list[str]) -> list:
-    hs = [h for h in houses if h in scores]
-    return [sum(scores[h][0] for h in hs), sum(scores[h][1] for h in hs), round(sum(scores[h][2] for h in hs), 2)]
-
-
 def live_now(run: Path) -> bool:
     """Whether a search is writing to this run: its live files say so and changed in the last ten minutes."""
     try:
@@ -93,27 +96,27 @@ def run_summary(p: Path) -> dict:
 
 
 def run_payload(p: Path) -> dict:
-    """A run as the page shows it: config, candidates with totals, iterations, the Pareto set, and each training
-    house's footprint as wall segments [x0, y0, x1, y1, interior] for a thumbnail."""
-    from frameevolve.search import Run, pareto
-    config = json.loads((p / "config.json").read_text())
+    """A run as the page shows it: config, candidates with their totals over the validation houses (the ones the
+    search judges by), iterations, the Pareto set, and each validation house's footprint as wall segments
+    [x0, y0, x1, y1, interior] for a thumbnail."""
+    from frameevolve.search import Run
+    run = Run(p)
     house_ids, footprints = [], {}
-    for h in config.get("train", []):
-        hp = Path(h) if Path(h).is_absolute() else ROOT / h
+    for h in run.val:
+        hp = h if h.is_absolute() else ROOT / h
         try:
             house = House.load(hp)
         except Exception:
-            house_ids.append(Path(h).stem)
+            house_ids.append(h.stem)
             continue
         house_ids.append(house.id)
         ground = min(w.base for w in house.walls)
         footprints[house.id] = [[*w.start, *w.end, w.role == "interior"] for w in house.walls if w.base == ground]
     cands = jsonl(p / "candidates.jsonl")
-    for c in cands:
-        c["total"] = total(c["scores"], house_ids)
-    run = Run(p)
-    return {"name": p.name, "config": config, "houses": house_ids, "footprints": footprints, "candidates": cands,
-            "iterations": jsonl(p / "iterations.jsonl"), "pareto": pareto(run.cands, house_ids) if run.cands else {}}
+    for c, cand in zip(cands, run.cands):
+        c["total"] = cand.total([h for h in house_ids if h in cand.scores])
+    return {"name": p.name, "config": run.config, "houses": house_ids, "footprints": footprints, "candidates": cands,
+            "iterations": jsonl(p / "iterations.jsonl"), "pareto": run.pareto() if run.cands else {}}
 
 
 def jobs_now() -> list[dict]:
@@ -217,15 +220,20 @@ def grammar_rules(source: str) -> list[dict]:
     return sorted(out, key=lambda r: (r["priority"] if r["priority"] is not None else 1e9, r["name"]))
 
 
+def polys(w, m: Member) -> dict:
+    """A member's outlines on surface w (u, v polygons), when it is not square to it: {} for a plain box."""
+    if w is None or w.square(m):
+        return {}
+    return {"poly": [[[round(u, 3), round(v, 3)] for u, v in poly] for poly in surface.outlines(w, m)]}
+
+
 def shape(m: Member, w) -> dict:
     """How to draw a member: its world box, and where it is not a plain box, a triangle mesh (flat xyz list and
-    index triples) and its outlines on its own surface (u, v polygons)."""
-    out = {"lo": m.box.lo, "hi": m.box.hi}
+    index triples) and its outlines on its own surface."""
+    out = {"lo": m.box.lo, "hi": m.box.hi, **polys(w, m)}
     if not m.plain:
         verts, idx = solid.triangles(m.pieces)
         out["mesh"] = {"verts": [round(c, 3) for p in verts for c in p], "idx": idx}
-    if w is not None and not w.square(m):
-        out["poly"] = [[[round(u, 3), round(v, 3)] for u, v in poly] for poly in surface.outlines(w, m)]
     return out
 
 
@@ -300,9 +308,8 @@ def frame_payload(house: House, frame: Frame, source: str) -> dict:
 
 
 def outline_uv(x) -> list:
-    """A surface's outline in its own u, v: a floor's polygon, or the rectangle of a wall."""
-    pts = getattr(x, "outline_uv", None)
-    return [list(p) for p in pts] if pts else [[0, 0], [x.size[0], 0], [x.size[0], x.size[1]], [0, x.size[1]]]
+    """A surface's outline in its own u, v, as lists for JSON."""
+    return [list(p) for p in x.outline_uv]
 
 
 def storeys(house: House) -> dict[str, int]:
@@ -353,9 +360,9 @@ def constants() -> dict:
 
 def verifier_info() -> dict:
     """Every check (its meaning, hard or soft, its limits and the code it approximates) and how a frame is scored."""
-    hard = {}   # read from the verifier's own calls: Fault(check, hard, ...) and at_wall(m, p, check, hard, ...)
+    hard = {}   # read from the verifier's own calls: Fault(check, hard, ...) and at(m, p, check, hard, ...)
     for node in ast.walk(ast.parse(inspect.getsource(verifier))):
-        if isinstance(node, ast.Call) and getattr(node.func, "id", "") in ("Fault", "at_wall"):
+        if isinstance(node, ast.Call) and getattr(node.func, "id", "") in ("Fault", "at"):
             i = 0 if node.func.id == "Fault" else 2
             if len(node.args) > i + 1 and all(isinstance(a, ast.Constant) for a in node.args[i:i + 2]):
                 hard[node.args[i].value] = node.args[i + 1].value
@@ -378,8 +385,8 @@ def build_source(name: str, source: str, house: House, on_step=None) -> Frame:
 
 
 def rule_demo(name: str, source: str, rule: str, firing: int | None = None) -> dict:
-    """What one rule does, shown on the toy house: the wall just before one of its firings, and what it placed
-    and removed there. `firing` picks which firing (0 = first); by default the first one on w0."""
+    """What one rule does, shown on the toy house: the surface just before one of its firings, and what it placed
+    and removed there. `firing` picks which firing (0 = first); by default the first one on wall 1w0."""
     house = houses.toy()
     frame = build_source(name, source, house)
     doc = next((r.get("doc", "") for r in grammar_rules(source) if r.get("name") == rule), "")
@@ -390,13 +397,13 @@ def rule_demo(name: str, source: str, rule: str, firing: int | None = None) -> d
         out["message"] = "This rule did nothing on the toy house."
         return out
     if firing is None:
-        firing = next((k for k, i in enumerate(fired) if steps[i]["wall"] == "1w0"), 0)
+        firing = next((k for k, i in enumerate(fired) if steps[i]["surface"] == "1w0"), 0)
     firing = max(0, min(len(fired) - 1, firing))
     i = fired[firing]
     step = steps[i]
-    w = house.surface(step["wall"])
+    w = house.surface(step["surface"])
     same = [x for x in house.surfaces if type(x) is type(w)]
-    out["span"] = [max(x.size[0] for x in same), max(x.size[1] for x in same)]   # one scale for every wall, or floor
+    out["span"] = [max(x.size[0] for x in same), max(x.size[1] for x in same)]   # one scale for surfaces of its kind
     placed_at, removed_at = {}, {}
     for k, s in enumerate(steps):
         for mid in s["placed"]:
@@ -407,11 +414,8 @@ def rule_demo(name: str, source: str, rule: str, firing: int | None = None) -> d
 
     def box(m) -> dict:
         b = w.local_box(m)
-        out = {"id": m.id, "rule": m.rule, "role": m.role, "u0": b.lo[0], "v0": b.lo[1], "u1": b.hi[0], "v1": b.hi[1],
-               "w0": b.lo[2]}
-        if not w.square(m):
-            out["poly"] = [[[round(u, 3), round(v, 3)] for u, v in poly] for poly in surface.outlines(w, m)]
-        return out
+        return {"id": m.id, "rule": m.rule, "role": m.role, "u0": b.lo[0], "v0": b.lo[1], "u1": b.hi[0], "v1": b.hi[1],
+                "w0": b.lo[2], **polys(w, m)}
 
     before = [m for m in allm.values() if placed_at.get(m.id, -1) < i and removed_at.get(m.id, 10**9) >= i]
     own = [box(m) for m in before if m.surface == w.id]
@@ -423,18 +427,18 @@ def rule_demo(name: str, source: str, rule: str, firing: int | None = None) -> d
         if abs(b["w0"]) <= EPS and b["u1"] > EPS and b["u0"] < w.length - EPS:
             near.append(b)
     shape = {"id": w.id, "kind": "wall" if isinstance(w, Wall) else "roof" if isinstance(w, Roof) else "floor",
-             "role": w.role, "size": w.size, "outline": outline_uv(w),
-             "openings": [asdict(o) for o in w.openings], "tees": [asdict(t) for t in getattr(w, "tees", [])],
+             "role": w.role, "size": w.size, "outline": outline_uv(w), "openings": [asdict(o) for o in w.openings],
+             "tees": [asdict(t) for t in w.tees] if isinstance(w, Wall) else [],
              "bearers": [{**asdict(b), "depth": surface.depth(house.wall(b.wall), frame.members) or 0.0}
-                         for b in getattr(w, "bearers", [])]}
+                         for b in w.bearers] if isinstance(w, Floor) else []}
     out.update({
-        "firing": firing, "pass": step["pass"], "match": step.get("match"), "target": step.get("target"),
-        "wall": shape,
-        "firings": [{"wall": steps[k]["wall"], "pass": steps[k]["pass"]} for k in fired],
+        "firing": firing, "pass": step["pass"], "match": step["match"], "target": step["target"],
+        "surface": shape,
+        "firings": [{"surface": steps[k]["surface"], "pass": steps[k]["pass"]} for k in fired],
         "before": own, "neighbours": near,
         "placed": [box(allm[mid]) for mid in step["placed"] if mid in allm],
         "removed": [box(allm[mid]) for mid in step["removed"] if mid in allm],
-        "shaped": [box(allm[mid]) for mid in step.get("shaped", []) if mid in allm and allm[mid].surface == w.id],
+        "shaped": [box(allm[mid]) for mid in step["shaped"] if mid in allm and allm[mid].surface == w.id],
     })
     return out
 
@@ -452,7 +456,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def build_live(self, name: str, source: str, house: House) -> None:
+    def stream_build(self, name: str, source: str, house: House) -> None:
         """Build and stream it as it happens: the house's surfaces, one JSON line per step with the pieces it placed,
         then the frame."""
         self.send_response(200)
@@ -466,8 +470,8 @@ class Handler(BaseHTTPRequestHandler):
 
         def on_step(step: dict, members: dict) -> None:
             draw = lambda ids: [{"id": i, "rule": m.rule, **shape(m, None)} for i in ids if (m := members.get(i))]
-            line({"step": {"rule": step["rule"], "wall": step["wall"], "t": step["t"], "placed": draw(step["placed"]),
-                           "removed": step["removed"], "shaped": draw(step.get("shaped", []))}})
+            line({"step": {"rule": step["rule"], "surface": step["surface"], "t": step["t"], "placed": draw(step["placed"]),
+                           "removed": step["removed"], "shaped": draw(step["shaped"])}})
 
         try:
             line({"house": {"house": house.id, **surfaces_payload(house, [], gaps_too=False)}})
@@ -560,24 +564,13 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         try:
             b = self.body()
-            if path in ("/api/build", "/api/build_live"):
+            if path == "/api/build":
                 if not NAME.match(str(b.get("house", ""))):
                     return self.send(400, {"error": "bad house name"})
-                house = House.load(HOUSES / f"{b['house']}.json")
-                name = b["grammar"]
-                if not grammar_file(name) and b.get("source") is None:
-                    return self.send(400, {"error": "no such grammar"})
-                source = b.get("source")
+                source = source_of(b)
                 if source is None:
-                    source = grammar_file(name).read_text()
-                if path == "/api/build_live":
-                    return self.build_live(name, source, house)
-                t = time.perf_counter()
-                frame = build_source(name, source, house)
-                build_s = time.perf_counter() - t
-                out = frame_payload(house, frame, source)
-                out["timing"]["build"] = build_s
-                return self.send(200, out)
+                    return self.send(400, {"error": "no such grammar"})
+                return self.stream_build(b["grammar"], source, House.load(HOUSES / f"{b['house']}.json"))
             if path == "/api/jobs":
                 try:
                     return self.send(200, JOBS.start(str(b.get("kind", "")), b.get("settings") or {}))
@@ -592,14 +585,11 @@ class Handler(BaseHTTPRequestHandler):
                         return self.send(404, {"error": str(e)})
                 return self.send(404, {"error": "not found"})
             if path == "/api/rule_demo":
-                name = b["grammar"]
-                if not grammar_file(name) and b.get("source") is None:
-                    return self.send(400, {"error": "no such grammar"})
-                source = b.get("source")
+                source = source_of(b)
                 if source is None:
-                    source = grammar_file(name).read_text()
+                    return self.send(400, {"error": "no such grammar"})
                 firing = b.get("firing")
-                return self.send(200, rule_demo(name, source, str(b["rule"]), None if firing is None else int(firing)))
+                return self.send(200, rule_demo(b["grammar"], source, str(b["rule"]), None if firing is None else int(firing)))
             if path == "/api/houses":
                 if b.get("seed") is None:
                     # a random seed whose house does not exist yet
