@@ -399,6 +399,7 @@ function setMeasure(on) {
   if (!on) clear(measure.group);    // measurements stay while measuring, go when you stop
 }
 $("#measureBtn").addEventListener("click", () => setMeasure(!measure.on));
+$("#centerBtn").addEventListener("click", () => fit());
 
 function measurePoint(e) {
   // the point under the cursor on a member (or the ground), snapped to the nearest corner or edge midpoint
