@@ -218,3 +218,23 @@ hashed only `frameevolve/*.py`, so a change in a subpackage would have reused st
 `.venv` symlink replaced the real virtualenv on merge (git treats ignored files as expendable); the seed's panel
 joints crashed where no grid line cleared the openings; false positives in rim spans, king studs under floors,
 restraint at rim butts, erection cycles between doubled headers, and gable panels judged by "both ends".
+
+Runs (validation totals, hard / soft / cost; all proposals by Opus 5.5 on the subscription):
+- r1, r2 (old verifier): 26 hard -> 18 and 20. The loop works; 10 of 12 proposals kept.
+- p1 (prefab verifier, 6 its): 3461 / 1085 -> 732 / 77; cost 189k -> 268k (compliance costs timber).
+- p2 (with structural analysis, 10 its): 4424 / 1186 -> 626 / 90.
+- p3 (from p2's best, 17 good its): 626 -> 538. Every child beats its parent on its minibatch, but
+  validation gains shrink: fixes are specific to the training houses (e.g. 46 ft floor cassettes on a deeper
+  validation house). The Pareto set grew to 12 grammars.
+- p4 (minibatch 4, 10 its): 4424 -> 563 hard, soft up to 1584 (more joists, more restraint warnings).
+- Pictures ablation (same seed and minibatches): after one iteration, 1401 -> 728 hard with pictures, 1401 ->
+  1012 text only; text only reached 1305 hard on validation after 5. Cut short, see below.
+What the proposer found: gable walls split into a wall panel and a gable panel, rafters raised 1/4" to keep the
+birdsmouth within d/4, square ridge boards set down (no rip), rafter ties where no ceiling joist ties, double top
+plates and 16" layout to satisfy in-line framing and stud tables.
+Verifier bugs found from the runs and fixed: rafter ties judged by "opposite slope" failed in valley zones (now:
+the tie line must span the house in plan to the far eave); a block held inside its own panel made the panel wait
+for a site joist (false erection cycle); a rafter's heel against its own plate counted as lateral restraint;
+the Verifier tab listed every module limit under every check.
+Stopped at 1 am: the Claude subscription's 5-hour usage limit. Open: the search treats a usage limit as a failed
+proposal and burns iterations (it should wait for the reset); a-images and p3 were stopped mid-run.
