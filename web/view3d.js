@@ -105,14 +105,22 @@ function bindViewInput(canvas) {
     const id = pick(e).hit?.object.userData.id;
     if (!clickMember(id)) select(id ? { kind: "member", id } : null);   // the panels and assembly views take a click themselves
   });
-  // wheel and trackpad, as in Rhino: the wheel zooms at the cursor (Shift: pans). On a trackpad two fingers orbit
-  // (Shift: pan) and pinch zooms: a two-finger scroll nearly always drifts sideways, and once one does, the
-  // gesture stays a trackpad's until it rests, so its momentum is never read as the wheel.
-  let padUntil = 0;
+  // wheel and trackpad, as in Rhino: a mouse wheel zooms at the cursor (Shift: pans); on a trackpad two fingers
+  // orbit (Shift: pan) and pinch zooms, never a two-finger zoom. A wheel notch is counted in lines, or is a whole
+  // multiple of a notch's step: 4.000244140625 px in Chrome on a Mac, 100 or 120 elsewhere. Anything else is a
+  // trackpad. A gesture keeps what it was until it rests, so a trackpad's momentum is never read as a wheel.
+  let gesture = null, lastWheel = 0;
+  const NOTCH = 4.000244140625;
+  const notch = (d) => d > 0 && (Math.abs(d / NOTCH - Math.round(d / NOTCH)) < 1e-9
+    || (Number.isInteger(d) && (d % 100 === 0 || d % 120 === 0)));
   const fromTrackpad = (e) => {
     const now = performance.now();
-    if (e.deltaX !== 0 && !e.shiftKey) padUntil = now + 250;
-    return now < padUntil;
+    if (!gesture || now - lastWheel > 250) {
+      const mouse = e.deltaMode !== 0 || (e.deltaX === 0 && notch(Math.abs(e.deltaY))) || (e.shiftKey && notch(Math.abs(e.deltaX)));
+      gesture = mouse ? "mouse" : "pad";
+    }
+    lastWheel = now;
+    return gesture === "pad";
   };
   canvas.addEventListener("wheel", (e) => {
     e.preventDefault();
