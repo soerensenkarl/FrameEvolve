@@ -106,7 +106,7 @@ def test_claude_proposer_edits_through_its_tools(tmp_path, monkeypatch):
     assert seen["model"] == "claude-opus-5-5" and seen["output_config"] == {"effort": "medium"}
     assert seen["check"].startswith("Check 1 of 2")
     kinds = [b["type"] for b in seen["messages"][0]["content"]]
-    assert kinds[0] == "text" and kinds.count("image") == 2
+    assert kinds[0] == "text" and kinds.count("image") == 4      # per house: the frame in 3D, then the elevations
     out = run.path / "proposals" / "0001"
     assert (out / "prompt.md").exists() and json.loads((out / "transcript.json").read_text())
 
@@ -158,7 +158,8 @@ def test_evaluate_caches_results_and_pictures(tmp_path, monkeypatch):
     assert len(calls) == 2
     for h in first:
         assert again[h]["score"] == first[h]["score"]
-        assert Path(again[h]["image"]).parent == tmp_path / "b" and Path(again[h]["image"]).exists()
+        for name in ("image", "image3d"):
+            assert Path(again[h][name]).parent == tmp_path / "b" and Path(again[h][name]).exists()
     g.write_text(g.read_text().replace("SPACING = 24", "SPACING = 16"))
     evaluate(g, hs, cache=tmp_path / "cache")
     assert len(calls) == 4                       # a changed grammar is built again

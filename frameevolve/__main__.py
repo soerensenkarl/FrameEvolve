@@ -10,6 +10,27 @@ from frameevolve.model import House
 from frameevolve.verifier import verify
 
 
+def pictures(house, frame, report, folder: Path) -> tuple[str | None, str | None]:
+    """The proposer's pictures of one house, hard faults marked: elevations, and the whole frame in 3D from two
+    opposite corners. A picture that fails is left out; it must never fail the evaluation."""
+    import sys
+    from frameevolve import render
+    folder.mkdir(parents=True, exist_ok=True)
+    out = []
+    marks = [(f.wall, f.u, f.v, f.check) for f in report.faults if f.hard and f.wall and f.u is not None]
+    points = [(*f.at, f.check) for f in report.faults if f.hard and f.at is not None]
+    for path, draw in [(folder / f"{house.id}.png", lambda p: render.elevations(house, frame, p, marks=marks)),
+                       (folder / f"{house.id}.3d.png", lambda p: render.axonometric(
+                           house, frame, p, marks=points, views=[(28, -58), (28, 122)]))]:
+        try:
+            draw(str(path))
+            out.append(str(path))
+        except Exception as e:
+            print(f"{house.id}: no picture {path.name}: {type(e).__name__}: {e}", file=sys.stderr)
+            out.append(None)
+    return out[0], out[1]
+
+
 def main(argv=None) -> None:
     p = argparse.ArgumentParser(prog="frameevolve")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -82,15 +103,11 @@ def main(argv=None) -> None:
             house = House.load(hp)
             frame = build(a.grammar, house)
             report = verify(house, frame)
-            image = None
+            image = image3d = None
             if a.images:
-                from frameevolve import render
-                Path(a.images).mkdir(parents=True, exist_ok=True)
-                image = str(Path(a.images) / f"{house.id}.png")
-                marks = [(f.wall, f.u, f.v, f.check) for f in report.faults if f.hard and f.wall and f.u is not None]
-                render.elevations(house, frame, image, marks=marks)
-            out[house.id] = {"image": image, "score": list(report.score), "hard": report.hard, "soft": report.soft,
-                             "metrics": report.metrics, "text": report.text(),
+                image, image3d = pictures(house, frame, report, Path(a.images))
+            out[house.id] = {"score": list(report.score), "hard": report.hard, "soft": report.soft,
+                             "image": image, "image3d": image3d, "metrics": report.metrics, "text": report.text(),
                              "faults": [{"check": f.check, "hard": f.hard, "wall": f.wall, "u": f.u, "v": f.v,
                                          "message": f.message, "rules": f.rules} for f in report.faults]}
         print(json.dumps(out))

@@ -54,6 +54,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FAILED = [10**6, 10**6, 1e12]   # the score of a grammar that crashed or timed out
 INSPIRATIONS = 2                # other Pareto grammars shown to the proposer
 REJECTED = 3                    # earlier children of the parent that were not kept, shown to the proposer
+PICTURES = {"image": ".png", "image3d": ".3d.png"}   # elevations, and the whole frame in 3D from two sides
 
 
 @dataclass
@@ -94,7 +95,7 @@ def cache_key(grammar_src: str, house: Path) -> str:
 
 def failed(hid: str, why: str) -> dict:
     return {"score": FAILED, "hard": FAILED[0], "soft": 0, "text": f"House {hid}: evaluation failed: {why}",
-            "faults": [], "metrics": {}, "image": None}
+            "faults": [], "metrics": {}, "image": None, "image3d": None}
 
 
 def _run_group(grammar: Path, houses: list[Path], timeout: float, images: Path | None) -> dict:
@@ -116,7 +117,8 @@ def evaluate(grammar: Path, houses: list[Path], timeout: float = 120, cache: Pat
              images: Path | None = None) -> dict:
     """Build and verify a grammar on houses, in separate processes, one group of houses per core.
     Returns {house id: result}. With `cache`, results (and elevations) are reused by content. With `images`,
-    each house's elevations, faults marked, are written there as <house id>.png and named in the result."""
+    each house's pictures, hard faults marked, are written there and named in the result: elevations as
+    <house id>.png ("image") and the whole frame from two sides as <house id>.3d.png ("image3d")."""
     grammar, houses = Path(grammar), [Path(h) for h in houses]
     src = grammar.read_text()
     out, todo = {}, []
@@ -124,13 +126,14 @@ def evaluate(grammar: Path, houses: list[Path], timeout: float = 120, cache: Pat
         hid = house_id(h)
         if cache:
             key = cache_key(src, h)
-            f, png = cache / f"{key}.json", cache / f"{key}.png"
-            if f.exists() and (not images or png.exists()):
+            f = cache / f"{key}.json"
+            if f.exists() and (not images or all((cache / f"{key}{x}").exists() for x in PICTURES.values())):
                 out[hid] = json.loads(f.read_text())
                 if images:
                     images.mkdir(parents=True, exist_ok=True)
-                    shutil.copy(png, images / f"{hid}.png")
-                    out[hid]["image"] = str(images / f"{hid}.png")
+                    for name, x in PICTURES.items():
+                        shutil.copy(cache / f"{key}{x}", images / f"{hid}{x}")
+                        out[hid][name] = str(images / f"{hid}{x}")
                 continue
         todo.append(h)
     if todo:
@@ -146,9 +149,11 @@ def evaluate(grammar: Path, houses: list[Path], timeout: float = 120, cache: Pat
                 if r["score"] == FAILED:
                     continue                 # a timeout may be the machine, not the grammar
                 key = cache_key(src, h)
-                if images and r.get("image"):
-                    shutil.copy(r["image"], cache / f"{key}.png")
-                (cache / f"{key}.json").write_text(json.dumps({**r, "image": None}))
+                if images:
+                    for name, x in PICTURES.items():
+                        if r.get(name):
+                            shutil.copy(r[name], cache / f"{key}{x}")
+                (cache / f"{key}.json").write_text(json.dumps({**r, **{name: None for name in PICTURES}}))
     return {house_id(h): out[house_id(h)] for h in houses}
 
 
@@ -353,7 +358,8 @@ class Run:
             "parent_batch": parent_batch, "max_lines": self.max_lines, "cache": str(self.cache),
             "reports": {h: parent_res[h]["text"] for h in batch_ids},
             "parent_scores": {h: parent.scores[h] for h in self.house_ids},
-            "images": [parent_res[h]["image"] for h in batch_ids if parent_res[h].get("image")],
+            "images": [parent_res[h][name] for h in batch_ids for name in ("image3d", "image")
+                       if parent_res[h].get(name)],
             "pareto": {cid: hs for cid, hs in wins.items()},
             "rejected": self.rejected(parent.id),
             "inspirations": self.inspirations(parent, wins, self.config.get("inspirations", INSPIRATIONS)),

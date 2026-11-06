@@ -149,7 +149,9 @@ Pareto search keeps the grammars that do well across many houses.
   through the Claude Agent SDK, signed in with a Claude subscription (the default, `--via subscription`),
   or the Anthropic API's tool runner (`--via api`).
 - It sees: the parent grammar, the parent's scores on every training house, the verifier's text reports
-  on the minibatch, and one elevation picture per minibatch house with hard faults marked.
+  on the minibatch, and two pictures per minibatch house with hard faults marked: the whole frame in 3D
+  from two opposite corners (roofs and floors are hard to judge from elevations), then the wall and roof
+  elevations. A picture that fails to draw is left out; it never fails the evaluation.
 - It also sees the last three children of this parent that were not kept, with why and their notes, so it
   does not repeat them; and up to two inspirations (AlphaEvolve): other grammars in the Pareto set that beat
   the parent on the most validation houses, with their code, notes and training scores. `--inspirations 0`

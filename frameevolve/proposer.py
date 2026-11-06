@@ -204,8 +204,9 @@ def prompt(context: dict, images: bool, out: Path) -> tuple[str, list[dict]]:
     text = (f"The parent grammar is {context['parent']}. Its scores on every training house:\n{scores}\n\n"
             f"These houses are this round's test: {', '.join(context['houses'])}. The parent's total on them is "
             f"{pb[0]} hard, {pb[1]} soft, cost {pb[2]:.1f}. Their reports:\n\n{reports}\n\n"
-            + ("The pictures show each wall from outside, coloured by rule; red crosses mark hard faults and red "
-               "hatching marks sheathing with nothing behind it.\n\n" if images else "")
+            + ("For each house, in the order above, two pictures, members coloured by rule and red crosses marking hard "
+               "faults: first the whole frame in 3D from two opposite corners, then each wall from outside and each "
+               "roof plane from above, where red hatching marks boards with nothing behind them.\n\n" if images else "")
             + rejected_text(context.get("rejected", []))
             + inspirations_text(context.get("inspirations", []))
             + "Read the grammar with view_grammar, then improve it.")
