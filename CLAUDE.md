@@ -23,7 +23,7 @@ learn something). Imperial units, inches in code.
 | `frameevolve/jobs.py` | background jobs the workbench starts (a search, the tests, scoring) |
 | `frameevolve/server.py` | the workbench's JSON API; builds stream as NDJSON (`/api/build`) |
 | `web/` | the workbench page as ES modules: `app.js` (entry: build, stats, rules, tabs), `state.js` (shared state, units, api), `view3d.js`, `elevations.js`, `inspect.js` (inspector, verifier, timeline), `editor.js`, `runs.js`, `live.js` |
-| `grammars/seed.py` | the hand-written seed grammar; `minimal.py` a bad one for tests |
+| `grammars/seed.py` | the bare-bones seed a search starts from; `advanced.py` a hand-written reference frame (tests, comparison); `minimal.py` a bad one for tests |
 | `data/houses/` | the dataset, h000–h019; `runs/` search runs; `jobs/` job logs |
 | `tests/` | pytest; `conftest.py` has session-scoped frames |
 

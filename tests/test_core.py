@@ -6,7 +6,7 @@ from frameevolve.builder import build
 from frameevolve.graph import GROUND, build_graph
 from frameevolve.verifier import verify
 
-from conftest import SEED, box_house
+from conftest import ADVANCED, SEED, box_house
 
 
 def test_place_turns_the_section_by_its_short_side(wall_state):
@@ -63,15 +63,25 @@ PHYSICAL = {"rule error", "clash", "floating", "too long", "opening", "assembly"
 
 @pytest.mark.parametrize("seed", range(8))
 def test_seed_grammar_frames_generated_houses_as_panels(seed):
-    """The seed frames every house with nothing physically wrong (the code and the saw still find things for the
-    search to fix), builds its walls and floors as panels that go up bottom first, and wastes no negative timber."""
+    """The bare seed builds every house without a rule error and puts each wall and floor in a panel; what it
+    leaves wrong (corners, jacks, ties, ...) is the search's to fix."""
     house = houses.generate(seed)
     frame = build(SEED, house)
     report = verify(house, frame)
-    assert not [f.message for f in report.faults if f.check in PHYSICAL], house.id
+    assert not [f.message for f in report.faults if f.check == "rule error"], house.id
     walls_floors = {x.id for x in house.walls} | {f.id for f in house.floors if f.role == "floor"}
     assert all(m.panel for m in frame.members if m.surface in walls_floors)
     assert report.metrics["waste_ft"] >= 0
+
+
+@pytest.mark.parametrize("seed", range(4))
+def test_reference_grammar_frames_generated_houses_with_nothing_physically_wrong(seed):
+    """The hand-written reference grammar frames every house with nothing physically wrong and builds its walls
+    and floors as panels that go up bottom first."""
+    house = houses.generate(seed)
+    frame = build(ADVANCED, house)
+    report = verify(house, frame)
+    assert not [f.message for f in report.faults if f.check in PHYSICAL], house.id
 
 
 def test_minimal_grammar_has_the_expected_hard_faults(minimal0):

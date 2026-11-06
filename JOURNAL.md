@@ -267,3 +267,14 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
   grazing a joist by 1/4" failed (now everything a member rests on at a place counts together, and the
   minimum is for its ends, R502.6); and an opposite rafter met head on was taken for a ridge board too shallow
   (rafters may meet with a gusset, R802.3).
+
+## 2026-11-06: a bare-bones seed
+
+- The seed is now what a framer does first and nothing more (~12 rules): plates, studs every 24" from the
+  wall's start, kings, header and sill at openings, rim and joists, ceiling joists, rafters and a ridge, one
+  panel per wall and floor. No corners, jacks, cripples, birdsmouths, ties, gables, blocking or grid. The search
+  has to find all of that, which makes the loop's contribution visible. On h000-h019 it builds without a rule
+  error and starts far from sound: clash 4810, backing 2945, floating 1484, header 1405, in line 1327, strength
+  1150, span 790, assembly 720 hard faults.
+- The old seed (advanced platform framing as panels) stays as grammars/advanced.py: the verifier tests run on
+  its frames, and it is the hand-written baseline the search's grammar is compared against.

@@ -57,9 +57,9 @@ def test_two_panels_whose_plates_interlock_have_no_order(wall_state):
     assert any("no order" in m for m in msgs), msgs
 
 
-def test_the_seed_lays_out_a_grid_and_joints_and_builds_wall_panels(tmp_path):
+def test_the_reference_grammar_lays_out_a_grid_and_builds_wall_panels(tmp_path):
     house = box_house()
-    frame = build("grammars/seed.py", house)
+    frame = build("grammars/advanced.py", house)
     kinds = {g.kind for g in frame.guides}
     assert {"grid", "panel joint"} <= kinds or "grid" in kinds
     assert all(m.panel for m in frame.members if m.surface.startswith("1w"))

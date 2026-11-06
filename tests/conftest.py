@@ -9,6 +9,7 @@ from frameevolve.model import House, Wall
 
 ROOT = Path(__file__).resolve().parents[1]
 SEED = ROOT / "grammars/seed.py"
+ADVANCED = ROOT / "grammars/advanced.py"   # the hand-written reference: a realistic frame to test the verifier on
 MINIMAL = ROOT / "grammars/minimal.py"
 
 
@@ -43,13 +44,13 @@ def minimal0():
 
 @pytest.fixture(scope="session")
 def seeded():
-    """House h001, a two-storey box the seed frames cleanly: (house, frame)."""
+    """House h001, a two-storey box, framed by the reference grammar: (house, frame)."""
     house = houses.generate(1)
-    return house, build(SEED, house)
+    return house, build(ADVANCED, house)
 
 
 @pytest.fixture(scope="session")
 def toy_seeded():
-    """The toy house framed by the seed: (house, frame)."""
+    """The toy house framed by the reference grammar: (house, frame)."""
     house = houses.toy()
-    return house, build(SEED, house)
+    return house, build(ADVANCED, house)

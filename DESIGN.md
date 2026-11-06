@@ -250,5 +250,5 @@ the readability of the final grammar.
 - Feedback: text reports only; text plus elevations (current); plus the contact graph around faults.
 - Proposer: Opus vs Sonnet vs Haiku; effort low, medium, high; draft checks 0 vs 3.
 - Selection: Pareto set (current) vs greedy best.
-- Start: minimal grammar vs hand-written seed.
+- Start: bare-bones seed (current) vs the hand-written reference (advanced.py) vs minimal.
 - Baseline: a frontier model framing each house directly, zero-shot, scored by the same verifier.
