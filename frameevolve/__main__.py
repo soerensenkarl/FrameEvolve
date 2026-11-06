@@ -17,6 +17,15 @@ from frameevolve.search import INSPIRATIONS, PICTURES, SEED_GRAMMAR
 from frameevolve.verifier import verify
 
 
+def in_faults(report) -> dict:
+    """Member id -> True if it is in a hard fault, False if only in soft ones."""
+    out = {}
+    for f in report.faults:
+        for mid in f.members:
+            out[mid] = out.get(mid, False) or f.hard
+    return out
+
+
 def pictures(house, frame, report, folder: Path) -> dict:
     """The proposer's pictures of one house, hard faults marked, by name as in search.PICTURES: "image" is the
     elevations, "image3d" the whole frame from two opposite corners. A picture that fails is None; it must
@@ -27,7 +36,8 @@ def pictures(house, frame, report, folder: Path) -> dict:
     marks = [(f.surface, f.u, f.v, f.check) for f in report.faults if f.hard and f.surface and f.u is not None]
     points = [(*f.at, f.check) for f in report.faults if f.hard and f.at is not None]
     draw = {"image": lambda p: render.elevations(house, frame, p, marks=marks),
-            "image3d": lambda p: render.axonometric(house, frame, p, marks=points, views=[(28, -58), (28, 122)])}
+            "image3d": lambda p: render.axonometric(house, frame, p, marks=points, views=[(28, -58), (28, 122)],
+                                                    by="faults", faults=in_faults(report))}
     out = {}
     for name, suffix in PICTURES.items():
         path = folder / f"{house.id}{suffix}"
@@ -75,6 +85,14 @@ def main(argv=None) -> None:
     v.add_argument("--no-images", action="store_true", help="proposer reads text only")
     v.add_argument("--dry", action="store_true", help="scripted proposer that changes the stud spacing; no Claude")
     v.add_argument("--seed", type=int, default=0)
+    k = sub.add_parser("look", help="a picture of a grammar's frame on one house, as JSON with the picture's path "
+                                    "(the proposer's look tool)")
+    k.add_argument("grammar")
+    k.add_argument("house")
+    k.add_argument("--out", required=True)
+    k.add_argument("--view", choices=["3d", "surface"], default="3d")
+    k.add_argument("--surface", nargs="*", default=[], help="surfaces to show square on; default: most faults")
+    k.add_argument("--colour", choices=["rule", "panel", "faults"], default="rule")
     w = sub.add_parser("serve", help="open the workbench in a browser")
     w.add_argument("--port", type=int, default=8765)
     a = p.parse_args(argv)
@@ -117,6 +135,23 @@ def main(argv=None) -> None:
                              "metrics": report.metrics, "text": report.text(),
                              "faults": [asdict(f) for f in report.faults]}
         print(json.dumps(out))
+    elif a.cmd == "look":
+        import json
+        from frameevolve import render
+        house = House.load(a.house)
+        frame = build(a.grammar, house)
+        report = verify(house, frame)
+        hard = [f for f in report.faults if f.hard]
+        faults = in_faults(report)
+        if a.view == "3d":
+            render.axonometric(house, frame, a.out, marks=[(*f.at, f.check) for f in hard if f.at is not None],
+                               views=[(28, -58), (28, 122)], by=a.colour, faults=faults)
+        else:
+            render.elevations(house, frame, a.out, marks=[(f.surface, f.u, f.v, f.check) for f in hard
+                                                          if f.surface and f.u is not None], only=a.surface,
+                              by=a.colour, faults=faults)
+        print(json.dumps({"image": a.out, "score": list(report.score), "errors": frame.errors[:3],
+                          "surfaces": [x.id for x in house.surfaces]}))
     elif a.cmd == "serve":
         from frameevolve.server import serve
         serve(a.port)

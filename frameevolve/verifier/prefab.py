@@ -7,10 +7,11 @@ edge of its outline) so it holds its shape when lifted and its boards end on woo
 truck and light enough to lift.
 Members without a panel are cut and nailed on site; cost.py charges them more, and a crane lift per panel.
 
-The saw: every piece is cut from stock by a standard automated framing saw. It crosscuts square or at a miter
-(the board lying on its wide face) up to 60 degrees and a bevel (tilted through its thickness) up to 45, cuts
-pockets and notches with up to three faces (a birdsmouth, a housing), holds no piece shorter than 6", and does
-not rip along a board's length.
+The saw: every piece is cut from stock by a standard automated framing saw. It crosscuts each end once, square
+or at a miter (the board lying on its wide face) up to 60 degrees and a bevel (tilted through its thickness) up to
+45, cuts pockets and notches with up to three faces (a birdsmouth, a housing), holds no piece shorter than 6",
+and does not rip along a board's length. An end cut to two planes at once (a stud peaked to fit under a valley or
+a ridge) is not a saw cut: cut the end to one plane, or square, and block what is left.
 
 Erection: panels and site pieces go up one at a time, bottom up. There must be an order in which every one
 rests on what is already up (or on the ground), and every panel can be lowered straight down by the crane
@@ -170,6 +171,10 @@ def cutting(s: Site) -> list[Fault]:
                 out.append(s.at(m, m.box.centre, "cut", True, f"{name(m)} has an end cut {miter:.0f} degrees off square "
                                 f"in its face and {bevel:.0f} through its thickness; a saw cuts up to {MITER:.0f} and "
                                 f"{BEVEL:.0f}"))
+        for end, k in end_cuts(m).items():
+            if k > 1:
+                out.append(s.at(m, m.box.centre, "cut", True, f"{name(m)} is cut to {k} planes at its {end}, meeting in "
+                                f"an edge: a saw cuts an end once; cut it to one plane, or square, and block the gap"))
         for region in m.notches:
             faces, ripped = notch_faces(m, region)
             if ripped:
@@ -178,6 +183,29 @@ def cutting(s: Site) -> list[Fault]:
             elif faces > NOTCH_FACES:
                 out.append(s.at(m, m.box.centre, "cut", True, f"{name(m)} has a notch with {faces} faces: a saw cuts a "
                                 f"notch with up to {NOTCH_FACES} (a birdsmouth, a housing)"))
+    return out
+
+
+def end_cuts(m: Member) -> dict[str, int]:
+    """How many of m's cut planes shape each end ("start", "end"): those that leave a face on the piece, by where
+    along m that face lies. Parallel cuts count once (the last one leaves the face)."""
+    if len(m.cuts) < 2:
+        return {}
+    piece = solid.box_faces(m.start, m.end, m.up, m.width, m.depth)
+    for n, d in m.cuts:
+        piece = solid.clip(piece, tuple(n), d) if piece else piece
+    a, out = axis(m), {}
+    seen: dict[str, list] = {}
+    for n, d in m.cuts:
+        n = tuple(n)
+        on = [pts for fn, fd, pts in piece or [] if dot(fn, n) > 1 - 1e-6 and abs(fd - d) < 1e-6]
+        if not on or solid.area(on[0]) < 0.05 or abs(dot(n, a)) < 0.05:
+            continue          # no face left by it, or a rip (reported on its own)
+        t = sum(dot(p, a) for p in on[0]) / len(on[0]) - dot(m.start, a)
+        end = "end" if t > m.length / 2 else "start"
+        if not any(dot(n, q) > 1 - 1e-6 for q in seen.get(end, [])):
+            seen.setdefault(end, []).append(n)
+            out[end] = out.get(end, 0) + 1
     return out
 
 
@@ -214,9 +242,27 @@ def units(s: Site) -> dict[str, list[Member]]:
 
 
 def erection(s: Site) -> list[Fault]:
-    """Put everything up bottom first: each unit (a panel, or a piece built on site) goes up once everything it
-    rests on is up, lowest first. A unit that rests on one that can only go up after it (a cycle) has no order;
-    a unit with something already up over it cannot be lowered into place."""
+    """Put everything up bottom first (see sequence): a unit that rests on one that can only go up after it (a
+    cycle) has no order; a panel with something already up over it cannot be lowered into place."""
+    us = units(s)
+    out = []
+    for step in sequence(s):
+        k = step["unit"]
+        if step["waits"]:
+            out.append(fault_at(s, us[k], f"{label(k, us)} rests on {', '.join(label(w, us) for w in step['waits'][:3])}, "
+                                          f"which can only go up after it: there is no order to put them up"))
+        if step["blocked"]:
+            p, m = s.by_id[step["blocked"][0]], s.by_id[step["blocked"][1]]
+            out.append(fault_at(s, us[k], f"{label(k, us)} cannot be lowered into place: {name(p)} of "
+                                          f"{label(step['blocked_by'], us)}, already up, is over {name(m)}", [p]))
+    return out
+
+
+def sequence(s: Site) -> list[dict]:
+    """The order of erection, bottom up: each unit (a panel, or a piece built on site) goes up once everything it
+    rests on is up, lowest first. Each step: the unit, whether it is a panel, its members, the units it rests on,
+    those it had to wait for that were not up (a cycle broken by putting it up anyway), and what already up was in
+    the way of lowering it (blocked: [member up, member of this unit], and the unit that member belongs to)."""
     us = units(s)
     of = {m.id: k for k, ms in us.items() for m in ms}
     bears = lambda n: bool(s.g.bears.get(n))
@@ -232,28 +278,38 @@ def erection(s: Site) -> list[Fault]:
             need |= {of[n] for n in under if n in of and of[n] != k}
         needs[k] = need
     bottom = {k: min(m.box.lo[2] for m in ms) for k, ms in us.items()}
-    up, order, out = set(), [], []
+    up, steps = set(), []
     grid: dict[tuple[int, int], list[Member]] = {}
     todo = set(us)
     while todo:
         ready = [k for k in todo if needs[k] <= up]
-        stuck = not ready
         k = min(ready or todo, key=lambda x: (bottom[x], x))
-        if stuck:
-            waits = sorted(needs[k] - up)
-            out.append(fault_at(s, us[k], f"{label(k, us)} rests on {', '.join(label(w, us) for w in waits[:3])}, "
-                                          f"which can only go up after it: there is no order to put them up"))
         over = blocked(us[k], grid) if us[k][0].panel else None    # a crane lowers a panel; a site piece is
-        if over:                                                    # slid into place by hand
-            m, p = over
-            out.append(fault_at(s, us[k], f"{label(k, us)} cannot be lowered into place: {name(p)} of "
-                                          f"{label(of[p.id], us)}, already up, is over {name(m)}", [p]))
+        steps.append({"unit": k, "panel": bool(us[k][0].panel), "members": [m.id for m in us[k]],   # slid in by hand
+                      "rests_on": sorted(needs[k]), "waits": [] if ready else sorted(needs[k] - up),
+                      "blocked": [over[1].id, over[0].id] if over else None,
+                      "blocked_by": of[over[1].id] if over else None})
         todo.discard(k)
         up.add(k)
-        order.append(k)
         for m in us[k]:
             for cell in cells(m):
                 grid.setdefault(cell, []).append(m)
+    return steps
+
+
+def panel_facts(s: Site) -> list[dict]:
+    """Each panel as the workbench lists it: its surface, size (along u, v and through), weight with its skin,
+    and member count."""
+    out = []
+    for p, ms in sorted(s.frame.panels().items()):
+        x = s.surfs.get(ms[0].surface)
+        if x is None:
+            continue
+        boxes = [x.local_box(m) for m in ms if m.surface == x.id]
+        size = [max(b.hi[k] for b in boxes) - min(b.lo[k] for b in boxes) for k in range(3)]
+        weight = sum(volume(m) for m in ms) * DENSITY + size[0] * size[1] * SKIN
+        out.append({"name": p, "surface": x.id, "size": [round(v, 2) for v in size], "weight": round(weight),
+                    "members": len(ms)})
     return out
 
 

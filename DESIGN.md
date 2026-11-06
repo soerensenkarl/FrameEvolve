@@ -174,8 +174,12 @@ Pareto search keeps the grammars that do well across many houses.
   does not repeat them; and up to two inspirations (AlphaEvolve): other grammars in the Pareto set that beat
   the parent on the most validation houses, with their code, notes and training scores. `--inspirations 0`
   turns them off, for an ablation.
-- Its tools: view the draft, replace one exact piece of text, replace the whole file, and check the
-  draft on the minibatch (a limited number of times, default 3). It ends with a note saying what it
+- Its tools: view the draft, replace one exact piece of text, replace the whole file; try_on (build and verify
+  the draft, or a variation of it with one replacement, on one house in seconds, against the parent's score
+  there; 16 per proposal); look (a picture of the draft or a variation on one house: the whole frame in 3D, or
+  chosen walls, floors and roofs square on, coloured by rule or by panel, hard faults marked; 8 per proposal);
+  and check the draft on the whole minibatch (a limited number of times, default 3). Reason: a designer at a
+  CAD station tries variations and looks at them before committing; a frame can score well and look wrong. It ends with a note saying what it
   changed and why; the note is kept with the candidate.
 - The rules API it is told about is generated from the builder's own signatures and docstrings, so it
   cannot drift from the code.

@@ -11,6 +11,7 @@ It asks what a building inspector, an engineer and a panel shop would ask of a t
                                    bearing walls over the floor below, ridges, lateral restraint.
   prefab.py     Can it be built?   Prefab panels small and light enough to truck and lift, pieces a standard
                                    automated saw can cut, and an order of erection that works.
+  design.py     Is it good?        Design objectives, as soft faults: as few panels as a truck and crane allow.
   cost.py       What does it cost? Timber bought in stock lengths, pieces, site work and crane lifts.
 
 Every check is a function check(site) -> faults (site.py: what a check reads). Hard faults make a frame
@@ -20,7 +21,7 @@ cost), compared in that order. The limits sit at the top of each module, with th
 from __future__ import annotations
 
 from frameevolve.model import Frame, House
-from frameevolve.verifier import analysis, boards, code, cost, physical, prefab
+from frameevolve.verifier import analysis, boards, code, cost, design, physical, prefab
 from frameevolve.verifier.report import CHECKS, Fault, Report
 from frameevolve.verifier.site import Site
 
@@ -31,8 +32,9 @@ ORDER = [
     boards.backing, boards.openings, boards.insulation,
     code.studs, code.header_checks, code.offsets, code.inline, code.notches, code.restraint,
     prefab.panels, prefab.site_work, prefab.cutting, prefab.erection,
+    design.panel_count,
 ]
-MODULES = [physical, analysis, boards, code, prefab, cost]   # where the checks and their limits live, for the workbench
+MODULES = [physical, analysis, boards, code, prefab, design, cost]   # where the checks and their limits live, for the workbench
 
 __all__ = ["CHECKS", "Fault", "Report", "Site", "verify"]
 
@@ -41,4 +43,4 @@ def verify(house: House, frame: Frame) -> Report:
     """Every check on a frame, and its cost."""
     site = Site(house, frame)
     faults = [f for check in ORDER for f in check(site)]
-    return Report(house.id, faults, cost.metrics(frame), site.g)
+    return Report(house.id, faults, cost.metrics(frame), site.g, site)

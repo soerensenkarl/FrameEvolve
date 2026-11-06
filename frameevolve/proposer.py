@@ -8,6 +8,7 @@ for testing the search without calling Claude.
 from __future__ import annotations
 
 DEFAULT_MODEL = "claude-opus-5-5"
+MAX_TURNS = 60   # tool rounds per proposal: enough to try, look, edit and check; past it the draft is what is proposed
 
 import base64
 import inspect
@@ -94,8 +95,12 @@ lines and comments do not count); a grammar that breaks this is refused unseen, 
 its id. Members you place record the rule that placed it, and faults name those rules.
 
 Tools: view_grammar shows the current draft with line numbers. edit_grammar replaces one exact piece of text.
-write_grammar replaces the whole file. check_grammar builds and verifies your draft on the houses shown and
-returns the reports; it can be used a limited number of times. When you are done, reply with one or two
+write_grammar replaces the whole file. Work like a designer at a CAD station: try_on builds and verifies the draft
+on one house in seconds, or a variation of it (the draft with one replacement) without changing the draft, so you
+can compare ideas before committing to one; look shows you a picture of the draft or a variation on a house, the
+whole frame in 3D or chosen walls, floors and roofs square on, coloured by rule or by panel. Look at what you
+built: a frame can score well and still be wrong to the eye. check_grammar builds and verifies the draft on all
+the houses shown and returns the full reports; it can be used a limited number of times. When you are done, reply with one or two
 sentences saying what you changed and why."""
 
 
@@ -115,12 +120,26 @@ class Draft:
                          {"old": (str, None), "new": (str, None)}),
         "write_grammar": ("Replace the whole draft grammar. source: the complete Python file.",
                           {"source": (str, None)}),
-        "check_grammar": ("Build and verify the current draft on this round's houses and return the reports. "
-                          "Limited uses.", {}),
+        "check_grammar": ("Build and verify the current draft on all of this round's houses and return the full "
+                          "reports. Limited uses: try ideas with try_on and look first.", {}),
+        "try_on": ("Build and verify the draft on one house of this round in a few seconds, and say its score against "
+                   "the parent's there and its faults by check. With old and new, try a variation instead: the draft with "
+                   "that one replacement, without changing the draft, to compare ideas quickly.",
+                   {"house": (str, None), "old": (str, ""), "new": (str, "")}),
+        "look": ("A picture of the draft (or, with old and new, a variation) built on one house, hard faults as red "
+                 "crosses. view '3d': the whole frame from two opposite corners. view 'surface': up to four walls, "
+                 "floors or roofs square on (surface: their ids, comma separated; empty: those with the most faults), "
+                 "prefab panels outlined. colour 'rule', 'panel' (members built on site grey) or 'faults' (members in "
+                 "hard faults red, soft amber, the rest a faint ghost: where the problems are).",
+                 {"house": (str, None), "view": (str, "3d"), "surface": (str, ""), "colour": (str, "rule"),
+                  "old": (str, ""), "new": (str, "")}),
     }
+    TRIES = 16   # try_on per proposal: one house, seconds each
+    LOOKS = 8    # pictures per proposal
 
     def __init__(self, source: str, context: dict, out: Path, checks: int):
         self.src, self.context, self.out, self.limit, self.checks = source, context, out, checks, 0
+        self.tries = self.looks = 0
         (out / "draft.py").write_text(source)
 
     def event(self, kind: str, **data) -> None:
@@ -129,16 +148,97 @@ class Draft:
         with open(self.out / "live.jsonl", "a") as f:
             f.write(json.dumps({"time": time.time(), "kind": kind, **data}) + "\n")
 
-    def call(self, name: str, **kwargs) -> str:
-        """Run a tool, logging the call, its result and, after an edit, the new draft."""
+    def call(self, name: str, **kwargs) -> tuple[str, list[Path]]:
+        """Run a tool, logging the call, its result and, after an edit, the new draft. Returns its text and the
+        pictures it made (look makes one)."""
         brief = {k: (v if len(str(v)) <= 300 else str(v)[:300] + "...") for k, v in kwargs.items()}
         self.event("tool", tool=name, input=brief)
         result = getattr(self, name)(**kwargs)
-        self.event("result", tool=name, text=result if len(result) <= 1500 else result[:1500] + "...")
-        if name in ("edit_grammar", "write_grammar") and not result.startswith("Not changed"):
+        text, images = result if isinstance(result, tuple) else (result, [])
+        self.event("result", tool=name, text=text if len(text) <= 1500 else text[:1500] + "...",
+                   images=[p.name for p in images])
+        if name in ("edit_grammar", "write_grammar") and not text.startswith("Not changed"):
             (self.out / "draft.py").write_text(self.src)
             self.event("draft", lines=len(self.src.splitlines()))
-        return result
+        return text, images
+
+    def house_path(self, house: str) -> Path | None:
+        return next((Path(p) for p, h in zip(self.context["house_paths"], self.context["houses"]) if h == house), None)
+
+    def variant(self, old: str, new: str) -> str | None:
+        """The draft, or the draft with one replacement (old must occur exactly once): None if it does not."""
+        if not old:
+            return self.src
+        return self.src.replace(old, new) if self.src.count(old) == 1 else None
+
+    def prepared(self, house: str, old: str, new: str, kind: str) -> tuple[Path, Path] | str:
+        """The house's file and the grammar to build, written to a file; or why not, in words."""
+        path = self.house_path(house)
+        if path is None:
+            return f"Not {kind}: {house} is not one of this round's houses ({', '.join(self.context['houses'])})."
+        src = self.variant(old, new)
+        if src is None:
+            return f"Not {kind}: old must occur exactly once in the draft."
+        big = too_big(src, self.context.get("max_lines", MAX_LINES))
+        if big:
+            return f"Not {kind}: " + " ".join(big)
+        f = self.out / f"{kind}{self.tries + self.looks + 1}.py"
+        f.write_text(src)
+        return path, f
+
+    def try_on(self, house: str, old: str = "", new: str = "") -> str:
+        from collections import Counter
+        from frameevolve.search import evaluate
+        if self.tries >= self.TRIES:
+            return f"No tries left ({self.TRIES} used). Use check_grammar, or finish."
+        ready = self.prepared(house, old, new, "tried")
+        if isinstance(ready, str):
+            return ready
+        self.tries += 1
+        path, f = ready
+        cache = self.context.get("cache")
+        r = evaluate(f, [path], timeout=120, cache=Path(cache) if cache else None)[house]
+        parent = self.context.get("parent_scores", {}).get(house)
+        counts = Counter((x["check"], x["hard"]) for x in r["faults"])
+        first = {}                     # one example of each kind of fault, the commonest first
+        for x in r["faults"]:
+            first.setdefault((x["check"], x["hard"]), x)
+        worst = [first[k] for k, _ in counts.most_common()][:8]
+        return "\n".join([
+            f"Try {self.tries} of {self.TRIES} on {house}" + (" (a variation; the draft is unchanged)" if old else "")
+            + f": {_score(r['score'])}" + (f"; the parent there: {_score(parent)}" if parent else "") + ".",
+            "Faults: " + (", ".join(f"{c} {n}{'' if h else ' (soft)'}" for (c, h), n in counts.most_common()) or "none") + ".",
+            *[f"  - {x['message']}" for x in worst]])
+
+    def look(self, house: str, view: str = "3d", surface: str = "", colour: str = "rule", old: str = "",
+             new: str = "") -> tuple[str, list[Path]] | str:
+        import subprocess
+        import sys
+        from frameevolve.search import ROOT
+        if self.looks >= self.LOOKS:
+            return f"No pictures left ({self.LOOKS} used)."
+        if view not in ("3d", "surface") or colour not in ("rule", "panel", "faults"):
+            return "Not drawn: view is '3d' or 'surface', colour 'rule', 'panel' or 'faults'."
+        ready = self.prepared(house, old, new, "drawn")
+        if isinstance(ready, str):
+            return ready
+        self.looks += 1
+        path, f = ready
+        png = self.out / f"look{self.looks}.png"
+        cmd = [sys.executable, "-m", "frameevolve", "look", str(f), str(path), "--out", str(png), "--view", view,
+               "--colour", colour]
+        if surface.strip():
+            cmd += ["--surface", *[x.strip() for x in surface.split(",") if x.strip()][:4]]
+        try:
+            p = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=180)
+        except subprocess.TimeoutExpired:
+            return "Not drawn: building it took over 3 minutes."
+        if p.returncode != 0 or not png.exists():
+            return "Not drawn: " + ((p.stderr.strip().splitlines() or ["no output"])[-1])
+        info = json.loads(p.stdout)
+        return (f"Picture {self.looks} of {self.LOOKS}: {house}, {view}, coloured by {colour}"
+                + (" (a variation; the draft is unchanged)" if old else "") + f"; it scores {_score(info['score'])}"
+                + (f"; rule errors: {info['errors']}" if info["errors"] else "") + "."), [png]
 
     def view_grammar(self, start: int = 1, end: int = 0) -> str:
         lines = self.src.splitlines()
@@ -216,9 +316,10 @@ def prompt(context: dict, images: bool, out: Path) -> tuple[str, list[dict]]:
     text = (f"The parent grammar is {context['parent']}. Its scores on every training house:\n{scores}\n\n"
             f"These houses are this round's test: {', '.join(context['houses'])}. The parent's total on them is "
             f"{pb[0]} hard, {pb[1]} soft, cost {pb[2]:.1f}. Their reports:\n\n{reports}\n\n"
-            + ("For each house, in the order above, two pictures, members coloured by rule and red crosses marking hard "
-               "faults: first the whole frame in 3D from two opposite corners, then each wall from outside and each "
-               "roof plane from above, where red hatching marks boards with nothing behind them.\n\n" if images else "")
+            + ("For each house, in the order above, two pictures with red crosses marking hard faults: first the whole "
+               "frame in 3D from two opposite corners, showing only the members in faults (hard red, soft amber; the "
+               "rest a faint ghost), then the surfaces with the most faults square on, members coloured by rule and "
+               "prefab panels outlined, where red hatching marks boards with nothing behind them.\n\n" if images else "")
             + rejected_text(context.get("rejected", []))
             + inspirations_text(context.get("inspirations", []))
             + "Read the grammar with view_grammar, then improve it.")
@@ -235,7 +336,7 @@ class ClaudeProposer:
     """Claude through the Anthropic API (an API key or an `ant auth login` profile)."""
 
     def __init__(self, model: str = DEFAULT_MODEL, effort: str = "medium", checks: int = 3,
-                 max_turns: int = 24, images: bool = True, fallbacks: bool = True):
+                 max_turns: int = MAX_TURNS, images: bool = True, fallbacks: bool = True):
         self.model, self.effort, self.checks = model, effort, checks
         self.max_turns, self.images, self.fallbacks = max_turns, images, fallbacks
 
@@ -246,7 +347,8 @@ class ClaudeProposer:
         draft = Draft(source, context, out, self.checks)
         def bound(name):
             def run(**kwargs):
-                return draft.call(name, **kwargs)
+                text, images = draft.call(name, **kwargs)
+                return [{"type": "text", "text": text}, *[_image_block(p) for p in images]] if images else text
             return run
         tools = [BetaFunctionTool(bound(name), name=name, description=desc,
                                   input_schema=_schema(params)) for name, (desc, params) in Draft.TOOLS.items()]
@@ -272,7 +374,7 @@ class ClaudeProposer:
         if last.stop_reason == "refusal":
             raise RuntimeError("Claude declined the request")
         note = " ".join(b.text for b in last.content if b.type == "text").strip()
-        usage["checks"] = draft.checks
+        usage.update(checks=draft.checks, tries=draft.tries, looks=draft.looks)
         return Proposal(draft.src, note[:2000], usage)
 
 
@@ -293,7 +395,7 @@ class ClaudeCodeProposer:
     """Claude through Claude Code (the Claude Agent SDK), signed in with a Claude subscription."""
 
     def __init__(self, model: str = DEFAULT_MODEL, effort: str = "medium", checks: int = 3,
-                 max_turns: int = 24, images: bool = True):
+                 max_turns: int = MAX_TURNS, images: bool = True):
         self.model, self.effort, self.checks = model, effort, checks
         self.max_turns, self.images = max_turns, images
 
@@ -316,8 +418,10 @@ class ClaudeCodeProposer:
         def wrap(name, desc, params):
             async def run(args):
                 kwargs = {k: args[k] for k in params if k in args}
-                text = await asyncio.to_thread(draft.call, name, **kwargs)
-                return {"content": [{"type": "text", "text": text}]}
+                text, images = await asyncio.to_thread(draft.call, name, **kwargs)
+                pics = [{"type": "image", "data": base64.standard_b64encode(p.read_bytes()).decode(),
+                         "mimeType": "image/png"} for p in images]
+                return {"content": [{"type": "text", "text": text}, *pics]}
             return tool(name, desc, _schema(params))(run)
 
         server = create_sdk_mcp_server("grammar", tools=[wrap(n, d, p) for n, (d, p) in Draft.TOOLS.items()])
@@ -331,20 +435,31 @@ class ClaudeCodeProposer:
         async def message():
             yield {"type": "user", "message": {"role": "user", "content": content}, "parent_tool_use_id": None}
 
-        transcript, pending, result = [], [], None
+        transcript, pending, result, out_of_turns = [], [], None, False
         draft.event("start", model=self.model, effort=self.effort, via="subscription")
-        async for m in query(prompt=message(), options=options):
-            transcript.append(asdict(m) if is_dataclass(m) else str(m))
-            if isinstance(m, AssistantMessage):
-                for b in m.content:
-                    if isinstance(b, ToolUseBlock):
-                        pending = []            # text before a tool call is thinking aloud
-                    elif isinstance(b, TextBlock) and b.text.strip():
-                        pending.append(b.text.strip())
-                        draft.event("say", text=b.text.strip())
-            elif isinstance(m, ResultMessage):
-                result = m
+        try:
+            async for m in query(prompt=message(), options=options):
+                transcript.append(asdict(m) if is_dataclass(m) else str(m))
+                if isinstance(m, AssistantMessage):
+                    for b in m.content:
+                        if isinstance(b, ToolUseBlock):
+                            pending = []            # text before a tool call is thinking aloud
+                        elif isinstance(b, TextBlock) and b.text.strip():
+                            pending.append(b.text.strip())
+                            draft.event("say", text=b.text.strip())
+                elif isinstance(m, ResultMessage):
+                    result = m
+        except Exception as e:      # out of turns: propose the draft as it stands rather than lose it
+            if "maximum number of turns" not in str(e):
+                raise
+            out_of_turns = True
         (out / "transcript.json").write_text(json.dumps(transcript, indent=1, default=str))
+        if out_of_turns or (result is not None and result.is_error and "max_turns" in str(result.subtype)):
+            pending = [f"(Ran out of turns; this is the draft as it stood.) {' '.join(pending)}"]
+            draft.event("say", text="ran out of turns: the draft as it stands is the proposal")
+            if result is None or result.is_error:
+                return Proposal(draft.src, " ".join(pending)[:2000], {"turns": self.max_turns, "checks": draft.checks,
+                                                                      "tries": draft.tries, "looks": draft.looks})
         if result is None:
             raise RuntimeError("Claude Code returned nothing")
         if result.is_error:
@@ -355,7 +470,8 @@ class ClaudeCodeProposer:
         usage = {"input_tokens": sum(int(u.get(k) or 0) for k in ("input_tokens", "cache_read_input_tokens",
                                                                    "cache_creation_input_tokens")),
                  "output_tokens": int(u.get("output_tokens") or 0), "turns": result.num_turns,
-                 "seconds": round((result.duration_ms or 0) / 1000, 1), "checks": draft.checks}
+                 "seconds": round((result.duration_ms or 0) / 1000, 1), "checks": draft.checks,
+                 "tries": draft.tries, "looks": draft.looks}
         return Proposal(draft.src, " ".join(pending)[:2000], usage)
 
 

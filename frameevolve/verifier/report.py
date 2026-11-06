@@ -51,6 +51,8 @@ CHECKS = {
     "prefab": "a wall, floor, ceiling or roof mostly framed on site rather than built as panels",
     "cut": "a piece a standard automated saw cannot cut: too short, an end cut too steep, a rip along its length, "
            "or a notch with too many faces",
+    # design.py: what makes a sound frame a good one to build
+    "panels": "a wall, floor or roof built as more panels than its size and weight need on a truck and a crane",
     "assembly": "panels or site pieces that cannot go up one at a time bottom up: one rests on another that must go "
                 "up after it, or must be lowered through something already up",
 }
@@ -75,6 +77,7 @@ class Report:
     faults: list[Fault]
     metrics: dict
     graph: Graph | None = None
+    site: object = None          # the Site the checks read, for the workbench (not saved)
 
     @property
     def hard(self) -> int:

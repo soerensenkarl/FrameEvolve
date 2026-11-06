@@ -20,6 +20,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 from frameevolve import houses, jobs as jobs_mod, model, solid, surface, verifier
+from frameevolve.verifier import prefab
 from frameevolve.builder import build
 from frameevolve.geometry import EPS
 from frameevolve.model import SECTIONS, Floor, Frame, House, Member, Roof, Wall
@@ -314,6 +315,7 @@ def frame_payload(house: House, frame: Frame, source: str) -> dict:
     return {
         "house": house.id, **surfaces_payload(house, frame.members), "members": members,
         "rules": grammar_rules(source), "guides": [guide_payload(house, gd) for gd in frame.guides],
+        "panels": prefab.panel_facts(report.site), "assembly": prefab.sequence(report.site),
         "steps": frame.steps, "errors": frame.errors,
         "faults": [asdict(f) for f in report.faults], "checks": CHECKS, "report": report.text(),
         "timing": {"verify": verify_s},
@@ -415,6 +417,8 @@ def verifier_info() -> dict:
                 # the limits of this check: constants its function reads, and those of the helpers it calls
                 used = set(names[fn.name]).union(*(names.get(c, set()) for c in calls[fn.name]))
                 uses.setdefault(check, set()).update(used)
+    home.setdefault("head", "boards")
+    home.setdefault("sill", "boards")
     checks = []
     for name, meaning in CHECKS.items():
         mod = home.get(name)
@@ -422,8 +426,19 @@ def verifier_info() -> dict:
         text = " ".join([meaning] + [consts[n]["note"] for n in limits])
         checks.append({"name": name, "meaning": meaning, "hard": hard.get(name, True), "module": mod,
                        "limits": limits, "code": sorted(set(CODE.findall(text)))})
+    modules = []    # in the verifier's order, each with its question, what it explains, and its checks
+    for mod in verifier.MODULES:
+        name = mod.__name__.split(".")[-1]
+        doc = inspect.getdoc(mod) or ""
+        modules.append({"name": name, "question": QUESTIONS.get(name, name), "doc": doc,
+                        "checks": [c["name"] for c in checks if c["module"] == name]})
     return {"checks": checks, "constants": consts, "cost": [k for k, c in consts.items() if c["module"] == "cost"],
-            "sections": {k: v[1] for k, v in SECTIONS.items()}, "about": inspect.getdoc(verifier)}
+            "sections": {k: v[1] for k, v in SECTIONS.items()}, "about": inspect.getdoc(verifier), "modules": modules}
+
+
+QUESTIONS = {"physical": "Can it stand?", "analysis": "Will it hold?", "boards": "Can it be skinned?",
+             "code": "Would it pass inspection?", "prefab": "Can it be built as panels?",
+             "design": "Is it a good design?", "cost": "What does it cost?"}
 
 
 def build_source(name: str, source: str, house: House, on_step=None) -> Frame:

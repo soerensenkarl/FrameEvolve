@@ -50,24 +50,23 @@ def test_evaluate_survives_a_grammar_that_hangs(tmp_path):
 
 
 def test_search_keeps_only_improvements(tmp_path):
-    """Kept children beat their parent on the minibatch; unchanged and worse proposals are logged, not kept."""
-    seed = (ROOT / "grammars/seed.py").read_text().replace("SPACING = 24", "SPACING = 16")
-    run = make_run(tmp_path, seed)
-    choices = iter([24, 24, 12])
+    """A child is kept exactly when it beats its parent on the minibatch; an unchanged proposal is refused, and
+    every iteration is logged."""
+    run = make_run(tmp_path, (ROOT / "grammars/seed.py").read_text())
+    edits = iter([lambda src: src.replace("SPACING = 24", "SPACING = 16"), lambda src: src,
+                  lambda src: src.replace("SPACING = 24", "SPACING = 12").replace("SPACING = 16", "SPACING = 12")])
 
     def edit(src, ctx):
-        return re.sub(r"SPACING = \d+", f"SPACING = {next(choices)}", src), "spacing"
+        return next(edits)(src), "spacing"
     rng = random.Random(0)
     entries = [run.step(ScriptedProposer(edit), rng) for _ in range(3)]
-    assert entries[0]["accepted"] and entries[0]["child"] == "c001"
-    assert not entries[1]["accepted"]    # same grammar again, or a parent already at 24
-    assert not entries[2]["accepted"]    # 12 in. is dearer
+    assert entries[1]["error"] == "the proposal did not change the grammar" and not entries[1]["accepted"]
+    for e in entries:
+        better = e["child_batch"] is not None and tuple(e["child_batch"]) < tuple(e["parent_batch"])
+        assert e["accepted"] == better, e
     lines = (run.path / "iterations.jsonl").read_text().splitlines()
     assert len(lines) == 3
-    assert len(Run(run.path).cands) == len(run.cands)
-    for e in entries:
-        if e["accepted"]:
-            assert tuple(e["child_batch"]) < tuple(e["parent_batch"])
+    assert len(Run(run.path).cands) == len(run.cands) == 1 + sum(e["accepted"] for e in entries)
 
 
 class FakeMessage:
@@ -81,7 +80,7 @@ class FakeMessage:
 
 
 def test_claude_proposer_edits_through_its_tools(tmp_path, monkeypatch):
-    """The proposer's tools edit and check a draft; the run keeps the result. No network."""
+    """The proposer's tools edit, try, picture and check a draft; the run evaluates the result. No network."""
     seen = {}
 
     def tool_runner(**kw):
@@ -90,6 +89,9 @@ def test_claude_proposer_edits_through_its_tools(tmp_path, monkeypatch):
         assert "SPACING = 16" in tools["view_grammar"].call({})
         assert tools["edit_grammar"].call({"old": "SPACING = 16", "new": "SPACING = 24"}) == "Changed."
         assert "occurs 0 times" in tools["edit_grammar"].call({"old": "nothing like this", "new": "x"})
+        house = kw["messages"][0]["content"][0]["text"].split("this round's test: ")[1].split(",")[0]
+        seen["try"] = tools["try_on"].call({"house": house, "old": "SPACING = 24", "new": "SPACING = 19.2"})
+        seen["look"] = tools["look"].call({"house": house, "view": "surface", "colour": "panel"})
         seen["check"] = tools["check_grammar"].call({})
         yield FakeMessage("", "tool_use")
         yield FakeMessage("Widened the stud module to 24 in.; fewer studs, same backing.")
@@ -100,8 +102,10 @@ def test_claude_proposer_edits_through_its_tools(tmp_path, monkeypatch):
     seed = (ROOT / "grammars/seed.py").read_text().replace("SPACING = 24", "SPACING = 16")
     run = make_run(tmp_path, seed)
     e = run.step(ClaudeProposer(model="claude-opus-5-5", checks=2), random.Random(1))
-    assert e["accepted"], e
-    assert "SPACING = 24" in run.grammar(e["child"]).read_text()
+    assert e["child_batch"] and not e["error"], e
+    assert "SPACING = 24" in (run.path / "proposals" / "0001" / "proposed.py").read_text()
+    assert "(a variation; the draft is unchanged)" in seen["try"]
+    assert [b["type"] for b in seen["look"]] == ["text", "image"]
     assert e["note"].startswith("Widened")
     assert seen["model"] == "claude-opus-5-5" and seen["output_config"] == {"effort": "medium"}
     assert seen["check"].startswith("Check 1 of 2")
