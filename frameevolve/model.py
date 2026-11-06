@@ -416,7 +416,8 @@ class House:
 class Member:
     """One piece of timber: an oriented box around the centreline start to end, its depth along up, trimmed by
     cut planes and less any notches. A cut (n, d) keeps n.x <= d; a notch is a convex region (a list of such
-    planes) taken out. `role` is a label for reading; the verifier never trusts it."""
+    planes) taken out. `role` is a label for reading; the verifier never trusts it. `panel` names the prefab
+    panel it is built into in the shop; empty, it is cut and nailed on site."""
     id: str
     section: str
     start: Vec
@@ -427,6 +428,7 @@ class Member:
     role: str = ""
     cuts: list = field(default_factory=list)
     notches: list = field(default_factory=list)
+    panel: str = ""
 
     @property
     def width(self) -> float:
@@ -479,6 +481,8 @@ class Member:
         d = {k: getattr(self, k) for k in ("id", "section", "start", "end", "up", "rule", "surface", "role")}
         if self.cuts or self.notches:
             d.update(cuts=self.cuts, notches=self.notches)
+        if self.panel:
+            d["panel"] = self.panel
         return d
 
     @staticmethod
@@ -489,11 +493,27 @@ class Member:
 
 
 @dataclass
+class Guide:
+    """A line a rule lays out to frame by, not timber: a grid line, a panel joint. Rules can match guides and
+    ask where they cross a surface; the verifier ignores them. On a surface, a and b are in its u, v; a guide
+    on no surface (surface "") is a line in plan, a and b in x, y."""
+    id: str
+    kind: str
+    surface: str
+    a: tuple[float, float]
+    b: tuple[float, float]
+    rule: str = ""
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
 class Frame:
     """The members a grammar built for a house, and how it got there.
 
     steps: every rule firing that changed something, in order: {pass, rule, surface, match, target, placed,
-    removed, shaped, t}; see builder.build.
+    removed, shaped, assigned, guides, t}; see builder.build.
     removed: members placed and later removed, so the build can be replayed.
     """
     house: str
@@ -502,16 +522,26 @@ class Frame:
     errors: list[str] = field(default_factory=list)
     steps: list[dict] = field(default_factory=list)
     removed: list[Member] = field(default_factory=list)
+    guides: list[Guide] = field(default_factory=list)
+
+    def panels(self) -> dict[str, list[Member]]:
+        """The prefab panels: name -> its members."""
+        out: dict[str, list[Member]] = {}
+        for m in self.members:
+            if m.panel:
+                out.setdefault(m.panel, []).append(m)
+        return out
 
     def to_dict(self) -> dict:
         return {"house": self.house, "grammar": self.grammar, "members": [m.to_dict() for m in self.members],
                 "errors": self.errors, "steps": self.steps,
-                "removed": [m.to_dict() for m in self.removed]}
+                "removed": [m.to_dict() for m in self.removed], "guides": [g.to_dict() for g in self.guides]}
 
     @staticmethod
     def from_dict(d: dict) -> "Frame":
         return Frame(d["house"], d["grammar"], [Member.from_dict(m) for m in d["members"]], d["errors"],
-                     d.get("steps", []), [Member.from_dict(m) for m in d.get("removed", [])])
+                     d.get("steps", []), [Member.from_dict(m) for m in d.get("removed", [])],
+                     [Guide(**{**g, "a": tuple(g["a"]), "b": tuple(g["b"])}) for g in d.get("guides", [])])
 
     def save(self, path) -> None:
         Path(path).write_text(json.dumps(self.to_dict(), indent=1))

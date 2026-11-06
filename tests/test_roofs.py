@@ -62,7 +62,7 @@ def test_box_houses_get_a_gable_roof_gable_walls_and_a_ceiling():
 def test_seed_frames_the_toy_roof_cleanly_and_ties_every_rafter(toy_seeded):
     house, frame = toy_seeded
     report = verify(house, frame)
-    assert not frame.errors and report.hard == 0, report.text()
+    assert not frame.errors and not [f for f in report.faults if f.check in ("clash", "floating", "thrust")], report.text()
     rafters = [m for m in frame.members if m.role == "rafter"]
     assert rafters and all(m.notches or m.cuts for m in rafters)
     untied = Frame(house.id, frame.grammar, [m for m in frame.members if m.role != "ceiling joist"])

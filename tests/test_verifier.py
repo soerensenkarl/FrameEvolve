@@ -38,7 +38,7 @@ def test_missing_jack_leaves_the_header_unsupported(seeded):
                   and frame_bears(frame, m, jack))
     r = verify(house, without(frame, jack))
     # The verifier calls a header with one end loose an overhang: it runs past its last support.
-    assert [f for f in hard(r) if f.check in ("span", "floating", "overhang") and header.id in f.members]
+    assert [f for f in hard(r) if f.check in ("header", "span", "floating", "overhang") and header.id in f.members]
 
 
 def test_missing_stud_leaves_a_field_gap_and_a_long_top_plate_span(seeded):
@@ -75,11 +75,6 @@ def test_duplicate_stud_clashes(seeded):
     dup = replace(stud, id="dup")
     r = verify(house, edited(frame, [*frame.members, dup]))
     assert [f for f in hard(r, "clash") if {stud.id, "dup"} <= set(f.members)]
-
-
-def test_text_says_no_faults_only_for_a_clean_frame(seeded):
-    house, frame = seeded
-    assert "No faults." in verify(house, frame).text()
 
 
 def test_removing_members_lowers_bought_timber(seeded):

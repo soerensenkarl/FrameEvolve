@@ -55,8 +55,10 @@ def api_reference() -> str:
              "size): " + ", ".join(f"{k} ({w:g} x {d:g})" for k, (w, d) in SECTIONS.items())
              + f". s.STOCK: stock lengths {', '.join(map(str, STOCK))} (8 to 20 ft).",
              "A member has id, section, rule, surface (its surface id), role (a free label), length, width, depth, "
-             "start, end, up, box (lo, hi world corners), points, cuts and notches.", ""]
-    for name in ["place", "put", "cut", "trim", "under", "notch", "fit", "remove", "members", "local", "overlapping", "bears_on",
+             "start, end, up, box (lo, hi world corners), points, cuts, notches and panel (the prefab panel it is "
+             "built into, or '' for built on site).", ""]
+    for name in ["place", "put", "cut", "trim", "under", "notch", "fit", "remove", "assign", "guide", "guides",
+                 "crossings", "members", "local", "overlapping", "bears_on",
                  "carries", "beside", "gaps", "below", "above", "free"]:
         fn = getattr(builder.State, name)
         doc = " ".join((inspect.getdoc(fn) or "").split())
@@ -66,11 +68,17 @@ def api_reference() -> str:
     return "\n".join(lines)
 
 
-SYSTEM = """You improve a grammar: a Python file of small rules that frames the timber walls, floors and roofs of houses.
+SYSTEM = """You improve a grammar: a Python file of small rules that frames the timber walls, floors and roofs of houses
+as prefab panels: wall panels, floor cassettes and roof panels built flat in a shop, cut by an automated saw,
+trucked to site and lifted into place one after another, bottom up.
 
 The builder applies the grammar to a house. A deterministic verifier then checks the frame and scores it as
-(hard faults, soft faults, cost), compared in that order. The goal is a grammar that gives every house zero
-hard faults, then as few soft faults as possible, then the lowest cost. Your edit is kept only if it beats the
+(hard faults, soft faults, cost), compared in that order. It checks what an inspector, an engineer and a panel
+shop would: that the frame stands, carries its loads, meets the IRC's rules, and can be built as panels small
+and light enough to truck and lift, from pieces the saw can cut, in an order where every panel lands on what is
+already up and can be lowered straight down. Cost counts timber, pieces (three times as much for one nailed on
+site as for one built into a panel) and crane lifts. The goal is a grammar that gives every house zero hard
+faults, then as few soft faults as possible, then the lowest cost. Your edit is kept only if it beats the
 parent on the houses shown.
 
 What the verifier checks:
@@ -80,7 +88,8 @@ The rules API:
 {api}
 
 Write the grammar so a framer could read it: small rules with one job each, a docstring saying what each
-does, names in framing terms. No function may have more than {max_lines} lines of code (docstrings, blank
+does, names in framing terms. Lay out guides (a grid, panel joints) before framing to them, and assign
+members to panels with s.assign. No function may have more than {max_lines} lines of code (docstrings, blank
 lines and comments do not count); a grammar that breaks this is refused unseen, so split big rules. Prefer general rules over special cases; never refer to a house or opening by
 its id. Members you place record the rule that placed it, and faults name those rules.
 

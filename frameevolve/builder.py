@@ -14,6 +14,8 @@ on the same match. Every member records the rule that placed it; every step reco
 
 Match kinds (what the rule receives as its second argument; `s.surface` is set to the surface it is on,
 a wall, a floor or a roof plane):
+  house    the house, once (s.surface is None): for laying out guides over the whole plan
+  guide    every guide laid out so far: .kind, .surface ("" for a line in plan), .a, .b
   wall     every wall
   floor    every floor, and the ceiling under a roof (role "ceiling")
   roof     every roof plane
@@ -27,6 +29,10 @@ a wall, a floor or a roof plane):
   load     every wall standing on a floor (s.surface is the floor), with the same fields
   gap      every stretch of a face with no backing: .face ('outer' or 'inner'), .kind, .u0, .u1, .v0, .v1
   member   every member placed so far
+
+Guides are lines to frame by, not timber: a grid over the plan, the joints between prefab panels. A rule lays
+them out with s.guide and others read them with s.guides and s.crossings. Members are built into prefab panels
+with s.assign (a panel is a name; members without one are built on site).
 
 Coordinates in rules are the current surface's. On a wall: u along it from its start, v up from its base,
 w into the framing from the surface. On a floor: u along x, v along y, w down from the floor's top (up from a
@@ -45,10 +51,11 @@ from pathlib import Path
 from frameevolve import solid, surface
 from frameevolve.geometry import EPS, Box, dot, mul, overlaps, unit
 from frameevolve.graph import Graph, build_graph
-from frameevolve.model import SECTIONS, STOCK, THICK, Frame, House, Member
+from frameevolve.model import SECTIONS, STOCK, THICK, Frame, Guide, House, Member
 
 
-MATCHES = ("wall", "floor", "roof", "seam", "opening", "corner", "tee", "bearer", "load", "gap", "member")
+MATCHES = ("house", "guide", "wall", "floor", "roof", "seam", "opening", "corner", "tee", "bearer", "load", "gap",
+           "member")
 
 
 def rule(priority: int, match: str, when=None):
@@ -73,6 +80,8 @@ def target(kind: str, surf, x) -> dict:
     """Where a match is, for drawing what triggered a rule: a rectangle on the surface (u0, u1, v0, v1, and the
     face for a gap) or, for a member, its id. A tee is a line at its u (u0 == u1); a bearer or load is its line
     on the floor. "surface" names the surface it is on; "other" another surface involved."""
+    if surf is None:            # the house, or a guide in plan
+        return {"kind": kind, "surface": ""}
     full = {"surface": surf.id, "u0": 0.0, "u1": surf.size[0], "v0": 0.0, "v1": surf.size[1]}
     if kind in ("wall", "floor", "roof"):
         return {"kind": kind, **full}
@@ -89,12 +98,19 @@ def target(kind: str, surf, x) -> dict:
         return {"kind": kind, **full, "u0": x.u, "u1": x.u, "other": x.wall}
     if kind == "gap":
         return {"kind": kind, "surface": surf.id, "u0": x.u0, "u1": x.u1, "v0": x.v0, "v1": x.v1, "face": x.face}
+    if kind == "guide":
+        return {"kind": kind, "surface": surf.id, "u0": x.a[0], "u1": x.b[0], "v0": x.a[1], "v1": x.b[1]}
     return {"kind": kind, "surface": surf.id, "member": x.id}
 
 
 def matches(s: "State", kind: str) -> list[tuple[object, object, tuple]]:
     """Every match of a kind in the design state now: (the surface it is on, the thing, a key that names it)."""
     walls, surfaces = s.house.walls, s.house.surfaces
+    if kind == "house":
+        return [(None, s.house, ("house",))]
+    if kind == "guide":
+        by_id = {x.id: x for x in surfaces}
+        return [(by_id.get(g.surface), g, (g.id,)) for g in list(s._guides.values())]
     if kind == "wall":
         return [(w, w, (w.id,)) for w in walls]
     if kind == "floor":
@@ -152,14 +168,41 @@ class State:
         self._placed_now: list[str] = []
         self._removed_now: list[str] = []
         self._shaped_now: list[str] = []
+        self._guides: dict[str, Guide] = {}
+        self._guided_now: list[str] = []
+        self._assigned_now: list[str] = []
 
     # reading ---------------------------------------------------------------------------------------
 
-    def members(self, surface: str | None = None, role: str | None = None, rule: str | None = None) -> list[Member]:
-        """Members on a surface (default this one, '*' for all), optionally of one role or one rule."""
+    def members(self, surface: str | None = None, role: str | None = None, rule: str | None = None,
+                panel: str | None = None) -> list[Member]:
+        """Members on a surface (default this one, '*' for all), optionally of one role, rule or panel."""
         w = self.surface.id if surface is None else surface
         return [m for m in self._members.values() if (w == "*" or m.surface == w)
-                and (role is None or m.role == role) and (rule is None or m.rule == rule)]
+                and (role is None or m.role == role) and (rule is None or m.rule == rule)
+                and (panel is None or m.panel == panel)]
+
+    def guides(self, kind: str | None = None, surface: str | None = None) -> list[Guide]:
+        """Guides of a kind (default any): those on a surface (default this one), and those in plan."""
+        sid = surface if surface is not None else (self.surface.id if self.surface is not None else "")
+        return [g for g in self._guides.values() if (kind is None or g.kind == kind) and g.surface in (sid, "")]
+
+    def crossings(self, kind: str) -> list[float]:
+        """Where guides of a kind cross this surface's u axis (its bottom edge, v = 0): u values, in order. A
+        guide in plan counts where its line crosses the surface's line in plan."""
+        x, out = self.surface, []
+        for g in self.guides(kind):
+            if g.surface:
+                (u0, v0), (u1, v1) = g.a, g.b
+                if abs(v1 - v0) > 1e-9:
+                    out.append(u0 + (u1 - u0) * (0 - v0) / (v1 - v0))
+            else:
+                o, e = x.origin, x.eu
+                d = (g.b[0] - g.a[0], g.b[1] - g.a[1])
+                den = e[0] * d[1] - e[1] * d[0]
+                if abs(den) > 1e-9:
+                    out.append(((g.a[0] - o[0]) * d[1] - (g.a[1] - o[1]) * d[0]) / den)
+        return sorted(round(u, 6) for u in out if -EPS <= u <= x.size[0] + EPS)
 
     def local(self, m: Member) -> Box:
         """A member's bounding box in this surface's coordinates: lo = (u0, v0, w0), hi = (u1, v1, w1)."""
@@ -351,6 +394,23 @@ class State:
         self.changes += 1
         self._graph = None
 
+    def guide(self, kind: str, a, b, plan: bool = False) -> Guide:
+        """Lay out a guide line of a kind ("grid", "panel joint", ...) from a to b in this surface's u, v; with
+        plan=True (or in a house rule), a line in plan from (x, y) a to b. Guides are not timber."""
+        on = "" if plan or self.surface is None else self.surface.id
+        g = Guide(f"g{len(self._guides) + 1}", kind, on, tuple(map(float, a)), tuple(map(float, b)), self._rule)
+        self._guides[g.id] = g
+        self._guided_now.append(g.id)
+        self.changes += 1
+        return g
+
+    def assign(self, m: Member, panel: str) -> None:
+        """Build m into the prefab panel of this name in the shop ("" to build it on site)."""
+        if m.panel != panel:
+            m.panel = panel
+            self._assigned_now.append(m.id)
+            self.changes += 1
+
     def remove(self, m: Member) -> None:
         """Take a member out of the frame. The build history keeps it."""
         if self._members.pop(m.id, None) is not None:
@@ -380,7 +440,8 @@ def build(grammar, house: House, max_passes: int = 10, max_members: int = 20000,
 
     def frame() -> Frame:
         removed = [m for k, m in s._removed.items() if k not in s._members]
-        return Frame(house.id, str(grammar), list(s._members.values()), errors, steps, removed)
+        return Frame(house.id, str(grammar), list(s._members.values()), errors, steps, removed,
+                     list(s._guides.values()))
 
     def error(r, key, e) -> None:
         msg = f"{r.__name__} on {' '.join(map(str, key))}: {type(e).__name__}: {e}{_where(e, path)}"
@@ -403,16 +464,17 @@ def build(grammar, house: House, max_passes: int = 10, max_members: int = 20000,
                     continue
                 fired.add((r.__name__, key))
                 s._placed_now, s._removed_now, s._shaped_now = [], [], []
+                s._guided_now, s._assigned_now = [], []
                 try:
                     r(s, x)
                 except Exception as e:
                     error(r, key, e)
-                if s._placed_now or s._removed_now or s._shaped_now:
-                    steps.append({"pass": p, "rule": r.__name__, "surface": surf.id,
+                if s._placed_now or s._removed_now or s._shaped_now or s._guided_now or s._assigned_now:
+                    steps.append({"pass": p, "rule": r.__name__, "surface": surf.id if surf else "",
                                   "match": f"{r.match} {' '.join(map(str, key))}", "target": target(r.match, surf, x),
                                   "placed": s._placed_now, "removed": s._removed_now,
-                                  "shaped": sorted(set(s._shaped_now)),
-                                  "t": round(time.perf_counter() - t0, 4)})
+                                  "shaped": sorted(set(s._shaped_now)), "assigned": sorted(set(s._assigned_now)),
+                                  "guides": s._guided_now, "t": round(time.perf_counter() - t0, 4)})
                     if on_step:
                         on_step(steps[-1], s._members)
                 if len(s._members) > max_members:

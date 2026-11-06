@@ -9,6 +9,9 @@ partition above or below that runs with them, and stair openings trimmed and hea
 Roofs: rafters at 24", each beside a ceiling joist that ties it, plumb cut against a ridge board bevelled to
 both planes, birdsmouthed over the top plate; valley rafters where roofs meet, the jacks cut against them;
 balloon-framed gable walls, their studs cut to the rafters.
+Prefab: a 24" grid over the plan, laid out first, that studs follow. Walls are built as panels up to 20 ft long,
+joined on the grid clear of openings with a stud each side of every joint; floors as 8 ft cassettes, a joist
+each side of every joint. Roofs and ceilings are framed on site.
 Inches.
 """
 import math
@@ -19,6 +22,8 @@ from frameevolve.model import Roof, Wall
 
 T = 1.5
 SPACING = 24
+PANEL = 240                              # longest wall panel: one stock length of plate
+CASSETTE = 96                            # floor cassette width
 MAX_PIECE = 240                          # longest stock, 20 ft
 JOIST, JOIST_DEPTH = "2x12", 11.25
 DEPTH = {"2x4": 3.5, "2x6": 5.5, "2x8": 7.25, "2x10": 9.25, "2x12": 11.25}
@@ -92,26 +97,72 @@ def tee_range(s, t):
 
 
 def zones(s):
-    """u-ranges kept free of layout studs: openings with their kings (and jacks)."""
+    """u-ranges kept free of layout studs: openings with their kings (and jacks), and panel joints."""
     side = 2 * T if bearing(s.surface) else T
-    return [(o.u0 - side, o.u1 + side) for o in s.surface.openings]
+    return [(o.u0 - side, o.u1 + side) for o in s.surface.openings] + [(j - T, j + T) for j in joints(s)]
 
 
 def layout(s):
-    """Stud centres every 24" from u = 0, clear of the end studs and the zones."""
+    """Stud centres on the grid, clear of the end studs and the zones."""
     a, b = extent(s)
-    return [c for c in range(SPACING, int(b), SPACING) if a + 1.5 * T <= c <= b - 1.5 * T
+    return [c for c in s.crossings("grid") if a + 1.5 * T <= c <= b - 1.5 * T
             and not any(z0 - T / 2 < c < z1 + T / 2 for z0, z1 in zones(s))]
 
 
+def joints(s):
+    """Where this surface's panels meet: u values."""
+    return s.crossings("panel joint")
+
+
 def pieces(s, u0, u1):
-    """A run cut into stock lengths, joined over stud centres, where the joists above land too."""
-    cuts, u = [], u0
-    while u1 - u > MAX_PIECE:
-        u = max(c for c in layout(s) if u < c <= u + MAX_PIECE)
-        cuts.append(u)
-    edges = [u0, *cuts, u1]
+    """A run cut at the panel joints, each piece within one panel."""
+    edges = [u0, *[j for j in joints(s) if u0 < j < u1], u1]
     return list(zip(edges, edges[1:]))
+
+
+@rule(1, match="house")
+def grid(s, h):
+    """A 24" grid over the plan from the house's corner, both ways: studs, joists and panel joints follow it."""
+    xs = [p[0] for w in h.walls for p in (w.start, w.end)]
+    ys = [p[1] for w in h.walls for p in (w.start, w.end)]
+    for x in range(0, int(max(xs)) + 1, SPACING):
+        s.guide("grid", (x, min(ys)), (x, max(ys)))
+    for y in range(0, int(max(ys)) + 1, SPACING):
+        s.guide("grid", (min(xs), y), (max(xs), y))
+
+
+def clear(s, u):
+    """True where a panel joint at u keeps 6" off every opening's framing."""
+    return not any(z0 - 6 < u < z1 + 6 for z0, z1 in zones(s)[:len(s.surface.openings)])
+
+
+@rule(5, match="wall")
+def wall_joints(s, w):
+    """Panel joints on the grid, as far apart as a panel may be long, clear of openings."""
+    a, b = extent(s)
+    while b - a > PANEL:
+        a = max(c for c in s.crossings("grid") if a + 4 * SPACING <= c <= a + PANEL and clear(s, c))
+        s.guide("panel joint", (a, 0), (a, w.size[1]))
+
+
+@rule(5, match="floor", when=lambda s, f: f.role == "floor")
+def floor_joints(s, f):
+    """Cassette joints across the floor every 8 ft, just past a grid joist."""
+    for c in range(CASSETTE, int(f.length) - SPACING, CASSETTE):
+        s.guide("panel joint", (c + T / 2, 0), (c + T / 2, f.width))
+
+
+def panel_of(s, m):
+    """The panel a member falls in: the surface, and how many joints lie before its middle."""
+    b = s.local(m)
+    k = sum(1 for j in joints(s) if j < (b.lo[0] + b.hi[0]) / 2)
+    return f"{s.surface.id}.{k + 1}"
+
+
+@rule(96, match="member", when=lambda s, m: in_wall(s) or s.surface.role == "floor")
+def panels(s, m):
+    """Walls and floors are built in the shop: every member into the panel it falls in."""
+    s.assign(m, panel_of(s, m))
 
 
 def posts(s):
@@ -178,8 +229,9 @@ def upright(s, u0, u1, v0, role):
 
 @rule(20, match="wall")
 def end_studs(s, w):
+    """A stud at each end of the wall, and one each side of every panel joint."""
     a, b = extent(s)
-    for u in (a, b - T):
+    for u in (a, b - T, *[x for j in joints(s) for x in (j - T, j)]):
         upright(s, u, u + T, T, "end stud")
 
 
@@ -307,10 +359,16 @@ def kept_clear(f, c):
             or any(o.u0 - 3 * T < c < o.u0 + T / 2 or o.u1 - T / 2 < c < o.u1 + 3 * T for o in f.openings))
 
 
-def stock(a, b):
+def lengths(a, b):
     """a to b in equal pieces no longer than the stock."""
     n = int((b - a - 0.01) // MAX_PIECE) + 1
     return [(a + (b - a) * i / n, a + (b - a) * (i + 1) / n) for i in range(n)]
+
+
+def stock(s, a, b):
+    """a to b along u cut at the panel joints, each run in stock lengths."""
+    edges = [a, *[j for j in joints(s) if a < j < b], b]
+    return [piece for x0, x1 in zip(edges, edges[1:]) for piece in lengths(x0, x1)]
 
 
 @rule(60, match="floor", when=lambda s, f: f.role == "floor")
@@ -319,10 +377,10 @@ def rim(s, f):
     for (u0, v0), (u1, v1) in edges(f.outline_uv):
         inward = 1 if (u1 > u0 or v1 < v0) else -1       # the floor lies left of each counter-clockwise edge
         if v0 == v1:
-            for a, b in stock(min(u0, u1), max(u0, u1)):
+            for a, b in stock(s, min(u0, u1), max(u0, u1)):
                 s.place(JOIST, a, b, v0, v0 + inward * T, role="rim")
         else:
-            for a, b in stock(min(v0, v1) + T, max(v0, v1) - T):
+            for a, b in lengths(min(v0, v1) + T, max(v0, v1) - T):
                 s.place(JOIST, u0, u0 + inward * T, a, b, role="rim")
 
 
@@ -333,6 +391,13 @@ def joists(s, f):
     for c in range(SPACING, int(f.length), SPACING):
         if not kept_clear(f, c) and all(abs(c - a) >= 2 * T for a in along(s, f)):
             joist(s, f, c)
+
+
+@rule(62, match="floor", when=lambda s, f: f.role == "floor")
+def joint_joists(s, f):
+    """A joist just past each cassette joint, so each cassette has its own at the joint."""
+    for j in joints(s):
+        joist(s, f, j + T / 2)
 
 
 @rule(62, match="floor", when=lambda s, f: f.role == "floor")
@@ -453,7 +518,7 @@ def ridge(s, x):
     up = s.surface.local_dir((0.0, 0.0, 1.0))
     sink = [-c * DEPTH[RIDGE] / 2 for c in up]
     (u0, v), (u1, _) = sorted([x.a, x.b])
-    for a, b in stock(u0, u1):
+    for a, b in stock(s, u0, u1):
         m = s.put(RIDGE, (a + sink[0], v + sink[1], sink[2]), (b + sink[0], v + sink[1], sink[2]), up, role="ridge")
         s.cut(m, (0, 0, 0), (0, 0, -1))
         s.cut(m, (0, 0, 0), (0, 0, -1), surface=s.house.surface(x.other))

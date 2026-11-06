@@ -1,4 +1,5 @@
-"""Pictures of a frame: one elevation per wall, and an axonometric view. Members are coloured by rule."""
+"""Pictures of a frame: elevations of the surfaces with the most faults, and an axonometric view. Members are
+coloured by rule; prefab panels are outlined and named."""
 from __future__ import annotations
 
 import math
@@ -22,16 +23,23 @@ def colours(frame: Frame) -> dict:
     return {r: cmap(i % cmap.N) for i, r in enumerate(rules)}
 
 
+SHOWN = 6   # surfaces in one picture: more, and each is too small to read once the picture is scaled to send
+
+
 def elevations(house: House, frame: Frame, path, marks: list[tuple[str, float, float, str]] = ()) -> None:
-    """Each wall seen from outside, and each roof plane from above, in its own u, v coordinates. Red hatching:
-    sheathing without backing. marks: (surface id, u, v, label) drawn as red crosses, for faults."""
+    """The surfaces with the most faults (up to SHOWN, the rest in house order), two to a row: a wall seen from
+    outside, a floor or roof plane from above, each in its own u, v. Red hatching: boards without backing.
+    marks: (surface id, u, v, label) drawn as red crosses, for faults. Dashed blue: prefab panels."""
     col = colours(frame)
-    sides = [*house.walls, *house.roofs]
+    every = [*house.walls, *[f for f in house.floors if f.role == "floor"], *house.roofs]
+    count = {x.id: sum(1 for sid, *_ in marks if sid == x.id) for x in every}
+    sides = sorted(every, key=lambda x: -count[x.id])[:SHOWN]
     walls = {w.id: w for w in house.walls}
-    span = max(x.size[0] for x in sides)
-    rows = [14 * (x.size[1] + 12) / (span + 12) + 0.5 for x in sides]
-    fig, axes = plt.subplots(len(sides), 1, figsize=(14, sum(rows) + 0.6),
-                             gridspec_kw={"height_ratios": rows})
+    rows = (len(sides) + 1) // 2
+    fig, grid = plt.subplots(rows, 2, figsize=(16, 4.6 * rows), squeeze=False)
+    axes = grid.flatten()
+    for ax in axes[len(sides):]:
+        ax.set_axis_off()
     for ax, x in zip(axes, sides):
         L, H = x.size
         ax.add_patch(Polygon(x.outline_uv, closed=True, fill=False, ec="0.75", lw=0.6))
@@ -53,14 +61,22 @@ def elevations(house: House, frame: Frame, path, marks: list[tuple[str, float, f
             if sid == x.id:
                 ax.plot(u, v, "x", color="red", ms=8, mew=2)
                 ax.text(u, v + 2.5, label, color="red", fontsize=7, ha="center")
-        ax.set_xlim(-6, span + 6)
-        ax.set_ylim(-6, H + 6)
+        for name, ms in frame.panels().items():
+            bs = [x.local_box(m) for m in ms if m.surface == x.id]
+            if bs:
+                u0, v0 = min(b.lo[0] for b in bs), min(b.lo[1] for b in bs)
+                u1, v1 = max(b.hi[0] for b in bs), max(b.hi[1] for b in bs)
+                ax.add_patch(Rectangle((u0, v0), u1 - u0, v1 - v0, fill=False, ec="#1f5fbf", ls="--", lw=1.2))
+                ax.text(u0 + 2, v1 + 2, name, color="#1f5fbf", fontsize=7)
+        ax.set_xlim(-6, L + 6)
+        ax.set_ylim(-6, H + 10)
         ax.set_aspect("equal")
-        seen = "from above, eave at the bottom" if x in house.roofs else "from outside, start on the left"
-        ax.set_title(f"{x.id}  {ftin(L)} x {ftin(H)}  (seen {seen}; axes in inches)", loc="left", fontsize=9)
+        seen = "from outside, start on the left" if x.id in walls else "from above"
+        ax.set_title(f"{x.id}  {ftin(L)} x {ftin(H)}, {count[x.id]} faults marked (seen {seen}; inches)", loc="left",
+                     fontsize=9)
         ax.tick_params(labelsize=7)
-    axes[0].legend(handles=[Patch(fc=c, ec="k", label=r) for r, c in col.items()], fontsize=7,
-                   loc="lower left", bbox_to_anchor=(0, 1.15), ncol=min(len(col), 6), frameon=False)
+    fig.legend(handles=[Patch(fc=c, ec="k", label=r) for r, c in col.items()], fontsize=7,
+               loc="lower center", ncol=min(len(col), 7), frameon=False)
     fig.savefig(path, dpi=110, bbox_inches="tight")
     plt.close(fig)
 

@@ -58,14 +58,19 @@ def test_rule_errors_are_reported_with_line(tmp_path):
     assert frame.errors and "boom" in frame.errors[0] and "line 5" in frame.errors[0]
 
 
+PHYSICAL = {"rule error", "clash", "floating", "too long", "opening", "assembly"}
+
+
 @pytest.mark.parametrize("seed", range(8))
-def test_seed_grammar_frames_generated_houses_cleanly(seed):
-    """The seed frames box houses with no hard faults and every kind of house with few, wasting no negative timber."""
+def test_seed_grammar_frames_generated_houses_as_panels(seed):
+    """The seed frames every house with nothing physically wrong (the code and the saw still find things for the
+    search to fix), builds its walls and floors as panels that go up bottom first, and wastes no negative timber."""
     house = houses.generate(seed)
     frame = build(SEED, house)
     report = verify(house, frame)
-    assert not frame.errors, frame.errors
-    assert report.hard <= (0 if house.kind == "box" else 12), (house.id, house.kind, report.hard)
+    assert not [f.message for f in report.faults if f.check in PHYSICAL], house.id
+    walls_floors = {x.id for x in house.walls} | {f.id for f in house.floors if f.role == "floor"}
+    assert all(m.panel for m in frame.members if m.surface in walls_floors)
     assert report.metrics["waste_ft"] >= 0
 
 

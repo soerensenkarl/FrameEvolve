@@ -30,7 +30,7 @@ ORDER = [
     analysis.loads,
     boards.backing, boards.openings, boards.insulation,
     code.studs, code.header_checks, code.offsets, code.inline, code.notches, code.restraint,
-    prefab.panels,
+    prefab.panels, prefab.cutting, prefab.erection,
 ]
 MODULES = [physical, analysis, boards, code, prefab, cost]   # where the checks and their limits live, for the workbench
 

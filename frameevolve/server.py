@@ -288,7 +288,7 @@ def frame_payload(house: House, frame: Frame, source: str) -> dict:
         w = house.surface(m.surface) if m.surface else None
         lb = w.local_box(m) if w else None
         members.append({
-            "id": m.id, "rule": m.rule, "role": m.role, "section": m.section, "surface": m.surface,
+            "id": m.id, "rule": m.rule, "role": m.role, "section": m.section, "surface": m.surface, "panel": m.panel,
             "length": round(m.length, 1), **shape(m, w), "removed": m.id in gone,
             "local": [lb.lo, lb.hi] if lb else None,
             "bears": list(g.bears.get(m.id, {})), "carries": list(g.carries.get(m.id, {})),
@@ -297,7 +297,7 @@ def frame_payload(house: House, frame: Frame, source: str) -> dict:
     m = report.metrics
     return {
         "house": house.id, **surfaces_payload(house, frame.members), "members": members,
-        "rules": grammar_rules(source),
+        "rules": grammar_rules(source), "guides": [guide_payload(house, gd) for gd in frame.guides],
         "steps": frame.steps, "errors": frame.errors,
         "faults": [asdict(f) for f in report.faults], "checks": CHECKS, "report": report.text(),
         "timing": {"verify": verify_s},
@@ -305,6 +305,16 @@ def frame_payload(house: House, frame: Frame, source: str) -> dict:
                   "bought_ft": m["bought_ft"], "waste_pct": m["waste_pct"], "steps": len(frame.steps),
                   "by_section": m["by_section"]},
     }
+
+
+def guide_payload(house: House, gd) -> dict:
+    """A guide with its ends in the world, for drawing: on its surface, or in plan at the ground."""
+    if gd.surface:
+        x = house.surface(gd.surface)
+        a, b = x.world(*gd.a, 0), x.world(*gd.b, 0)
+    else:
+        a, b = (*gd.a, 0.0), (*gd.b, 0.0)
+    return {**gd.to_dict(), "world": [a, b]}
 
 
 def outline_uv(x) -> list:
@@ -471,9 +481,11 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.flush()
 
         def on_step(step: dict, members: dict) -> None:
-            draw = lambda ids: [{"id": i, "rule": m.rule, **shape(m, None)} for i in ids if (m := members.get(i))]
+            draw = lambda ids: [{"id": i, "rule": m.rule, "panel": m.panel, **shape(m, None)} for i in ids
+                                if (m := members.get(i))]
             line({"step": {"rule": step["rule"], "surface": step["surface"], "t": step["t"], "placed": draw(step["placed"]),
-                           "removed": step["removed"], "shaped": draw(step["shaped"])}})
+                           "removed": step["removed"], "shaped": draw(step["shaped"]),
+                           "assigned": [{"id": i, "panel": members[i].panel} for i in step["assigned"] if i in members]}})
 
         try:
             line({"house": {"house": house.id, **surfaces_payload(house, [], gaps_too=False)}})

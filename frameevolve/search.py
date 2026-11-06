@@ -82,12 +82,17 @@ def house_id(path: Path) -> str:
     return House.load(path).id
 
 
+NOT_EVALUATION = {"server.py", "jobs.py", "proposer.py", "search.py"}   # code that does not change a result
+
+
 @lru_cache(maxsize=1)
 def code_hash() -> str:
-    """The framework's own code: a change to the builder or verifier must not reuse old results."""
+    """The code that builds, verifies and draws a frame: a change to it must not reuse old results."""
     h = hashlib.sha256()
-    for f in sorted((ROOT / "frameevolve").glob("*.py")):
-        h.update(f.read_bytes())
+    for f in sorted((ROOT / "frameevolve").rglob("*.py")):
+        if f.name not in NOT_EVALUATION:
+            h.update(str(f.relative_to(ROOT)).encode())
+            h.update(f.read_bytes())
     return h.hexdigest()
 
 
