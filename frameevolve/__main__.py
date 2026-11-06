@@ -180,6 +180,7 @@ def main(argv=None) -> None:
         for i in range(a.seed, a.seed + a.n):
             house = houses.generate(i)
             house.save(Path(a.out) / f"{house.id}.json")
+            (Path(a.out) / f"{house.id}.svg").write_text(houses.thumbnail(house))
             print(house.id, " ".join(f"{w.id}:{w.length:.0f}/{len(w.openings)}" for w in house.walls))
     elif a.cmd == "build":
         from frameevolve import render

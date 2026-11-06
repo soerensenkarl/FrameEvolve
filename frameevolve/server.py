@@ -326,16 +326,21 @@ def frame_payload(house: House, frame: Frame, source: str) -> dict:
 
 
 def house_card(h: House) -> dict:
-    """A house as the house picker shows it: its size, kind and storeys, and its outside as polygons in the world
-    (exterior walls with their gables, and roof planes), for a small drawing."""
+    """A house as the house picker lists it: its size, kind, storeys and openings (its picture is its thumbnail)."""
     xs = [q[0] for w in h.walls for q in (w.start, w.end)]
     ys = [q[1] for w in h.walls for q in (w.start, w.end)]
-    polys = [{"k": "wall", "p": [[round(c, 1) for c in w.world(u, v, 0)] for u, v in w.outline_uv]}
-             for w in h.walls if w.role == "exterior"]
-    polys += [{"k": "roof", "p": [[round(c, 1) for c in r.world(u, v, 0)] for u, v in r.outline_uv]} for r in h.roofs]
     return {"id": h.id, "kind": h.kind, "walls": len(h.walls), "storeys": len({round(w.base, 3) for w in h.walls}),
             "openings": sum(len(x.openings) for x in h.surfaces),
-            "size": [round(max(xs) - min(xs)), round(max(ys) - min(ys))], "polys": polys}
+            "size": [round(max(xs) - min(xs)), round(max(ys) - min(ys))]}
+
+
+def thumbnail_file(hid: str) -> Path:
+    """A house's stored thumbnail (data/houses/<id>.svg), drawn once: when the house is made, or here if it is
+    missing or older than the house."""
+    house_file, f = HOUSES / f"{hid}.json", HOUSES / f"{hid}.svg"
+    if not f.exists() or f.stat().st_mtime < house_file.stat().st_mtime:
+        f.write_text(houses.thumbnail(House.load(house_file)))
+    return f
 
 
 def guide_payload(house: House, gd) -> dict:
@@ -580,6 +585,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(404, {"error": "not found"})
             if path == "/api/houses":
                 return self.send(200, [house_card(House.load(f)) for f in sorted(HOUSES.glob("*.json"))])
+            if path.startswith("/api/house/") and path.endswith("/thumb.svg"):
+                hid = path.split("/")[3]
+                if not NAME.match(hid) or not (HOUSES / f"{hid}.json").is_file():
+                    return self.send(404, {"error": "no such house"})
+                return self.send(200, thumbnail_file(hid).read_bytes(), "image/svg+xml")
             if path == "/api/verifier":
                 return self.send(200, verifier_info())
             if path == "/api/grammars":
@@ -672,6 +682,7 @@ class Handler(BaseHTTPRequestHandler):
                 house = houses.generate(seed)
                 HOUSES.mkdir(parents=True, exist_ok=True)
                 house.save(HOUSES / f"{house.id}.json")
+                thumbnail_file(house.id)
                 return self.send(200, {"id": house.id})
             return self.send(404, {"error": "not found"})
         except Exception as e:

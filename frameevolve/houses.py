@@ -362,3 +362,22 @@ def toy() -> House:
     roofs(None, house, blocks, 97.125, pitch=8)
     house.link()
     return house
+
+
+def thumbnail(house: House, w: int = 150, h: int = 96) -> str:
+    """A small isometric drawing of a house's outside (its exterior walls with their gables, and its roof planes),
+    as SVG: the picture the workbench's house picker shows. Far faces are drawn first."""
+    polys = [("wall", [x.world(u, v, 0) for u, v in x.outline_uv]) for x in house.walls if x.role == "exterior"]
+    polys += [("roof", [r.world(u, v, 0) for u, v in r.outline_uv]) for r in house.roofs]
+    c30 = math.cos(math.pi / 6)
+    shapes = sorted(((sum(p[0] + p[1] + (0.6 * p[2] if k == "roof" else 0) for p in pts) / len(pts), k,
+                      [((p[0] - p[1]) * c30, (p[0] + p[1]) * 0.5 - p[2]) for p in pts]) for k, pts in polys))
+    xs = [q[0] for _, _, ps in shapes for q in ps]
+    ys = [q[1] for _, _, ps in shapes for q in ps]
+    k = min((w - 4) / ((max(xs) - min(xs)) or 1), (h - 4) / ((max(ys) - min(ys)) or 1))
+    ox, oy = (w - (max(xs) - min(xs)) * k) / 2, (h - (max(ys) - min(ys)) * k) / 2
+    style = {"wall": 'fill="#efe9de" stroke="#8e877b"', "roof": 'fill="#c8b39b" stroke="#85735f"'}
+    paths = "".join(f'<path {style[kind]} stroke-width=".7" stroke-linejoin="round" d="'
+                    + "".join(f"{'L' if i else 'M'}{(x - min(xs)) * k + ox:.1f} {(y - min(ys)) * k + oy:.1f}"
+                              for i, (x, y) in enumerate(ps)) + 'Z"/>' for _, kind, ps in shapes)
+    return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" width="{w}" height="{h}">{paths}</svg>'

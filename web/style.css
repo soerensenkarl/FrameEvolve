@@ -515,6 +515,4 @@ body.view-panels #timeline, body.view-faults #timeline { display: none; }
 .hcard.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 .hcard small { color: var(--muted); font-size: 11px; }
 .sketch { display: block; }
-.sketch .wall { fill: #efe9de; stroke: #8e877b; stroke-width: .7; stroke-linejoin: round; }
-.sketch .roof { fill: #c8b39b; stroke: #85735f; stroke-width: .7; stroke-linejoin: round; }
 .hcard .sketch { margin: 0 auto 4px; }
