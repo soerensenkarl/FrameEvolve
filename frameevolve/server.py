@@ -374,22 +374,35 @@ def jsonable(v):
 def verifier_info() -> dict:
     """Every check (its meaning, hard or soft, the module it lives in, the limits that module sets and the codes
     they cite) and how a frame is scored. Hard or soft is read from the calls that make each fault."""
-    hard, home = {}, {}
-    for mod in verifier.MODULES:
-        for node in ast.walk(ast.parse(inspect.getsource(mod))):
-            if not isinstance(node, ast.Call):
-                continue
-            f = node.func
-            fn = f.id if isinstance(f, ast.Name) else f.attr if isinstance(f, ast.Attribute) else ""
-            i = {"Fault": 0, "flag": 0, "at": 2}.get(fn)
-            if i is not None and len(node.args) > i + 1 and all(isinstance(a, ast.Constant) for a in node.args[i:i + 2]):
-                hard[node.args[i].value] = node.args[i + 1].value
-                home.setdefault(node.args[i].value, mod.__name__.split(".")[-1])
+    hard, home, uses = {}, {}, {}
     consts = constants()
+    for mod in verifier.MODULES:
+        tree = ast.parse(inspect.getsource(mod))
+        calls = {f.name: {n.func.id for n in ast.walk(f) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+                 for f in tree.body if isinstance(f, ast.FunctionDef)}
+        names = {f.name: {n.id for n in ast.walk(f) if isinstance(n, ast.Name) and n.id in consts}
+                 for f in tree.body if isinstance(f, ast.FunctionDef)}
+        for fn in tree.body:
+            if not isinstance(fn, ast.FunctionDef):
+                continue
+            for node in ast.walk(fn):
+                if not isinstance(node, ast.Call):
+                    continue
+                f = node.func
+                kind = f.id if isinstance(f, ast.Name) else f.attr if isinstance(f, ast.Attribute) else ""
+                i = {"Fault": 0, "flag": 0, "at": 2}.get(kind)
+                if i is None or len(node.args) <= i + 1 or not all(isinstance(a, ast.Constant) for a in node.args[i:i + 2]):
+                    continue
+                check = node.args[i].value
+                hard[check] = node.args[i + 1].value
+                home.setdefault(check, mod.__name__.split(".")[-1])
+                # the limits of this check: constants its function reads, and those of the helpers it calls
+                used = set(names[fn.name]).union(*(names.get(c, set()) for c in calls[fn.name]))
+                uses.setdefault(check, set()).update(used)
     checks = []
     for name, meaning in CHECKS.items():
         mod = home.get(name)
-        limits = [k for k, c in consts.items() if c["module"] == mod]
+        limits = sorted(uses.get(name, ()), key=list(consts).index)
         text = " ".join([meaning] + [consts[n]["note"] for n in limits])
         checks.append({"name": name, "meaning": meaning, "hard": hard.get(name, True), "module": mod,
                        "limits": limits, "code": sorted(set(CODE.findall(text)))})

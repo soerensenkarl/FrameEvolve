@@ -163,12 +163,24 @@ function limitText(name) {
   // a limit from the verifier's constants, in feet and inches (or the unit its comment names)
   const c = st.vinfo?.constants[name];
   if (!c) return name;
-  const v = c.value, len = (x) => (x >= 12 ? ftin(x) : inch(x));
-  if (Array.isArray(v)) return `${len(Math.min(...v))} to ${len(Math.max(...v))}`;
-  if (typeof v === "object") {
-    const sec = Object.fromEntries(Object.entries(st.vinfo.sections).map(([n, d]) => [String(d), n]));
-    return Object.entries(v).map(([d, x]) => `${sec[d] || inch(+d) + " deep"} ${len(x)}`).join(", ");
-  }
+  const unit = name.startsWith("SAG_") ? (x) => `L/${x}`
+    : /^(FB|FC|FC_PERP|E|E_MIN)$/.test(name) ? (x) => `${x.toLocaleString()} psi`
+    : /WEIGHT/.test(name) ? (x) => `${x.toLocaleString()} lb`
+    : /^(MITER|BEVEL)$/.test(name) ? (x) => `${x} degrees`
+    : c.module === "analysis" || /NOTCH|SHARE|RATIO|PITCH|UNBRACED|DENSITY|SKIN|FACES|COST/.test(name) ? (x) => `${+(+x).toFixed(3)}`
+    : null;
+  const v = c.value, len = unit || ((x) => (x >= 12 ? ftin(x) : inch(x)));
+  const sec = Object.fromEntries(Object.entries(st.vinfo.sections).map(([n, d]) => [String(d), n]));
+  const key = (d) => {   // a depth, or "plies, depth" for a header table
+    const p = String(d).split(", ");
+    return p.length === 2 ? `${p[0]}-${sec[p[1]] || p[1]}` : sec[d] || `${d}`;
+  };
+  const val = (x) => typeof x === "string" ? x : Array.isArray(x) ? `${len(x[0])}${x.length > 1 ? ` (${x.slice(1).join(", ")})` : ""}`
+    : typeof x === "object" ? Object.entries(x).map(([k, y]) => `${k}" o.c. ${len(y)}`).join(" / ") : len(x);
+  if (Array.isArray(v)) return v.every((x) => typeof x === "number") ? `${len(Math.min(...v))} to ${len(Math.max(...v))}`
+    : v.map((x) => Array.isArray(x) ? x.map((y) => typeof y === "number" ? len(y) : y).join(": ") : x).join(", ");
+  if (typeof v === "object") return Object.entries(v).map(([d, x]) => `${key(d)} ${val(x)}`).join("; ");
+  if (typeof v !== "number") return String(v);
   return /linear feet/.test(c.note) ? `${v} ft` : len(v);
 }
 
