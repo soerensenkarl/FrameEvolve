@@ -166,7 +166,11 @@ def cutting(s: Site) -> list[Fault]:
                 out.append(s.at(m, m.box.centre, "cut", True, f"{name(m)} is ripped along its length (a bevel or "
                                 f"taper the length of the board): a saw crosscuts; drop it or design it out"))
                 continue
-            miter, bevel = math.degrees(math.atan2(deep, along)), math.degrees(math.atan2(through, along))
+            # the board lies on its wide face: the miter turns the blade about the board's thickness, the bevel
+            # tilts it through the thickness (blade normal = cos(bevel) (cos(miter) along + sin(miter) deep)
+            # + sin(bevel) through)
+            miter = math.degrees(math.atan2(deep, along))
+            bevel = math.degrees(math.asin(min(1.0, through / math.sqrt(along ** 2 + deep ** 2 + through ** 2))))
             if miter > MITER + 0.5 or bevel > BEVEL + 0.5:
                 out.append(s.at(m, m.box.centre, "cut", True, f"{name(m)} has an end cut {miter:.0f} degrees off square "
                                 f"in its face and {bevel:.0f} through its thickness; a saw cuts up to {MITER:.0f} and "

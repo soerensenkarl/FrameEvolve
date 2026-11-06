@@ -155,7 +155,7 @@ class Draft:
                 {"house": (str, None), "part": (str, "house"), "surface": (str, ""), "old": (str, ""), "new": (str, "")}),
         "record_lesson": ("Write down one short lesson for the proposers after you in this search: something you "
                           "tried and what it did, or something you learned about the verifier or the builder. One "
-                          "sentence, specific enough to act on. Up to three per proposal.", {"lesson": (str, None)}),
+                          "sentence or two under 300 characters, specific enough to act on. Up to three per proposal.", {"lesson": (str, None)}),
     }
     TRIES = 16   # try_on per proposal: one house, seconds each
     LOOKS = 8    # pictures per proposal
@@ -261,7 +261,7 @@ class Draft:
         return self.describe(house, old, new, ["--raw", "--surface", surface])
 
     def record_lesson(self, lesson: str) -> str:
-        lesson = " ".join(lesson.split())[:300]
+        lesson = " ".join(lesson.split())[:500]
         if len(self.lessons) >= self.LESSONS:
             return f"Not recorded: {self.LESSONS} lessons already."
         if not lesson:

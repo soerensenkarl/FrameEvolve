@@ -252,3 +252,11 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
   size, weight and faults), assembly (step through the erection order), faults; Rhino mouse; a runs list that
   says what each run is; a timeline that scales to 2,000 steps.
 - Open: the search treats a usage limit as a failed proposal; no long run yet on the newest verifier.
+- Run notebook (GEPA-style lessons) tried on nb1 (3 iterations from cad1's best): every iteration kept, 440 -> 417
+  hard and 359 -> 237 soft on validation. The lessons are specific (wall panels to 40 ft cut most "panels" faults
+  but plates then need splices over doubled studs, off the grid lines), and one exposed a verifier bug: the saw's
+  bevel was measured as atan(through / along), ignoring the depth component, so every compound cheek cut (a jack
+  against a valley) read about 52 degrees. Now asin of the normal's component through the thickness; on h002 54
+  cut faults went to 0.
+- The proposer reads the frame: the parent's overview of every surface in its prompt, and frame (members of a
+  surface with places, contacts and faults), trace (a rule's firings) and raw (the house file, stored members).
