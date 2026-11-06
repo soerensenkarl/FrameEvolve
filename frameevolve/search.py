@@ -230,7 +230,7 @@ class Run:
         (path / "grammars").mkdir(parents=True, exist_ok=False)
         config = {"seed_grammar": str(seed_grammar), "train": [str(h) for h in train], "val": [str(h) for h in val],
                   "test": [str(h) for h in test], "minibatch": minibatch, "model": model, "max_lines": max_lines,
-                  "inspirations": inspirations, "note": note, "created": time.time()}
+                  "inspirations": inspirations, "note": note, "created": time.time(), "code": code_hash()}
         (path / "config.json").write_text(json.dumps(config, indent=1))
         run = Run(path)
         src = Path(seed_grammar).read_text()

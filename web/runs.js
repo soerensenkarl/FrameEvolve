@@ -79,6 +79,23 @@ setInterval(tick, 2000);
 
 // ---- side: runs, jobs, tests
 
+function runRow(r) {
+  // a run in the list: its name, where it started, and how far it got on the validation houses
+  const sel = r.name === rs.name ? "sel" : "";
+  if (r.pending) return `<li data-run="${esc(r.name)}" class="${sel}"><b>${esc(r.name)}</b><small>starting...</small></li>`;
+  const kept = Math.max(0, r.candidates - 1), [h0, h1] = [r.start?.[0], r.best?.[0]];
+  const gain = h0 ? Math.max(0, Math.min(1, (h0 - h1) / h0)) : 0;
+  return `<li data-run="${esc(r.name)}" class="${sel}">
+    <div class="rn"><b>${esc(r.name)}</b>${liveRun(r.name) ? ` <span class="live">searching</span>` : ""}
+      ${r.current ? "" : `<span class="old" title="scored by an earlier version of the verifier: compare its numbers only with runs scored by the same one">older verifier</span>`}
+      <span class="when">${ago(r.created)}</span></div>
+    ${r.note ? `<small class="note">${esc(r.note)}</small>` : ""}
+    <small>from ${esc(r.from || "seed")}, ${r.iterations} iterations, ${kept} kept</small>
+    ${r.best ? `<div class="prog" title="hard faults over the validation houses: the grammar it started from, and its best (${esc(r.best_id)})">
+      <span class="${h1 ? "bad" : "good"}">${h1.toLocaleString()} hard</span> <span class="muted">from ${h0.toLocaleString()}</span>
+      <i style="--g:${(gain * 100).toFixed(0)}%"></i></div>` : ""}</li>`;
+}
+
 function renderRunsSide() {
   const lastTest = rs.jobs.find((j) => j.kind === "tests");
   const testState = !lastTest ? "" : lastTest.status === "running" ? `<span class="muted">running...</span>`
@@ -87,10 +104,7 @@ function renderRunsSide() {
   const pending = rs.name && !rs.list.some((r) => r.name === rs.name) ? [{ name: rs.name, pending: true }] : [];
   $("#runsSide").innerHTML = `
     <h3>Runs</h3>
-    <ul class="list">${[...pending, ...rs.list].map((r) => `<li data-run="${esc(r.name)}" class="${r.name === rs.name ? "sel" : ""}">
-      <b>${esc(r.name)}</b>${liveRun(r.name) ? ` <span class="live">searching</span>` : ""}
-      <small>${r.pending ? "starting..." : `${r.iterations} iterations, ${r.candidates} grammars kept, ${esc(r.model)}`}</small></li>`).join("")
-      || `<li class="empty">No runs yet.</li>`}</ul>
+    <ul class="list runs">${[...pending, ...rs.list].map(runRow).join("") || `<li class="empty">No runs yet.</li>`}</ul>
     <button data-act="new" class="${rs.sel?.kind === "new" ? "on" : ""}">New run</button>
     <h3>Tests</h3>
     <div class="row"><button data-act="tests" ${lastTest?.status === "running" ? "disabled" : ""}>Run tests</button> ${testState}</div>

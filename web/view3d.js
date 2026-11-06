@@ -30,11 +30,9 @@ export function setup3d() {
   controls.enableDamping = false;      // as in Rhino: the view stops when the mouse does, no glide
   // as in Rhino: left clicks select, right drag orbits (Shift: pans), middle drag pans, Cmd/Ctrl + right drag
   // zooms about the view's centre; wheel and trackpad are handled in bindViewInput
+  // OrbitControls itself pans when Shift is held over a rotate button (and would rotate if the button were set to pan)
   controls.mouseButtons = { LEFT: -1, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
   controls.enableZoom = false;
-  const shiftPans = (e) => { controls.mouseButtons.RIGHT = e.shiftKey ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE; };
-  window.addEventListener("keydown", shiftPans);
-  window.addEventListener("keyup", shiftPans);
   scene.add(new THREE.HemisphereLight(0xffffff, 0x8a877e, 1.7));
   const sun = new THREE.DirectionalLight(0xffffff, 1.3);
   sun.position.set(-6, -9, 14);
@@ -71,7 +69,6 @@ function bindViewInput(canvas) {
       const r = canvas.getBoundingClientRect();     // about the view's centre, as Rhino does
       zoomDrag = { y: e.clientY, at: { clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 } };
     }
-    if (e.button === 2) controls.mouseButtons.RIGHT = e.shiftKey ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
   }, true);
   canvas.addEventListener("pointermove", (e) => {
     if (!zoomDrag) return;
@@ -99,6 +96,7 @@ function bindViewInput(canvas) {
   });
   canvas.addEventListener("pointerleave", () => { hoverAt = null; hideTip(); });
   canvas.addEventListener("pointerdown", (e) => { down = [e.clientX, e.clientY, e.button]; });
+
   canvas.addEventListener("pointerup", (e) => {
     if (zoomDrag) { zoomDrag = null; return; }
     if (!down || down[2] !== 0 || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
@@ -106,17 +104,14 @@ function bindViewInput(canvas) {
     const { hit } = pick(e);
     select(hit ? { kind: "member", id: hit.object.userData.id } : null);
   });
-  // wheel and trackpad, as in Rhino: a mouse wheel zooms at the cursor (Shift: pans); on a trackpad two fingers
-  // orbit, Shift + two fingers pan, pinch zooms. A wheel notch is a whole step of 40 pixels or more straight up or
-  // down (or counted in lines); a trackpad sends small steps, mostly with some sideways drift. Once a trackpad
-  // gesture starts it stays one until it rests, so its momentum is never read as a wheel.
+  // wheel and trackpad, as in Rhino: the wheel zooms at the cursor (Shift: pans). On a trackpad two fingers orbit
+  // (Shift: pan) and pinch zooms: a two-finger scroll nearly always drifts sideways, and once one does, the
+  // gesture stays a trackpad's until it rests, so its momentum is never read as the wheel.
   let padUntil = 0;
   const fromTrackpad = (e) => {
     const now = performance.now();
-    if (now < padUntil) { padUntil = now + 250; return true; }
-    const wheel = e.deltaMode !== 0 || (e.deltaX === 0 && Number.isInteger(e.deltaY) && Math.abs(e.deltaY) >= 40);
-    if (!wheel) padUntil = now + 250;
-    return !wheel;
+    if (e.deltaX !== 0 && !e.shiftKey) padUntil = now + 250;
+    return now < padUntil;
   };
   canvas.addEventListener("wheel", (e) => {
     e.preventDefault();
@@ -125,7 +120,7 @@ function bindViewInput(canvas) {
     if (e.ctrlKey) zoomAt(Math.exp(dy * 0.01), e);                       // pinch
     else if (fromTrackpad(e)) e.shiftKey ? panBy(dx, dy) : orbitBy(dx * 0.006, dy * 0.006);
     else if (e.shiftKey) panBy(dx, dy);
-    else zoomAt(Math.exp(dy * 0.0015), e);
+    else if (dy) zoomAt(Math.exp(Math.sign(dy) * Math.min(0.25, Math.max(0.1, Math.abs(dy) * 0.0015))), e);   // a notch: 10 to 25%
     controls.update();
   }, { passive: false });
 }

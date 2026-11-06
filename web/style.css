@@ -200,6 +200,15 @@ body.runs-mode #left, body.runs-mode #right, body.runs-mode #timeline, body.runs
 #runsSide .list li.sel { background: #e7effc; }
 #runsSide .list li.empty { cursor: default; background: none; font-size: 12px; }
 #runsSide .list small { display: block; color: var(--muted); font-size: 11px; }
+#runsSide .runs li { padding: 6px 7px 7px; }
+#runsSide .runs .rn { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+#runsSide .runs .rn b { white-space: nowrap; }
+#runsSide .runs .note { color: var(--ink, #333); font-size: 11.5px; }
+#runsSide .runs .when { margin-left: auto; color: var(--muted); font-size: 11px; }
+#runsSide .runs .old { font-size: 10px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+#runsSide .runs .prog { display: flex; align-items: center; gap: 6px; font-size: 11px; margin-top: 2px; }
+#runsSide .runs .prog i { flex: 1; height: 4px; border-radius: 2px; background: var(--line);
+  background-image: linear-gradient(90deg, #3c9a5f var(--g), transparent var(--g)); }
 #runsSide .jobs li { font-size: 12px; }
 #runsSide .row { display: flex; gap: 8px; align-items: center; }
 .live { color: var(--ok); font-size: 11px; }

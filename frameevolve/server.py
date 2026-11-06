@@ -90,9 +90,25 @@ def live_now(run: Path) -> bool:
 
 
 def run_summary(p: Path) -> dict:
+    """A run as the runs list shows it: where it started, how far it got on the validation houses (its seed and
+    its best grammar), how long, and whether the verifier that scored it is the one in the code now."""
+    from frameevolve.search import Run, code_hash
     config = json.loads((p / "config.json").read_text())
-    return {"name": p.name, "model": config.get("model"), "candidates": len(jsonl(p / "candidates.jsonl")),
-            "iterations": len(jsonl(p / "iterations.jsonl")), "live": live_now(p)}
+    seed = Path(config.get("seed_grammar", ""))
+    src = f"{seed.parents[1].name} {seed.stem}" if seed.parent.name == "grammars" and seed.parents[1].parent.name == "runs" \
+        else seed.stem
+    out = {"name": p.name, "model": config.get("model"), "candidates": len(jsonl(p / "candidates.jsonl")),
+           "iterations": len(jsonl(p / "iterations.jsonl")), "live": live_now(p), "from": src,
+           "created": config.get("created"), "note": config.get("note", ""),
+           "current": config.get("code") == code_hash()}
+    try:
+        run = Run(p)
+        if run.cands:
+            best = run.best()
+            out.update(start=run.cands[0].total(run.val_ids), best=best.total(run.val_ids), best_id=best.id)
+    except Exception:
+        pass        # a run being created, or one whose houses are gone
+    return out
 
 
 def run_payload(p: Path) -> dict:
