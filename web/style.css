@@ -481,3 +481,7 @@ body.view-panels #timeline, body.view-faults #timeline { display: none; }
 .vlist li.site .nm { color: #57554f; }
 .vlist .flag { font-size: 10px; font-weight: 500; border-radius: 4px; padding: 0 4px; border: 1px solid currentColor; }
 #caption .c-bad { color: var(--err); font-size: 12px; margin-top: 2px; }
+
+.notebook { list-style: none; margin: 4px 0 8px; padding: 0; font-size: 12.5px; }
+.notebook li { padding: 4px 0; border-bottom: 1px solid var(--line); line-height: 1.4; }
+.notebook .it { display: inline-block; min-width: 26px; color: var(--muted); font-variant-numeric: tabular-nums; }

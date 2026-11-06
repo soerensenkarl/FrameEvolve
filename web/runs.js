@@ -172,8 +172,20 @@ function renderRunsMain() {
       ${steerHtml(run, job)}${lv.run === run.name && liveRun(run.name) ? `<div id="runLive"></div>` : ""}</div>
     ${paretoView(run)}
     <section><h3>Progress <small>the best grammar so far, summed over the ${run.houses.length} training houses</small></h3>${progressSvg(run)}</section>
+    ${notebookHtml(run)}
     <section><h3>Iterations <small>newest first; click one to see what the proposer saw and did</small></h3>${iterList(run)}</section>`;
   renderRunLive();
+}
+
+function notebookHtml(run) {
+  // the run's notebook: lessons the proposers wrote down for the ones after them, newest first, with how each
+  // iteration came out; every proposer is shown the newest of them
+  const rows = run.iterations.flatMap((it) => (it.lessons || []).map((l) => ({ it, l }))).reverse();
+  if (!rows.length) return "";
+  const how = (it) => it.accepted ? `<span class="good">kept</span>` : it.error ? `<span class="bad" title="${esc(it.error)}">refused</span>`
+    : `<span class="muted">not kept</span>`;
+  return `<section><h3>Notebook <small>what the proposers learned, newest first; each proposer reads the newest</small></h3>
+    <ul class="notebook">${rows.map(({ it, l }) => `<li><span class="it" data-iter="${it.iteration}">${it.iteration}</span> ${how(it)} ${esc(l)}</li>`).join("")}</ul></section>`;
 }
 
 function steerHtml(run, job) {
@@ -612,6 +624,7 @@ async function renderRunsDetail(refresh = false) {
         ${it.usage?.turns ? `<tr><td>Claude</td><td>${it.usage.turns} turns, ${it.usage.input_tokens} tokens in, ${it.usage.output_tokens} out${it.usage.checks != null ? `, ${it.usage.checks} checks` : ""}</td></tr>` : ""}
       </table>
       <h4>The proposer's note</h4><p class="note">${esc(it.note || "No note.")}</p>
+      ${it.lessons?.length ? `<h4>Lessons it wrote down</h4><ul class="notebook">${it.lessons.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>` : ""}
       <div id="prop"><p class="empty">Loading the proposal folder...</p></div>`;
     let p;
     try { p = await api("GET", `/api/run/${rs.name}/proposal/${it.iteration}`); } catch (e) {

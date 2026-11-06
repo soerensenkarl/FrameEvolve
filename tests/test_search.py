@@ -93,6 +93,7 @@ def test_claude_proposer_edits_through_its_tools(tmp_path, monkeypatch):
         seen["try"] = tools["try_on"].call({"house": house, "old": "SPACING = 24", "new": "SPACING = 19.2"})
         seen["look"] = tools["look"].call({"house": house, "view": "surface", "colour": "panel"})
         seen["check"] = tools["check_grammar"].call({})
+        seen["lesson"] = tools["record_lesson"].call({"lesson": "24 in. studs need 2x6 under a floor."})
         yield FakeMessage("", "tool_use")
         yield FakeMessage("Widened the stud module to 24 in.; fewer studs, same backing.")
 
@@ -106,6 +107,11 @@ def test_claude_proposer_edits_through_its_tools(tmp_path, monkeypatch):
     assert "SPACING = 24" in (run.path / "proposals" / "0001" / "proposed.py").read_text()
     assert "(a variation; the draft is unchanged)" in seen["try"]
     assert [b["type"] for b in seen["look"]] == ["text", "image"]
+    assert seen["lesson"].startswith("Recorded") and e["lessons"] == ["24 in. studs need 2x6 under a floor."]
+    from frameevolve.proposer import notebook_text
+    book = run.notebook()
+    assert [n["lesson"] for n in book] == e["lessons"]
+    assert "iteration 1 (" in notebook_text(book) and "24 in. studs" in notebook_text(book)
     assert e["note"].startswith("Widened")
     assert seen["model"] == "claude-opus-5-5" and seen["output_config"] == {"effort": "medium"}
     assert seen["check"].startswith("Check 1 of 2")

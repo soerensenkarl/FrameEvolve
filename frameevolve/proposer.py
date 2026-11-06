@@ -27,6 +27,7 @@ class Proposal:
     source: str
     note: str = ""
     usage: dict = field(default_factory=dict)
+    lessons: list[str] = field(default_factory=list)   # what the proposer learned, for later proposers in the run
 
 
 class ScriptedProposer:
@@ -90,7 +91,9 @@ The rules API:
 
 Write the grammar so a framer could read it: small rules with one job each, a docstring saying what each
 does, names in framing terms. Lay out guides (a grid, panel joints) before framing to them, and assign
-members to panels with s.assign. No function may have more than {max_lines} lines of code (docstrings, blank
+members to panels with s.assign. Before you finish, write down up to three lessons with record_lesson: what you
+tried and what it did, or what you learned about the verifier or the builder, so the proposers after you in this
+search start from it. No function may have more than {max_lines} lines of code (docstrings, blank
 lines and comments do not count); a grammar that breaks this is refused unseen, so split big rules. Prefer general rules over special cases; never refer to a house or opening by
 its id. Members you place record the rule that placed it, and faults name those rules.
 
@@ -133,13 +136,18 @@ class Draft:
                  "hard faults red, soft amber, the rest a faint ghost: where the problems are).",
                  {"house": (str, None), "view": (str, "3d"), "surface": (str, ""), "colour": (str, "rule"),
                   "old": (str, ""), "new": (str, "")}),
+        "record_lesson": ("Write down one short lesson for the proposers after you in this search: something you "
+                          "tried and what it did, or something you learned about the verifier or the builder. One "
+                          "sentence, specific enough to act on. Up to three per proposal.", {"lesson": (str, None)}),
     }
     TRIES = 16   # try_on per proposal: one house, seconds each
     LOOKS = 8    # pictures per proposal
+    LESSONS = 3  # lessons per proposal
 
     def __init__(self, source: str, context: dict, out: Path, checks: int):
         self.src, self.context, self.out, self.limit, self.checks = source, context, out, checks, 0
         self.tries = self.looks = 0
+        self.lessons: list[str] = []
         (out / "draft.py").write_text(source)
 
     def event(self, kind: str, **data) -> None:
@@ -185,6 +193,15 @@ class Draft:
         f = self.out / f"{kind}{self.tries + self.looks + 1}.py"
         f.write_text(src)
         return path, f
+
+    def record_lesson(self, lesson: str) -> str:
+        lesson = " ".join(lesson.split())[:300]
+        if len(self.lessons) >= self.LESSONS:
+            return f"Not recorded: {self.LESSONS} lessons already."
+        if not lesson:
+            return "Not recorded: the lesson is empty."
+        self.lessons.append(lesson)
+        return f"Recorded ({len(self.lessons)} of {self.LESSONS})."
 
     def try_on(self, house: str, old: str = "", new: str = "") -> str:
         from collections import Counter
@@ -279,6 +296,24 @@ def _score(s) -> str:
     return f"{s[0]} hard, {s[1]} soft, cost {s[2]:.1f}"
 
 
+def notebook_text(notebook: list[dict]) -> str:
+    """The run's notebook: what earlier proposers in this search learned, newest last, with how each came out."""
+    if not notebook:
+        return ""
+    lines = ["Lessons the proposers before you in this search wrote down, newest last, with how their iteration came "
+             "out (a lesson from an edit that was not kept can still be true):"]
+    for n in notebook:
+        if n["accepted"]:
+            how = f"kept, {n['parent_batch'][0]} -> {n['child_batch'][0]} hard"
+        elif n.get("error"):
+            how = f"refused: {n['error'][:80]}"
+        else:
+            how = "not kept: not better" + (f", {n['parent_batch'][0]} -> {n['child_batch'][0]} hard"
+                                             if n.get("child_batch") else "")
+        lines.append(f"- iteration {n['iteration']} ({how}): {n['lesson']}")
+    return "\n".join(lines) + "\n\n"
+
+
 def rejected_text(rejected: list[dict]) -> str:
     """Earlier children of this parent that were not kept, so the proposer tries something else."""
     if not rejected:
@@ -320,6 +355,7 @@ def prompt(context: dict, images: bool, out: Path) -> tuple[str, list[dict]]:
                "frame in 3D from two opposite corners, showing only the members in faults (hard red, soft amber; the "
                "rest a faint ghost), then the surfaces with the most faults square on, members coloured by rule and "
                "prefab panels outlined, where red hatching marks boards with nothing behind them.\n\n" if images else "")
+            + notebook_text(context.get("notebook", []))
             + rejected_text(context.get("rejected", []))
             + inspirations_text(context.get("inspirations", []))
             + "Read the grammar with view_grammar, then improve it.")
@@ -375,7 +411,7 @@ class ClaudeProposer:
             raise RuntimeError("Claude declined the request")
         note = " ".join(b.text for b in last.content if b.type == "text").strip()
         usage.update(checks=draft.checks, tries=draft.tries, looks=draft.looks)
-        return Proposal(draft.src, note[:2000], usage)
+        return Proposal(draft.src, note[:2000], usage, draft.lessons)
 
 
 def find_claude() -> str | None:
@@ -459,7 +495,8 @@ class ClaudeCodeProposer:
             draft.event("say", text="ran out of turns: the draft as it stands is the proposal")
             if result is None or result.is_error:
                 return Proposal(draft.src, " ".join(pending)[:2000], {"turns": self.max_turns, "checks": draft.checks,
-                                                                      "tries": draft.tries, "looks": draft.looks})
+                                                                      "tries": draft.tries, "looks": draft.looks},
+                                draft.lessons)
         if result is None:
             raise RuntimeError("Claude Code returned nothing")
         if result.is_error:
@@ -472,7 +509,7 @@ class ClaudeCodeProposer:
                  "output_tokens": int(u.get("output_tokens") or 0), "turns": result.num_turns,
                  "seconds": round((result.duration_ms or 0) / 1000, 1), "checks": draft.checks,
                  "tries": draft.tries, "looks": draft.looks}
-        return Proposal(draft.src, " ".join(pending)[:2000], usage)
+        return Proposal(draft.src, " ".join(pending)[:2000], usage, draft.lessons)
 
 
 def _schema(params: dict) -> dict:

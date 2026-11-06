@@ -170,6 +170,11 @@ Pareto search keeps the grammars that do well across many houses.
   on the minibatch, and two pictures per minibatch house with hard faults marked: the whole frame in 3D
   from two opposite corners (roofs and floors are hard to judge from elevations), then the wall and roof
   elevations. A picture that fails to draw is left out; it never fails the evaluation.
+- A run keeps a notebook (GEPA's reflective memory, kept short): each proposer writes down up to three
+  lessons (record_lesson: what it tried and what it did, or what it learned about the verifier or the builder),
+  stored with how its iteration came out, and every later proposer reads the newest 24. Proposers are fresh
+  each iteration: each works from its own Pareto parent, so the search keeps several lines alive, and the
+  notebook carries what is worth knowing without one ever-growing conversation.
 - It also sees the last three children of this parent that were not kept, with why and their notes, so it
   does not repeat them; and up to two inspirations (AlphaEvolve): other grammars in the Pareto set that beat
   the parent on the most validation houses, with their code, notes and training scores. `--inspirations 0`

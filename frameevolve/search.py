@@ -55,6 +55,7 @@ SEED_GRAMMAR = "grammars/seed.py"   # where a run starts unless told otherwise
 FAILED = [10**6, 10**6, 1e12]   # the score of a grammar that crashed or timed out
 INSPIRATIONS = 2                # other Pareto grammars shown to the proposer
 REJECTED = 3                    # earlier children of the parent that were not kept, shown to the proposer
+NOTEBOOK = 24                   # lessons from earlier iterations of the run, newest, shown to the proposer
 PICTURES = {"image": ".png", "image3d": ".3d.png"}   # elevations, and the whole frame in 3D from two sides
 
 
@@ -310,6 +311,14 @@ class Run:
                for e in self.iterations() if e.get("parent") == parent and not e.get("accepted")]
         return out[-n:]
 
+    def notebook(self, n: int = NOTEBOOK) -> list[dict]:
+        """The run's notebook (GEPA's reflective memory, kept short): the lessons proposers wrote down, the newest n,
+        each with how its iteration came out."""
+        out = [{"iteration": e["iteration"], "accepted": e["accepted"], "error": e.get("error"),
+                "parent_batch": e.get("parent_batch"), "child_batch": e.get("child_batch"), "lesson": lesson}
+               for e in self.iterations() for lesson in e.get("lessons") or []]
+        return out[-n:]
+
     def inspirations(self, parent: Candidate, wins: dict[str, list[str]], n: int) -> list[dict]:
         """Other grammars in the Pareto set, those better than the parent on the most validation houses first.
         The proposer sees their code and their training scores, never validation reports."""
@@ -357,6 +366,7 @@ class Run:
                        if parent_res[h].get(name)],
             "pareto": dict(wins),
             "rejected": self.rejected(parent.id),
+            "notebook": self.notebook(),
             "inspirations": self.inspirations(parent, wins, self.config.get("inspirations", INSPIRATIONS)),
         }
         return context, parent_res
@@ -408,7 +418,7 @@ class Run:
         except Exception as e:
             entry["error"] = f"proposer failed: {type(e).__name__}: {e}"
             return done()
-        entry["note"], entry["usage"] = proposal.note, proposal.usage
+        entry["note"], entry["usage"], entry["lessons"] = proposal.note, proposal.usage, proposal.lessons
         proposed = out / "proposed.py"
         proposed.write_text(proposal.source)
         entry["error"], entry["child_batch"] = self.judge(proposal.source, parent_src, parent_res, batch, proposed, now)
