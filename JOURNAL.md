@@ -160,3 +160,9 @@ further than both in checking its own drafts and in faults that name the rule to
 - Lessons: a wall "rising past" a roof must be judged where it is inside the roof's outline, not against
   the plane extended; cutting a joist by a rafter's underside plane cut it far away too, so joists are now
   notched (local); the main block should own a junction wall, which also puts a plate under each valley.
+
+## 2026-11-05: New house frames live
+
+- New house now streams like Regenerate: the build stream opens with the house's surfaces, so the view
+  shows and frames the new house at once and pieces appear about 25 ms after the click. The house list
+  reloads after the build, since a concurrent reload slowed the build (one Python process, one GIL).

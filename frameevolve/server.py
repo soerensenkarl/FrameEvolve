@@ -229,6 +229,46 @@ def shape(m: Member, w) -> dict:
     return out
 
 
+def surfaces_payload(house: House, members: list, gaps_too: bool = True) -> dict:
+    """Every surface for drawing: its outline and openings, how deep the framing on it is and, unless told not
+    to, where its sheathing has no backing."""
+    walls = {w.id: w for w in house.walls}
+    level = storeys(house)
+    out = {"walls": [], "floors": [], "roofs": []}
+    for x in house.surfaces:
+        d = surface.depth(x, members) or 0.0
+        gaps = []
+        for side in x.faces if gaps_too else ():
+            off = -0.2 if side == "outer" else d + 0.2   # drawn just off the face, outside the framing
+            for gp in surface.gaps(x, members, face=side, walls=walls):
+                corners = [x.world(u, v, off) for u, v in ((gp.u0, gp.v0), (gp.u1, gp.v0), (gp.u1, gp.v1), (gp.u0, gp.v1))]
+                gaps.append({**asdict(gp), "world": corners})
+        item = {"id": x.id, "role": x.role, "size": x.size, "outline": outline_uv(x), "storey": level[x.id], "depth": d,
+                "origin": x.origin, "eu": x.eu, "ev": x.ev, "ew": x.ew, "openings": [asdict(o) for o in x.openings],
+                "gaps": gaps}
+        if isinstance(x, Wall):
+            face = []   # other walls' members against this wall's face, drawn grey in its elevation
+            for m in members:
+                if m.surface != x.id and isinstance(house.surface(m.surface), Wall):
+                    b = x.local_box(m)
+                    if abs(b.lo[2]) <= EPS and b.hi[0] > EPS and b.lo[0] < x.length - EPS and b.hi[1] > EPS and b.lo[1] < x.height - EPS:
+                        face.append({"id": m.id, "lo": b.lo, "hi": b.hi})
+            item.update({"kind": "wall", "length": x.length, "height": x.height, "base": x.base, "start": x.start,
+                         "end": x.end, "start_meets": x.start_meets, "end_meets": x.end_meets, "above": x.above,
+                         "below": x.below, "tees": [asdict(t) for t in x.tees], "neighbours": face})
+            out["walls"].append(item)
+        elif isinstance(x, Roof):
+            item.update({"kind": "roof", "pitch": x.pitch, "start": x.start, "end": x.end, "z": x.z,
+                         "seams": [asdict(sm) for sm in x.seams]})
+            out["roofs"].append(item)
+        else:
+            item.update({"kind": "floor", "z": x.z,
+                         **{k: [{**asdict(b), "along_u": b.along_u, "depth": surface.depth(walls[b.wall], members) or 0.0}
+                                for b in getattr(x, k)] for k in ("bearers", "loads")}})
+            out["floors"].append(item)
+    return out
+
+
 def frame_payload(house: House, frame: Frame, source: str) -> dict:
     t = time.perf_counter()
     report = verify(house, frame)
@@ -246,43 +286,10 @@ def frame_payload(house: House, frame: Frame, source: str) -> dict:
             "bears": list(g.bears.get(m.id, {})), "carries": list(g.carries.get(m.id, {})),
             "side": list(g.side.get(m.id, {})),
         })
-    walls = {w.id: w for w in house.walls}
-    level = storeys(house)
-    out = {"walls": [], "floors": [], "roofs": []}
-    for x in house.surfaces:
-        d = surface.depth(x, frame.members) or 0.0
-        gaps = []
-        for side in x.faces:
-            off = -0.2 if side == "outer" else d + 0.2   # drawn just off the face, outside the framing
-            for gp in surface.gaps(x, frame.members, face=side, walls=walls):
-                corners = [x.world(u, v, off) for u, v in ((gp.u0, gp.v0), (gp.u1, gp.v0), (gp.u1, gp.v1), (gp.u0, gp.v1))]
-                gaps.append({**asdict(gp), "world": corners})
-        item = {"id": x.id, "role": x.role, "size": x.size, "outline": outline_uv(x), "storey": level[x.id], "depth": d,
-                "origin": x.origin, "eu": x.eu, "ev": x.ev, "ew": x.ew, "openings": [asdict(o) for o in x.openings],
-                "gaps": gaps}
-        if isinstance(x, Wall):
-            face = []   # other walls' members against this wall's face, drawn grey in its elevation
-            for m in frame.members:
-                if m.surface != x.id and isinstance(house.surface(m.surface), Wall):
-                    b = x.local_box(m)
-                    if abs(b.lo[2]) <= EPS and b.hi[0] > EPS and b.lo[0] < x.length - EPS and b.hi[1] > EPS and b.lo[1] < x.height - EPS:
-                        face.append({"id": m.id, "lo": b.lo, "hi": b.hi})
-            item.update({"kind": "wall", "length": x.length, "height": x.height, "base": x.base, "start": x.start,
-                         "end": x.end, "start_meets": x.start_meets, "end_meets": x.end_meets, "above": x.above,
-                         "below": x.below, "tees": [asdict(t) for t in x.tees], "neighbours": face})
-            out["walls"].append(item)
-        elif isinstance(x, Roof):
-            item.update({"kind": "roof", "pitch": x.pitch, "start": x.start, "end": x.end, "z": x.z,
-                         "seams": [asdict(sm) for sm in x.seams]})
-            out["roofs"].append(item)
-        else:
-            item.update({"kind": "floor", "z": x.z,
-                         **{k: [{**asdict(b), "along_u": b.along_u, "depth": surface.depth(walls[b.wall], frame.members) or 0.0}
-                                for b in getattr(x, k)] for k in ("bearers", "loads")}})
-            out["floors"].append(item)
     m = report.metrics
     return {
-        "house": house.id, **out, "members": members, "rules": grammar_rules(source),
+        "house": house.id, **surfaces_payload(house, frame.members), "members": members,
+        "rules": grammar_rules(source),
         "steps": frame.steps, "errors": frame.errors,
         "faults": [asdict(f) for f in report.faults], "checks": CHECKS, "report": report.text(),
         "timing": {"verify": verify_s},
@@ -446,7 +453,8 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def build_live(self, name: str, source: str, house: House) -> None:
-        """Build and stream it as it happens: one JSON line per step with the boxes it placed, then the frame."""
+        """Build and stream it as it happens: the house's surfaces, one JSON line per step with the pieces it placed,
+        then the frame."""
         self.send_response(200)
         self.send_header("Content-Type", "application/x-ndjson")
         self.send_header("Cache-Control", "no-store")
@@ -462,6 +470,7 @@ class Handler(BaseHTTPRequestHandler):
                            "removed": step["removed"], "shaped": draw(step.get("shaped", []))}})
 
         try:
+            line({"house": {"house": house.id, **surfaces_payload(house, [], gaps_too=False)}})
             t = time.perf_counter()
             frame = build_source(name, source, house, on_step)
             build_s = time.perf_counter() - t

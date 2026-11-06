@@ -554,10 +554,10 @@ function label(text, cls, pos, groupTo = surfGroup) {
 
 const v2 = (u, v) => new THREE.Vector2(u * S, v * S);
 
-function renderSurfaces() {
+function renderSurfaces(list = surfaceList()) {
   clear(surfGroup);
   surfs = [];
-  for (const s of surfaceList()) {
+  for (const s of list) {
     const M = surfMatrix(s, 0.004);
     const shape = new THREE.Shape(s.outline.map(([u, v]) => v2(u, v)));
     const pts = s.outline.map((p, i) => [p, s.outline[(i + 1) % s.outline.length]]);
@@ -2523,7 +2523,7 @@ $("#showFaults").addEventListener("change", () => { look3d(); renderElev(); });
 $("#showSurfaces").addEventListener("change", () => { remember("surfaces", $("#showSurfaces").checked ? "1" : "0"); look3d(); renderElev(); });
 $("#rebuild").addEventListener("click", regenerate);
 
-// Regenerate: frame the house from scratch and draw each piece the moment the server places it, at the
+// Regenerate (and New house): frame the house from scratch and draw each piece the moment the server places it, at the
 // build's own speed; the full frame and its verification follow when the build is done
 async function regenerate() {
   stopPlay();
@@ -2554,7 +2554,11 @@ async function regenerate() {
     meshes.set(m.id, mesh);
   };
   const handle = (msg) => {
-    if (msg.step) {
+    if (msg.house) {   // the house comes first: show its surfaces, and frame a new one in the view
+      const h = msg.house;
+      renderSurfaces([...h.walls, ...h.floors, ...h.roofs]);
+      if (st.fitFor !== h.house) { st.fitFor = h.house; fit(); }
+    } else if (msg.step) {
       for (const m of msg.step.placed) put(m);
       for (const m of msg.step.shaped || []) put(m);
       for (const id of msg.step.removed) drop(id);
@@ -2594,11 +2598,12 @@ $("#grammar").addEventListener("change", async () => {
 $("#newHouse").addEventListener("click", async () => {
   try {
     const { id } = await api("POST", "/api/houses", {});
-    await loadLists(id);
+    $("#house").add(new Option(id, id), 0);   // frame it at once; the full house list catches up after
+    $("#house").value = id;
     remember("house", id);
     if (runsMode()) showTab("view3d");
-    await build();
-    status(`new house ${id}, built`);
+    await regenerate();
+    await loadLists(id);
   } catch (e) { status(e.message, true); }
 });
 document.addEventListener("keydown", (e) => {
