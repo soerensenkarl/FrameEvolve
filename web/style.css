@@ -485,3 +485,17 @@ body.view-panels #timeline, body.view-faults #timeline { display: none; }
 .notebook { list-style: none; margin: 4px 0 8px; padding: 0; font-size: 12.5px; }
 .notebook li { padding: 4px 0; border-bottom: 1px solid var(--line); line-height: 1.4; }
 .notebook .it { display: inline-block; min-width: 26px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* the tab row: tabs left; on the right only the view switch, the storey filter and a small "show" menu */
+#showMenu { position: relative; margin-left: 6px; }
+#showMenu summary { list-style: none; cursor: pointer; color: var(--muted); padding: 7px 8px; font-size: 12px; user-select: none; }
+#showMenu summary::-webkit-details-marker { display: none; }
+#showMenu summary::after { content: " \25BE"; font-size: 10px; }
+#showMenu[open] summary { color: var(--text); }
+#showMenu .menu { position: absolute; right: 0; top: calc(100% - 2px); z-index: 30; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, .08); padding: 4px 10px; min-width: 140px; }
+#showMenu .menu .chk { padding: 5px 0; white-space: nowrap; }
+#viewSwitch, #storeys { margin-left: 8px; align-self: center; margin-bottom: 4px; }
+/* tools that act on the 3D view sit in its corner */
+#canvasTools { position: absolute; top: 8px; right: 8px; z-index: 5; display: flex; gap: 4px; }
+#canvasTools button.tool { margin: 0; font-size: 12px; background: rgba(255, 255, 255, .85); backdrop-filter: blur(4px); }

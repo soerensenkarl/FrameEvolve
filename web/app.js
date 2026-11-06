@@ -247,6 +247,10 @@ document.querySelectorAll("nav.tabs").forEach((nav) => nav.addEventListener("cli
 }));
 
 $("#showFaults").addEventListener("change", () => { look3d(); renderElev(); });
+document.addEventListener("click", (e) => {        // the show menu closes when you click elsewhere
+  const menu = $("#showMenu");
+  if (menu.open && !menu.contains(e.target)) menu.open = false;
+});
 $("#showSurfaces").addEventListener("change", () => { remember("surfaces", $("#showSurfaces").checked ? "1" : "0"); look3d(); renderElev(); });
 $("#showGuides").addEventListener("change", () => { remember("guides", $("#showGuides").checked ? "1" : "0"); look3d(); renderElev(); });
 
