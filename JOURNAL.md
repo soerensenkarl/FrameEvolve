@@ -101,3 +101,20 @@ Minimal grammar, 10 iterations (crashed after 4 on a parent-draw bug, fixed, res
 - Lesson: collinear walls (an exterior wall continuing past a junction) were treated as meeting, so a
   junction wall did not stop short. Parallel walls no longer meet.
 - Tests now take about two minutes; multi-storey houses are slow to build and verify.
+
+## 2026-11-05 Search upgrades from GEPA, optimize_anything and AlphaEvolve
+
+Read the three papers in full and compared them with our loop. Ours already is GEPA's core (Pareto set over
+instances, parents weighted by wins, minibatch of 3, minibatch acceptance, text feedback); our proposer goes
+further than both in checking its own drafts and in faults that name the rule to blame. Took the cheap gains:
+
+- Train, val and test houses. Val picks parents and the final grammar; the proposer reads only train.
+- Pareto set drops candidates dominated by another on the front (GEPA Algorithm 2).
+- Evaluation cached by content and run one process per core: 20 houses 14 s to 3 s; the parent's reports
+  and pictures come from the cache instead of two fresh builds.
+- Compile and smoke test before the minibatch. The first dry run caught a 19.2" module raising a TypeError on
+  every wall, refused in under 2 s.
+- The proposer sees the parent's last rejected children and up to two inspirations from the Pareto set.
+- Left for later: rule-level merge (GEPA), parallel proposers and a model mix (AlphaEvolve), code excerpts
+  per fault, LLM-graded readability, optimize_anything as a baseline. Workbench still draws its Pareto set
+  over training houses.

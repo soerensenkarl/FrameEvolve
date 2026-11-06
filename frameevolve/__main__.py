@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from frameevolve import houses, render
+from frameevolve import houses
 from frameevolve.builder import build
 from frameevolve.model import House
 from frameevolve.verifier import verify
@@ -24,10 +24,16 @@ def main(argv=None) -> None:
     e = sub.add_parser("evaluate", help="build and verify, print JSON (used by the search, one process per grammar)")
     e.add_argument("grammar")
     e.add_argument("houses", nargs="+")
+    e.add_argument("--images", help="folder for each house's elevations, hard faults marked")
     v = sub.add_parser("evolve", help="run the search; creates the run folder on first use")
     v.add_argument("run", help="run folder, e.g. runs/first")
     v.add_argument("--seed-grammar", default="grammars/seed.py")
-    v.add_argument("--train", nargs="+", default=[f"data/houses/h{i:03d}.json" for i in range(10)])
+    v.add_argument("--train", nargs="+", default=[f"data/houses/h{i:03d}.json" for i in range(10)],
+                   help="houses the proposer reads reports on")
+    v.add_argument("--val", nargs="*", default=[f"data/houses/h{i:03d}.json" for i in range(10, 20)],
+                   help="houses that decide the Pareto set and the final grammar; none: use the training houses")
+    v.add_argument("--test", nargs="*", default=[], help="houses scored only for the final grammar")
+    v.add_argument("--inspirations", type=int, default=2, help="other Pareto grammars shown to the proposer")
     v.add_argument("--minibatch", type=int, default=3)
     v.add_argument("--max-lines", type=int, default=12, help="code lines allowed per grammar function")
     v.add_argument("--iterations", type=int, default=5)
@@ -53,8 +59,10 @@ def main(argv=None) -> None:
             print(f"continuing {a.run} at iteration {run.iteration}")
         else:
             run = Run.create(Path(a.run), Path(a.seed_grammar), [Path(h) for h in a.train], a.minibatch,
-                             "scripted" if a.dry else a.model, max_lines=a.max_lines)
-            print(f"created {a.run}: seed {a.seed_grammar} scores {run.cands[0].total()} over {len(a.train)} houses")
+                             "scripted" if a.dry else a.model, max_lines=a.max_lines, val=[Path(h) for h in a.val],
+                             test=[Path(h) for h in a.test], inspirations=a.inspirations)
+            print(f"created {a.run}: seed {a.seed_grammar} scores {run.cands[0].total(run.val_ids)} over "
+                  f"{len(run.val_ids)} validation houses ({len(a.train)} train, {len(a.test)} test)")
         if a.dry:
             rng = random.Random(a.seed)
 
@@ -72,8 +80,16 @@ def main(argv=None) -> None:
         out = {}
         for hp in a.houses:
             house = House.load(hp)
-            report = verify(house, build(a.grammar, house))
-            out[house.id] = {"score": list(report.score), "hard": report.hard, "soft": report.soft,
+            frame = build(a.grammar, house)
+            report = verify(house, frame)
+            image = None
+            if a.images:
+                from frameevolve import render
+                Path(a.images).mkdir(parents=True, exist_ok=True)
+                image = str(Path(a.images) / f"{house.id}.png")
+                marks = [(f.wall, f.u, f.v, f.check) for f in report.faults if f.hard and f.wall and f.u is not None]
+                render.elevations(house, frame, image, marks=marks)
+            out[house.id] = {"image": image, "score": list(report.score), "hard": report.hard, "soft": report.soft,
                              "metrics": report.metrics, "text": report.text(),
                              "faults": [{"check": f.check, "hard": f.hard, "wall": f.wall, "u": f.u, "v": f.v,
                                          "message": f.message, "rules": f.rules} for f in report.faults]}
@@ -89,6 +105,7 @@ def main(argv=None) -> None:
             house.save(Path(a.out) / f"{house.id}.json")
             print(house.id, " ".join(f"{w.id}:{w.length:.0f}/{len(w.openings)}" for w in house.walls))
     elif a.cmd == "build":
+        from frameevolve import render
         out = Path(a.out)
         out.mkdir(parents=True, exist_ok=True)
         for hp in a.houses:
