@@ -348,9 +348,9 @@ def restraint(s: Site) -> list[Fault]:
             continue    # bears along its length on a wall: a rim or band, itself the restraint
         a = axis(m)
         held_at = []
-        for n in s.g.side[m.id]:
+        for n in s.g.side[m.id]:      # what it bears on does not hold it upright (a rafter's heel against its plate)
             o = s.by_id.get(n)
-            if o and (abs(dot(axis(o), a)) < 0.7 or vertical(o)):
+            if o and n not in s.g.bears[m.id] and (abs(dot(axis(o), a)) < 0.7 or vertical(o)):
                 held_at.append(along(m, s.g.at[(m.id, n)]))
         if floor:
             spots = [0.0, m.length]

@@ -36,6 +36,7 @@ PANEL_THICK = 24.0        # a panel is one layer of framing, no deeper than 2 ft
 PANEL_WEIGHT = 3000.0     # lb: what a boom truck lifts at a 40 ft reach
 DENSITY = 26.0 / 1728     # lb per cubic inch: Spruce-Pine-Fir at 15% moisture, 26 lb/cu ft
 SKIN = 2.0 / 144          # lb per square inch: 7/16" OSB sheathing or 23/32" subfloor nailed on in the shop, ~2 psf
+SITE_SHARE = 0.10         # a surface with more of its members than this built on site is not prefabricated
 MIN_PIECE = 6.0           # the shortest piece an automated saw holds and cuts
 MITER = 60.0              # degrees off square a saw cuts in the board's wide face
 BEVEL = 45.0              # degrees a saw tilts through the board's thickness
@@ -105,6 +106,20 @@ def unframed(x, ms: list[Member]) -> list[tuple]:
             reach = max(reach, s1)
         if covered < 0.5 * L:
             out.append((a, b))
+    return out
+
+
+def site_work(s: Site) -> list[Fault]:
+    """A wall, floor, ceiling or roof mostly framed on site rather than built as panels (soft: cost.py also
+    charges every piece built on site)."""
+    out = []
+    for x in s.house.surfaces:
+        ms = s.on.get(x.id, [])
+        site = [m for m in ms if not m.panel]
+        if ms and len(site) > SITE_SHARE * len(ms):
+            out.append(s.flag("prefab", False, f"{x.id}: {len(site)} of its {len(ms)} members are framed on site, "
+                              f"not built into panels", x.id, x.size[0] / 2, x.size[1] / 2, [m.id for m in site[:3]],
+                              sorted({m.rule for m in site})))
     return out
 
 

@@ -48,6 +48,7 @@ CHECKS = {
     "restraint": "a joist end, or deep roof framing at its bearing, with nothing to stop it rolling over",
     # prefab.py: built as panels in a shop, trucked and lifted into place
     "panel": "a prefab panel too big to truck, too heavy to lift, not flat, not one piece, or not framed round",
+    "prefab": "a wall, floor, ceiling or roof mostly framed on site rather than built as panels",
     "cut": "a piece a standard automated saw cannot cut: too short, an end cut too steep, a rip along its length, "
            "or a notch with too many faces",
     "assembly": "panels or site pieces that cannot go up one at a time bottom up: one rests on another that must go "
