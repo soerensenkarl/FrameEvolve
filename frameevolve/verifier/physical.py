@@ -181,7 +181,7 @@ def ties(s: Site, m: Member, framing: set[str]) -> list[str]:
 def tie_lines(s: Site, framing: set[str]) -> dict[str, str]:
     """Level framing on floors, ceilings and roofs joined into lines that carry tension across a house: each
     member's line. Two members are one line where they lap face to face by at least 3", or butt end to end over
-    a common bearing (with a connector, IRC R802.5.2.1)."""
+    the same bearing wall (with a connector, IRC R802.5.2.1)."""
     root = {m.id: m.id for m in s.frame.members if m.surface in framing and level(m)}
 
     def find(x):
@@ -196,8 +196,9 @@ def tie_lines(s: Site, framing: set[str]) -> dict[str, str]:
                 continue
             if abs(dot(s.g.facing[(mid, n)], axis(m))) < 0.1:      # face to face: a lap
                 joined = area / min(m.depth, s.by_id[n].depth) >= LAP - EPS
-            else:                                                  # end to end: a butt
-                joined = bool(set(s.g.bears[mid]) & set(s.g.bears[n]))
+            else:                                                  # end to end: a butt over one bearing wall
+                under = lambda k: {s.by_id[x].surface for x in s.g.bears[k] if x in s.by_id}
+                joined = bool(under(mid) & under(n) & {w.id for w in s.house.walls})
             if joined:
                 root[find(mid)] = find(n)
     return {k: find(k) for k in root}
