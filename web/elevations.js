@@ -3,10 +3,11 @@
 // view bar; the caption over the view while stepping. The SVG helpers here also draw the rule demo.
 import { $, esc, ftin, pill, oneLine, SURF, PAST, REL, FACE, SITE, GUIDE, st, finished, current, trigger, stepNo, present,
   placedNow, goneNow, matchedMember, runsMode, surfaceList, isFloor, isWall, kindName, faceName, listed, isActive,
-  memberColour, byPanel, panelOf, guideShown } from "./state.js";
+  memberColour, byPanel, panelOf, guideShown, chosenFault } from "./state.js";
 import { select } from "./app.js";
 import { related, look3d, otherEnd, isLine, toLocal } from "./view3d.js";
-import { evidence, chosenFault } from "./inspect.js";
+import { evidence } from "./verifier.js";
+import { asmCaption } from "./views.js";
 
 // ---------------------------------------------------------------- pieces of a surface drawing, in its u (right) and v (up)
 
@@ -216,6 +217,7 @@ $("#storeys").addEventListener("click", (e) => {
 export function renderCaption() {
   const el = $("#caption");
   const d = st.data;
+  if (d && st.view === "assembly") { $("#center").classList.remove("stepping"); return asmCaption(el); }
   const stepping = d && !finished() && !runsMode();
   $("#center").classList.toggle("stepping", !!stepping);
   if (!stepping) { el.hidden = true; return; }

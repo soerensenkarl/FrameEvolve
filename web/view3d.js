@@ -4,11 +4,12 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
-import { $, esc, ftin, S, SURF, FACE, GUIDE, st, finished, current, trigger, present, placedNow, goneNow, matchedMember,
-  surfaceList, isWall, kindName, faceName, shown3d, isActive, memberColour, byPanel, panelOf, guideShown, showTip,
-  hideTip } from "./state.js";
+import { $, esc, ftin, S, SURF, FACE, GUIDE, PAST, REL, GONE, SITE, st, finished, current, trigger, present, placedNow,
+  goneNow, matchedMember, surfaceList, isWall, kindName, faceName, shown3d, isActive, memberColour, byPanel, panelOf,
+  panelColour, guideShown, showTip, hideTip, chosenFault } from "./state.js";
 import { select, showTab } from "./app.js";
-import { evidence, chosenFault } from "./inspect.js";
+import { evidence } from "./verifier.js";
+import { asmState, clickMember } from "./views.js";
 
 export let renderer, labeler, scene, camera, controls, group, gapGroup, markGroup, surfGroup, targetGroup, evGroup, guideGroup;
 export const meshes = new Map();   // member id -> its mesh in `group`
@@ -101,8 +102,8 @@ function bindViewInput(canvas) {
     if (zoomDrag) { zoomDrag = null; return; }
     if (!down || down[2] !== 0 || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
     if (measure.on) return measureClick(e);
-    const { hit } = pick(e);
-    select(hit ? { kind: "member", id: hit.object.userData.id } : null);
+    const id = pick(e).hit?.object.userData.id;
+    if (!clickMember(id)) select(id ? { kind: "member", id } : null);   // the panels and assembly views take a click themselves
   });
   // wheel and trackpad, as in Rhino: the wheel zooms at the cursor (Shift: pans). On a trackpad two fingers orbit
   // (Shift: pan) and pinch zooms: a two-finger scroll nearly always drifts sideways, and once one does, the
@@ -262,6 +263,18 @@ export function zoomTo(p) {
   const dir = camera.position.clone().sub(controls.target).normalize();
   controls.target.copy(t);
   camera.position.copy(t).addScaledVector(dir, 3);
+}
+
+export function frameMembers(ids) {
+  // keep the viewing direction, and come close enough to see these members whole
+  const box = new THREE.Box3();
+  for (const id of ids) { const m = meshes.get(id); if (m) box.expandByObject(m); }
+  if (box.isEmpty()) return;
+  const c = box.getCenter(new THREE.Vector3()), r = Math.max(0.6, box.getSize(new THREE.Vector3()).length() / 2);
+  const dist = (1.25 * r) / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2)) / Math.min(1, camera.aspect || 1);
+  const dir = camera.position.clone().sub(controls.target).normalize();
+  controls.target.copy(c);
+  camera.position.copy(c).addScaledVector(dir, dist);
 }
 
 export function fit() {
@@ -450,9 +463,12 @@ export function render3d() {
 }
 
 export function related() {
-  // id -> relation to the selection: "self", "bears", "carries", "side", "rule"; null when nothing is selected.
-  // A fault chosen in the Verifier tab works like a selection: its members, and what holds them.
+  // id -> relation to the selection: "self", "bears", "carries", "side", "rule", "panel"; null when nothing is
+  // selected. A fault chosen in the Verifier tab works like a selection: its members, and what holds them. In
+  // the panels view, the panel under the pointer in the list works like a selected one.
   const sel = st.sel, f = chosenFault();
+  const panel = sel?.kind === "panel" ? sel.id : !sel && !f && st.view === "panels" ? st.hoverPanel : null;
+  if (panel) return new Map(st.data.members.filter((m) => m.panel === panel).map((m) => [m.id, "panel"]));
   if (!sel && !f) return null;
   const rel = new Map();
   if (f) {
@@ -474,6 +490,12 @@ export function look3d() {
   if (!st.data) return;
   const rel = related();
   const done = finished();
+  // the faults view: only members in faults, as solids (hard red, soft amber), the rest a faint ghost; the
+  // Verifier tab's "only" narrows it to one check. The assembly view: what is up by its step, see views.js
+  const fv = st.view === "faults" && done;
+  const asm = st.view === "assembly" && done ? asmState() : null;
+  const hardIn = new Set(), softIn = new Set();
+  if (fv) for (const f of st.data.faults) if (!st.only || f.check === st.only) for (const id of f.members) (f.hard ? hardIn : softIn).add(id);
   for (const [id, mesh] of meshes) {
     const m = st.byId[id];
     const r = rel?.get(id);
@@ -488,9 +510,35 @@ export function look3d() {
     else if (isNow || (hit && trigger())) mat.emissive.set(c).multiplyScalar(0.35);
     else mat.emissive.set(done && st.faulty.has(id) ? 0x550000 : 0x000000);
     mat.opacity = rel && !r ? 0.12 : gone ? 0.35 : 1;
+    if (fv && !r) {
+      const bad = hardIn.has(id) ? 0xd8342c : softIn.has(id) ? 0xe08a00 : null;
+      mat.color.set(bad ?? 0xc9c6bf);
+      mat.emissive.set(bad ? 0x220000 : 0x000000);
+      mat.opacity = bad ? 1 : 0.06;
+    }
+    if (rel && !r && st.view === "panels") {   // a panel picked out: the rest a plain ghost
+      mat.color.set(0xc9c6bf);
+      mat.emissive.set(0x000000);
+      mat.opacity = 0.07;
+    }
+    if (asm && mesh.visible) {
+      const a = asm.of.get(id) || (asm.all ? "up" : "later");
+      if (a === "later") mesh.visible = false;
+      else {
+        const pc = m.panel ? panelColour(m.panel) : SITE;
+        const col = { up: asm.all ? pc : PAST, now: m.panel ? pc : "#f28e2b", under: REL.bears, block: GONE, wait: GONE }[a];
+        mat.color.set(col);
+        if (a === "now" || a === "block") mat.emissive.set(col).multiplyScalar(0.4);
+        else mat.emissive.set(0x000000);
+        mat.opacity = a === "wait" ? 0.3 : 1;
+      }
+    }
     mat.depthWrite = mat.opacity === 1;
+    mesh.children[0].visible = mat.opacity > 0.2;   // a ghost without its edges, so it stays quiet
   }
-  const show = $("#showFaults").checked && done && st.fault == null;   // a chosen fault shows its own evidence instead
+  // marks for every fault, unless a chosen fault shows its own evidence, a panel is picked out, or the assembly
+  // is being stepped through
+  const show = $("#showFaults").checked && done && st.fault == null && st.view !== "assembly" && !(st.view === "panels" && rel);
   gapGroup.visible = markGroup.visible = show;
   for (const o of [...gapGroup.children, ...markGroup.children]) o.visible = shown3d(o.userData.surface);
   // the house's surfaces: strong on the bare house, faint once framing exists

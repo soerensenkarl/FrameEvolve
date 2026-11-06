@@ -738,8 +738,7 @@ async function openCandidate(cid, house) {
   st.hidden.clear();
   st.sel = null;
   await loadGrammar();
-  showTab("view3d");
-  showTab("faults");
+  showTab("verifier");
   if (await build()) status(`run ${rs.name}, ${cid}, on ${$("#house").value}`);
 }
 
@@ -748,7 +747,6 @@ async function openInWorkbench(source, label) {
   $("#src").value = source;
   st.origin = label;
   editState();
-  showTab("view3d");
-  showTab("faults");
+  showTab("verifier");
   if (await build()) status(`${label}, built on ${$("#house").value} from unsaved edits. Revert in the Grammar tab goes back.`);
 }

@@ -31,8 +31,8 @@ export function ftin(x) {
   // inches as 9'-6", small sizes as 5 1/2"
   if (Math.abs(x) < 12) return inch(x);
   const n = Math.round(Math.abs(x) * 16) / 16;
-  const ft = Math.floor(n / 12);
-  return `${x < 0 ? "-" : ""}${ft}'-${frac(n - ft * 12)}"`;
+  const ft = Math.floor(n / 12), r = n - ft * 12;
+  return `${x < 0 ? "-" : ""}${ft}'-${r > 0 && r < 1 ? "0 " : ""}${frac(r)}"`;   // 9'-0 3/4", not 9'-3/4"
 }
 export const num = (v, d = 1) => (+v).toFixed(d);
 
@@ -57,21 +57,26 @@ export function ago(t) {
 
 export const st = {
   data: null, byId: {}, colors: {}, counts: {}, faulty: new Set(), ruleFaults: {},
-  sel: null,            // {kind: "member" | "rule", id}
+  sel: null,            // {kind: "member" | "rule" | "panel", id}
   hidden: new Set(),    // rule names hidden from view
   saved: "",            // grammar source as saved on disk
   origin: null,         // where unsaved edits came from, e.g. "run demo, c002"
   fitFor: null,         // the house the 3D camera was last framed on
   at: 0,                // half-steps shown: 2k-1 is step k's trigger (before it fires), 2k its output
-  placedAt: {}, removedAt: {}, playing: null, builds: 0,
+  placedAt: {}, removedAt: {}, playing: null,
   demo: new Map(), demoFor: null,
   surf: {}, level: {},  // surfaces by id, and each one's storey
   storey: 0,            // the storey filter: 0 for all
   vinfo: null,          // the verifier's checks and limits
   only: null,           // show only this check's faults
   fault: null,          // the fault chosen in the Verifier tab, an index into data.faults
-  openChecks: new Set(),
-  colourBy: "rule",     // members coloured by "rule" or by prefab "panel"
+  check: null,          // the check open in the Verifier tab
+  vFilter: { rule: null, surface: null },   // its faults narrowed to one rule or surface
+  vCap: 80,             // how many of its faults are listed
+  vOpen: new Set(),     // Verifier sections opened ("d:...") or modules folded and unfolded ("mod:...")
+  view: "build",        // what the 3D view shows: "build" (by rule, stepping the build), "panels", "assembly", "faults"
+  asm: 0,               // the assembly view's step: the unit going up, or the length of the order when all are up
+  hoverPanel: null,     // the panel under the pointer in the panels list
   panelColors: {}, panelAt: {}, guideAt: {},   // each panel's colour; the step a member got its panel, a guide was laid
 };
 export const finished = () => !st.data || st.at >= 2 * st.data.steps.length;
@@ -90,7 +95,7 @@ export const chosenFault = () => (st.fault != null ? st.data.faults[st.fault] : 
 export const isActive = (sid) => { const cur = current(); return !!cur && (cur.surface === sid || cur.target?.other === sid); };
 
 // prefab panels and guides as of the step shown: a member's panel ("" built on site), whether a guide is laid yet
-export const byPanel = () => st.colourBy === "panel";
+export const byPanel = () => st.view === "panels" || st.view === "assembly";   // members coloured by prefab panel
 export const panelOf = (m) => (m.panel && (finished() || st.panelAt[m.id] < applied()) ? m.panel : "");
 export const panelColour = (p) => (p ? st.panelColors[p] || SITE : SITE);
 export const guideShown = (g) => finished() || st.guideAt[g.id] < applied();

@@ -1,13 +1,14 @@
-// The right-hand panes about one frame: the Inspect tab (a member and its contacts, or a rule with its
-// before/after demo on the toy house), the Verifier tab (the score, every check, each fault with its
-// evidence), the Report tab, and the build timeline under the view (the strip of firings and stepping).
-import { $, esc, ftin, inch, num, pill, PAST, st, finished, trigger, stepNo, current, stopPlay, api, dirty,
-  faceName, shown3d, chosenFault, showTip, hideTip, panelOf, panelColour } from "./state.js";
+// The right-hand panes about one frame: the Inspect tab (a member and its contacts, a rule with its
+// before/after demo on the toy house, or a panel), the Report tab, and the timeline under the view (the strip
+// of build steps, or of the assembly, and stepping). The Verifier is a tab of its own, in verifier.js.
+import { $, esc, ftin, inch, pill, PAST, st, finished, trigger, stepNo, current, stopPlay, api, dirty,
+  showTip, hideTip, panelOf, panelColour } from "./state.js";
 import { select, renderRules } from "./app.js";
-import { look3d, renderMarks, zoomTo } from "./view3d.js";
-import { renderElev, renderStoreys, renderCaption, scrollElevTo, memberSvg, outlinePath, surfPath, openingRect,
+import { look3d } from "./view3d.js";
+import { renderElev, renderCaption, scrollElevTo, memberSvg, outlinePath, surfPath, openingRect,
   bearerPoly, teeSvg, targetShape } from "./elevations.js";
 import { jumpToRule } from "./editor.js";
+import { asmTrack, panelHtml, choosePanel, asmGo, setView } from "./views.js";
 
 export function chip(id) {
   if (id === "ground") return `<span class="chip"><i style="background:#8a877e"></i>ground</span>`;
@@ -34,6 +35,7 @@ export function renderInspect() {
       from the side (purple). Everything else fades.</p>`;
     return;
   }
+  if (sel.kind === "panel") { el.innerHTML = panelHtml(sel.id); return; }
   if (sel.kind === "rule") {
     const r = st.data.rules.find((x) => x.name === sel.id) || { name: sel.id };
     el.innerHTML = `<div class="title"><span class="sw" style="background:${st.colors[r.name]}"></span>${esc(r.name)}</div>
@@ -141,226 +143,20 @@ function demoHtml(d) {
   </div>`;
 }
 
-for (const pane of ["#inspect", "#faults"]) {
-  $(pane).addEventListener("click", (e) => {
-    const f = e.target.closest("button[data-firing]");
-    if (f && st.sel?.kind === "rule") return loadRuleDemo(st.sel.id, +f.dataset.firing);
-    const edit = e.target.closest("button.edit");
-    if (edit) return jumpToRule(edit.dataset.rule);
-    const c = e.target.closest(".chip[data-id]");
-    if (c && st.byId[c.dataset.id]) return select({ kind: "member", id: c.dataset.id });
-    const r = e.target.closest("[data-rule]");
-    if (r) return select({ kind: "rule", id: r.dataset.rule });
-  });
-}
-
-// ---------------------------------------------------------------- the verifier: its checks, and each fault with its evidence
-
-const axisOf = (m) => { const d = [0, 1, 2].map((k) => m.hi[k] - m.lo[k]); return d.indexOf(Math.max(...d)); };
-const centre = (m) => [0, 1, 2].map((k) => (m.lo[k] + m.hi[k]) / 2);
-
-function limitText(name) {
-  // a limit from the verifier's constants, in feet and inches (or the unit its comment names)
-  const c = st.vinfo?.constants[name];
-  if (!c) return name;
-  const unit = name.startsWith("SAG_") ? (x) => `L/${x}`
-    : /^(FB|FC|FC_PERP|E|E_MIN)$/.test(name) ? (x) => `${x.toLocaleString()} psi`
-    : /WEIGHT/.test(name) ? (x) => `${x.toLocaleString()} lb`
-    : /^(MITER|BEVEL)$/.test(name) ? (x) => `${x} degrees`
-    : c.module === "analysis" || /NOTCH|SHARE|RATIO|PITCH|UNBRACED|DENSITY|SKIN|FACES|COST/.test(name) ? (x) => `${+(+x).toFixed(3)}`
-    : null;
-  const v = c.value, len = unit || ((x) => (x >= 12 ? ftin(x) : inch(x)));
-  const sec = Object.fromEntries(Object.entries(st.vinfo.sections).map(([n, d]) => [String(d), n]));
-  const key = (d) => {   // a depth, or "plies, depth" for a header table
-    const p = String(d).split(", ");
-    return p.length === 2 ? `${p[0]}-${sec[p[1]] || p[1]}` : sec[d] || `${d}`;
-  };
-  const val = (x) => typeof x === "string" ? x : Array.isArray(x) ? `${len(x[0])}${x.length > 1 ? ` (${x.slice(1).join(", ")})` : ""}`
-    : typeof x === "object" ? Object.entries(x).map(([k, y]) => `${k}" o.c. ${len(y)}`).join(" / ") : len(x);
-  if (Array.isArray(v)) return v.every((x) => typeof x === "number") ? `${len(Math.min(...v))} to ${len(Math.max(...v))}`
-    : v.map((x) => Array.isArray(x) ? x.map((y) => typeof y === "number" ? len(y) : y).join(": ") : x).join(", ");
-  if (typeof v === "object") return Object.entries(v).map(([d, x]) => `${key(d)} ${val(x)}`).join("; ");
-  if (typeof v !== "number") return String(v);
-  return /linear feet/.test(c.note) ? `${v} ft` : len(v);
-}
-
-const name = (x) => `${x.id} (${esc(x.role || x.rule)})`;
-const limits = (ns) => ns.map((n) => `<span class="lim">${n}: ${limitText(n)}</span>`).join(" ");
-
-// what holds a member along its long axis: [from, to, id] for each support it bears on, in order
-function supportsOf(m) {
-  const k = axisOf(m);
-  return m.bears.filter((id) => st.byId[id]).map((id) => {
-    const s = st.byId[id];
-    return [Math.max(m.lo[k], s.lo[k]), Math.min(m.hi[k], s.hi[k]), id];
-  }).sort((a, b) => a[0] - b[0]);
-}
-
-// what to draw and say for each check: (fault, its first member, out) -> false when it has nothing to add
-const EVIDENCE = {
-  span(f, m, out) {
-    if (!m) return false;
-    const k = axisOf(m), c = centre(m), sup = supportsOf(m);
-    out.supports = sup.map((x) => x[2]);
-    const at = (x) => { const p = [...c]; p[k] = x; p[2] = m.hi[2] + 4; return p; };   // a little above the member
-    const lim = f.message.match(/limit (.+?)(?: for (.+))?$/);
-    let reach = sup[0]?.[1], left = sup[0]?.[2];
-    for (const [s0, s1, id] of sup.slice(1)) {
-      if (s0 > reach && f.at[k] >= reach - 1 && f.at[k] <= s0 + 1) {
-        out.dims.push({ a: at(reach), b: at(s0), text: `${ftin(s0 - reach)} clear, limit ${lim?.[1] ?? "?"}` });
-        out.text = `${name(m)} carries load and spans <b>${ftin(s0 - reach)}</b> clear between ${chip(left)} and ${chip(id)}.
-          The limit for ${esc(lim?.[2] || "it")} is <b>${esc(lim?.[1] || "?")}</b>.`;
-        break;
-      }
-      if (s1 >= reach) { reach = s1; left = id; }
-    }
-    out.text += `<div class="lims">${limits(st.vinfo?.checks.find((x) => x.name === "span")?.limits || [])}</div>`;
-  },
-  overhang(f, m, out) {
-    if (!m) return false;
-    const k = axisOf(m), c = centre(m), sup = supportsOf(m);
-    out.supports = sup.map((x) => x[2]);
-    const at = (x) => { const p = [...c]; p[k] = x; p[2] = m.hi[2] + 4; return p; };
-    const last = Math.max(...sup.map((x) => x[1])), first = sup[0]?.[0];
-    const [a, b] = Math.abs(f.at[k] - m.lo[k]) < Math.abs(f.at[k] - m.hi[k]) ? [m.lo[k], first] : [last, m.hi[k]];
-    out.dims.push({ a: at(a), b: at(b), text: `${ftin(b - a)} past its support, limit ${limitText("MAX_OVERHANG")}` });
-    out.text = `${name(m)} runs <b>${ftin(b - a)}</b> past its last support; a loaded member may overhang at most <b>${limitText("MAX_OVERHANG")}</b>.`;
-  },
-  bearing(f, m, out) {
-    if (!m) return false;
-    const s = st.byId[f.members[1]], k = axisOf(m), c = centre(m);
-    out.supports = s ? [s.id] : [];
-    if (s) {
-      const a = Math.max(m.lo[k], s.lo[k]), b = Math.min(m.hi[k], s.hi[k]);
-      const at = (x) => { const p = [...c]; p[k] = x; p[2] = m.lo[2] - 2; return p; };
-      out.dims.push({ a: at(a), b: at(b), text: `bears ${inch(b - a)}, minimum ${limitText("MIN_BEARING")}` });
-    }
-    out.text = `${esc(f.message)}. A member must sit at least <b>${limitText("MIN_BEARING")}</b> on what holds it.`;
-  },
-  clash(f, m, out) {
-    const o = st.byId[f.members[1]];
-    if (!m || !o) return false;
-    const lo = [0, 1, 2].map((k) => Math.max(m.lo[k], o.lo[k])), hi = [0, 1, 2].map((k) => Math.min(m.hi[k], o.hi[k]));
-    out.boxes.push({ lo, hi });
-    out.text = `${name(m)} and ${name(o)} occupy the same space: the red box, ${inch(hi[0] - lo[0])} x ${inch(hi[1] - lo[1])} x ${inch(hi[2] - lo[2])}.
-      Two pieces of timber cannot overlap; one must stop short, or be notched (not modelled yet).`;
-  },
-  backing(f, m, out) {
-    const s = st.surf[f.surface], face = /inner face/.test(f.message) ? "inner" : "outer";
-    const g = s?.gaps.find((x) => x.face === face && Math.abs((x.u0 + x.u1) / 2 - f.u) < 0.6 && Math.abs((x.v0 + x.v1) / 2 - f.v) < 0.6);
-    if (!g) { out.text = esc(f.message); return; }
-    const W = g.u1 - g.u0, H = g.v1 - g.v0;
-    out.rects.push({ sid: s.id, face, ...g, text: `${ftin(W)} x ${ftin(H)}` });
-    out.text = g.kind === "edge"
-      ? `On the ${faceName(s, face)} of ${s.id}, a board edge runs <b>${ftin(Math.max(W, H))}</b> with nothing behind it.
-         An edge needs backing at least every <b>${limitText("MAX_EDGE")}</b>, so blocking or clips will do.`
-      : `On the ${faceName(s, face)} of ${s.id}, a board spans <b>${ftin(W)} by ${ftin(H)}</b> with nothing behind it.
-         It needs support within <b>${limitText("MAX_CLEAR")}</b> in at least one direction (24" centres less one stud).`;
-  },
-  floating(f, m, out) {
-    if (!m) return false;
-    const list = (ids) => ids.filter((id) => st.byId[id] || id === "ground").map(chip).join("") || "nothing";
-    out.text = `${name(m)} has no chain of bearing down to the ground. It bears on: ${list(m.bears)}. Beside it: ${list(m.side)}.
-      None of these is held up, and it is not nailed between two held-up members at both ends.`;
-  },
-};
-
-export function evidence(f) {
-  // what to draw and say for one fault: members that hold it (supports), dimension lines, boxes, face rectangles
-  const out = { supports: [], dims: [], boxes: [], rects: [], text: "" };
-  const m = st.byId[f.members[0]];
-  if (EVIDENCE[f.check]?.(f, m, out) === false || !EVIDENCE[f.check]) out.text = `${esc(f.message)}.`;
-  return out;
-}
-export { chosenFault };
-
-export function renderVerifier() {
-  const el = $("#faults");
-  const d = st.data, vi = st.vinfo;
-  if (!d || !vi) { el.innerHTML = `<p class="empty">Loading the verifier...</p>`; return; }
-  const s = d.stats, k = (n) => vi.constants[n]?.value ?? 0;
-  const cost = k("PIECE_COST"), siteCost = k("SITE_PIECE_COST") || cost, lift = k("LIFT_COST");
-  const site = s.site_pieces ?? 0, shop = s.members - site, panels = s.panels ?? 0;
-  const rows = Object.entries(s.by_section || {}).map(([sec, x]) => {
-    const w = (vi.sections[sec] || 3.5) / 3.5;
-    return `<tr><td>${esc(sec)}</td><td>${x.pieces}</td><td>${num(x.bought_ft)} ft</td><td>x ${w.toFixed(2)}</td><td>${num(x.bought_ft * w)} ft</td></tr>`;
-  }).join("");
-  const byCheck = {};
-  d.faults.forEach((f, i) => (byCheck[f.check] ||= []).push(i));
-  const checks = vi.checks.map((c) => {
-    const idx = byCheck[c.name] || [];
-    const open = st.openChecks.has(c.name);
-    const list = open ? idx.slice(0, 60).map((i) => {
-      const f = d.faults[i], sel = st.fault === i;
-      return `<div class="fault ${sel ? "sel" : ""}" data-fault="${i}">${esc(f.message)}
-        ${sel ? `<div class="explain-f">${evidence(f).text} ${f.at ? `<button class="zoomto" title="Bring the 3D view close to it">zoom to it</button>` : ""}
-          <div>${f.members.filter((id) => st.byId[id]).map(chip).join("")}${f.rules.map((r) =>
-            `<span class="chip" data-rule="${esc(r)}"><i style="background:${st.colors[r] || "#999"}"></i>${esc(r)}</span>`).join("") || (f.members.length ? "" : `<span class="muted">nothing was placed here, so no rule to blame</span>`)}</div></div>` : ""}</div>`;
-    }).join("") + (idx.length > 60 ? `<p class="muted">... and ${idx.length - 60} more</p>` : "") : "";
-    return `<div class="check ${idx.length ? "has" : ""} ${open ? "open" : ""}">
-      <div class="ch-head" data-check="${esc(c.name)}"><span class="tag ${c.hard ? "" : "soft"}">${c.hard ? "hard" : "soft"}</span>
-        <b>${esc(c.name)}</b><span class="count ${idx.length ? "bad" : "good"}">${idx.length || "none"}</span>
-        ${idx.length ? `<button class="only ${st.only === c.name ? "on" : ""}" data-only="${esc(c.name)}" title="show only these faults in 3D and on the surfaces">only</button>` : ""}</div>
-      <div class="ch-body">${esc(c.meaning)}.
-        ${c.limits.length ? `<div class="lims">${c.limits.map((n) => `<span class="lim" title="${esc(vi.constants[n]?.note || "")}">${esc(vi.constants[n]?.note.split(":")[0] || n)}: <b>${limitText(n)}</b></span>`).join("")}</div>` : ""}
-        ${c.code.length ? `<div class="code-ref">approximates ${c.code.map(esc).join(", ")}</div>` : ""}</div>
-      ${list}</div>`;
-  }).join("");
-  el.innerHTML = `<div class="score">
-      <h4>The score</h4>
-      <div class="scoreline"><span class="${s.hard ? "bad" : "good"}"><b>${s.hard}</b> hard</span>, <b>${s.soft}</b> soft, cost <b>${num(s.cost)} ft</b></div>
-      <p class="hint">Grammars are compared by hard faults first (unbuildable), then soft faults (code or practice), then cost.
-        A cheaper frame never beats one with fewer faults.</p>
-      <details><summary>How the cost is worked out</summary>
-        <p class="hint">Each section's pieces are cut from stock lengths of ${limitText("STOCK")}, longest first, with a ${limitText("KERF")} saw kerf.
-          The lumber bought counts in proportion to its depth, as linear feet of 2x4. A piece built into a panel in the shop adds ${cost} ft
-          for cutting, handling and nailing, one cut and nailed on site ${siteCost} ft, and each panel ${lift} ft to truck and lift it in.</p>
-        <table class="costs"><tr><th>section</th><th>pieces</th><th>bought</th><th>depth</th><th>as 2x4</th></tr>${rows}
-          <tr><td colspan="4">${shop} pieces in panels x ${cost} ft</td><td>${num(shop * cost)} ft</td></tr>
-          <tr><td colspan="4">${site} pieces built on site x ${siteCost} ft</td><td>${num(site * siteCost)} ft</td></tr>
-          <tr><td colspan="4">${panels} panels lifted x ${lift} ft</td><td>${num(panels * lift)} ft</td></tr>
-          <tr class="tot"><td colspan="4">cost</td><td>${num(s.cost)} ft</td></tr></table></details>
-    </div>
-    <h4>Checks <small>click one to list its faults; click a fault to see its evidence</small></h4>
-    ${st.only ? `<p class="hint">Showing only <b>${esc(st.only)}</b> faults. <a href="#" data-only="${esc(st.only)}">Show all</a></p>` : ""}
-    ${checks}`;
-}
-
-$("#faults").addEventListener("click", (e) => {
-  const only = e.target.closest("[data-only]");
-  if (only) {
-    e.preventDefault();
-    st.only = st.only === only.dataset.only ? null : only.dataset.only;
-    st.openChecks.add(only.dataset.only);
-    renderMarks();
-    look3d();
-    renderElev();
-    return renderVerifier();
-  }
-  if (e.target.closest("button.zoomto")) return zoomTo(chosenFault().at);
-  if (e.target.closest(".chip, button")) return;
-  const fi = e.target.closest("[data-fault]");
-  if (fi) return chooseFault(+fi.dataset.fault);
-  const head = e.target.closest("[data-check]");
-  if (head) {
-    const n = head.dataset.check;
-    st.openChecks.has(n) ? st.openChecks.delete(n) : st.openChecks.add(n);
-    renderVerifier();
-  }
+$("#inspect").addEventListener("click", (e) => {
+  const f = e.target.closest("button[data-firing]");
+  if (f && st.sel?.kind === "rule") return loadRuleDemo(st.sel.id, +f.dataset.firing);
+  const edit = e.target.closest("button.edit");
+  if (edit) return jumpToRule(edit.dataset.rule);
+  const c = e.target.closest(".chip[data-id]");
+  if (c && st.byId[c.dataset.id]) return select({ kind: "member", id: c.dataset.id });
+  const p = e.target.closest("[data-panel]");
+  if (p) return choosePanel(p.dataset.panel, true);
+  const a = e.target.closest("button[data-asm]");
+  if (a) { setView("assembly"); return asmGo(+a.dataset.asm); }
+  const r = e.target.closest("[data-rule]");
+  if (r) return select({ kind: "rule", id: r.dataset.rule });
 });
-
-export function chooseFault(i) {
-  st.fault = st.fault === i ? null : i;
-  st.sel = null;
-  const f = chosenFault();
-  if (f && st.storey && !shown3d(f.surface)) st.storey = 0;
-  renderStoreys();
-  look3d();
-  renderElev();
-  renderInspect();
-  renderVerifier();
-  scrollElevTo(f?.surface, { block: "center", behavior: "smooth" });
-}
 
 // ---------------------------------------------------------------- report
 
@@ -368,31 +164,141 @@ export function renderReport() {
   $("#reportText").textContent = st.data.report;
 }
 
-// ---------------------------------------------------------------- build timeline: a strip of rule firings
+// ---------------------------------------------------------------- the timeline: a strip of steps, and stepping
 
-function renderStrip() {
-  const strip = $("#strip");
-  if (strip.dataset.build === String(st.builds)) return;
-  strip.dataset.build = String(st.builds);
-  const steps = st.data.steps;
-  // each firing is a pair: a hollow trigger, then the filled output, in the rule's colour
-  strip.innerHTML = `<div class="seg zero" data-i="0"></div>` + steps.map((s, i) =>
-    `<div class="pair ${i && s.pass !== steps[i - 1].pass ? "pass" : ""}" style="--c:${st.colors[s.rule]}">` +
-    `<div class="seg trig" data-i="${2 * i + 1}"></div><div class="seg out" data-i="${2 * i + 2}"></div></div>`).join("");
+// The strip is a canvas showing a track: the build's half-steps 0..2n (each step's trigger, a tint or hollow when
+// there is room, then its output in the rule's colour), or in the assembly view the erection order (views.js).
+// With room the segments keep small gaps and a wider one at a break (a new pass, a new storey); a track of
+// thousands packs them edge to edge, a pixel or less each.
+const STRIP_H = 18;
+let lay = null;   // where each segment starts and how wide it is, for the track and width last drawn
+
+const buildTrack = {
+  get key() { return st.data.steps; },
+  get count() { return 2 * st.data.steps.length + 1; },
+  zero: true,   // segment 0, the bare house, is a fixed small square
+  brk(i) {
+    const steps = st.data.steps, k = (i - 1) / 2;
+    return i === 1 ? 2 : i % 2 === 0 ? 0 : steps[k].pass !== steps[k - 1].pass ? 2 : 1;
+  },
+  look(i, L) {
+    if (!i) return ["#f0efeb", "#8fb0cf"];
+    const c = st.colors[st.data.steps[Math.ceil(i / 2) - 1].rule] || "#999";
+    if (i % 2 === 0) return [c, null];
+    return L.roomy ? ["#ffffff", c] : [L.seg * (window.devicePixelRatio || 1) >= 1 ? tint(c) : c, null];
+  },
+  at: () => st.at,
+  get max() { return 2 * st.data.steps.length; },
+  cursor: () => (finished() ? null : st.at),
+  go: (i) => goto(i),
+  tip: (i) => stepTip(i),
+  label() {
+    const n = st.data.steps.length;
+    return finished() ? `<b>finished</b>, ${n} steps` : st.at === 0 ? `<b>step 0</b> of ${n}`
+      : `<b>step ${stepNo()}</b> of ${n}, ${trigger() ? "trigger" : "output"}`;
+  },
+};
+const track = () => (st.view === "assembly" ? asmTrack : buildTrack);
+
+function stripLayout(W, t) {
+  if (lay && lay.key === t.key && lay.W === W) return lay;
+  const n = t.count, fixed = t.zero ? 1 : 0, b = new Uint8Array(n);
+  let c1 = 0, c2 = 0;
+  for (let i = 1; i < n; i++) { b[i] = t.brk(i); if (b[i] === 1) c1++; else if (b[i] === 2) c2++; }
+  const fit = (g) => (W - fixed * g.zero - g.g1 * c1 - g.g2 * c2) / Math.max(1, n - fixed);
+  let g = { zero: 14, g1: 1, g2: 4 }, seg = fit(g);
+  const roomy = seg >= 4;
+  if (!roomy) { g = { zero: 6, g1: 0, g2: c2 * 2 < W / 10 ? 2 : 0 }; seg = Math.max(0, fit(g)); }
+  const x = new Float64Array(n);
+  let at = 0;
+  for (let i = 0; i < n; i++) {
+    at += b[i] === 1 ? g.g1 : b[i] === 2 ? g.g2 : 0;
+    x[i] = at;
+    at += fixed && !i ? g.zero : seg;
+  }
+  lay = { key: t.key, W, n, x, seg, roomy, w: (i) => (fixed && !i ? g.zero : seg) };
+  return lay;
+}
+
+function tint(hex, t = 0.55) {
+  // a colour mixed with white
+  const c = parseInt(hex.slice(1), 16), mix = (v) => Math.round(v + (255 - v) * t);
+  return `rgb(${mix(c >> 16)},${mix((c >> 8) & 255)},${mix(c & 255)})`;
+}
+
+function drawStrip() {
+  const cv = $("#strip"), W = $("#stripWrap").clientWidth, t = track();
+  if (!st.data || !W) return;
+  const L = stripLayout(W, t), dpr = window.devicePixelRatio || 1;
+  const cw = Math.round(W * dpr), ch = Math.round(STRIP_H * dpr);
+  if (cv.width !== cw || cv.height !== ch) { cv.width = cw; cv.height = ch; }
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, cw, ch);
+  const px = (v) => Math.round(v * dpr);
+  const span = (i) => { const a = px(L.x[i]); return [a, Math.max(a + 1, px(L.x[i] + L.w(i)))]; };
+  const shape = (i, y0, y1, [fill, stroke]) => {
+    // a segment: rounded when there is room, else a crisp column of whole device pixels
+    const [a, b] = span(i);
+    ctx.beginPath();
+    if (L.roomy || (t.zero && !i)) ctx.roundRect ? ctx.roundRect(a, y0, b - a, y1 - y0, 2 * dpr) : ctx.rect(a, y0, b - a, y1 - y0);
+    else ctx.rect(a, y0, b - a, y1 - y0);
+    ctx.fillStyle = fill;
+    ctx.fill();
+    if (stroke) {
+      ctx.save();
+      ctx.clip();   // an inside border, as an inset shadow would draw it
+      ctx.lineWidth = 3 * dpr;
+      ctx.strokeStyle = stroke;
+      ctx.stroke();
+      ctx.restore();
+    }
+  };
+  const y0 = px(3), y1 = ch - px(3), at = t.at();
+  for (let i = 0; i < L.n; i++) {
+    ctx.globalAlpha = i > at ? 0.28 : 1;
+    shape(i, y0, y1, t.look(i, L));
+  }
+  ctx.globalAlpha = 1;
+  const i = t.cursor();   // the cursor: the segment shown, raised and outlined, or a dark line when it is thin
+  if (i == null || i >= L.n) return;
+  const zero = t.zero && !i;
+  if (L.roomy || zero) {
+    shape(i, zero ? y0 : 0, zero ? y1 : ch, t.look(i, L));
+    const [a, b] = span(i), o = (zero ? 2 : 1.5) * dpr, top = zero ? y0 : 0, bot = zero ? y1 : ch;
+    ctx.lineWidth = o;
+    ctx.strokeStyle = "#1d1d1b";
+    ctx.strokeRect(a - o / 2, top + (zero ? -o / 2 : o / 2), b - a + o, bot - top + (zero ? o : -o));
+  } else {
+    const m = px(L.x[i] + L.seg / 2);
+    ctx.fillStyle = "#1d1d1b";
+    ctx.fillRect(m - px(1), 0, px(2), ch);
+  }
+}
+
+function stripAt(clientX) {
+  // the segment under a point of the strip, or the nearer one in a gap
+  const L = lay;
+  if (!L || !L.n) return 0;
+  const x = clientX - $("#strip").getBoundingClientRect().left, last = L.n - 1;
+  let lo = 0, hi = last;
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (L.x[m] <= x) lo = m; else hi = m - 1; }
+  const end = L.x[lo] + L.w(lo);
+  return lo < last && x > end && x - end > L.x[lo + 1] - x ? lo + 1 : lo;
 }
 
 export function renderTimeline() {
   if (!st.data) return;
-  renderStrip();
-  const n = st.data.steps.length;
-  for (const seg of $("#strip").querySelectorAll(".seg")) {
-    const i = +seg.dataset.i;
-    seg.classList.toggle("ahead", i > st.at);
-    seg.classList.toggle("cur", i === st.at && !finished());
-  }
-  $("#tlLabel").innerHTML = finished() ? `<b>finished</b>, ${n} steps` : st.at === 0 ? `<b>step 0</b> of ${n}`
-    : `<b>step ${stepNo()}</b> of ${n}, ${trigger() ? "trigger" : "output"}`;
+  drawStrip();
+  $("#tlLabel").innerHTML = track().label();
   $("#tlPlay").innerHTML = st.playing ? "&#x23F8;" : "&#x25B6;";
+}
+
+export function stepBy(d) {
+  // the arrow keys and the step buttons: one step along the timeline shown
+  stopPlay();
+  const t = track();
+  t.go(t.at() + d);
 }
 
 function stepTip(i) {
@@ -416,37 +322,36 @@ export function goto(at) {
 {
   const strip = $("#strip");
   let dragging = false;
-  const segAt = (e) => {
-    const r = strip.getBoundingClientRect();
-    return document.elementFromPoint(Math.max(r.left + 1, Math.min(r.right - 1, e.clientX)), r.top + r.height / 2)?.closest(".seg");
-  };
   strip.addEventListener("pointerdown", (e) => {
-    const seg = segAt(e);
-    if (!seg) return;
+    if (!lay) return;
     dragging = true;
     strip.setPointerCapture(e.pointerId);
     stopPlay();
-    goto(+seg.dataset.i);
+    track().go(stripAt(e.clientX));
   });
   strip.addEventListener("pointermove", (e) => {
-    const seg = segAt(e);
-    if (seg) showTip(stepTip(+seg.dataset.i), seg.getBoundingClientRect(), "above");
-    if (dragging && seg && +seg.dataset.i !== st.at) goto(+seg.dataset.i);
+    if (!lay) return;
+    const i = stripAt(e.clientX), r = strip.getBoundingClientRect(), t = track();
+    showTip(t.tip(i), { left: e.clientX, width: 0, top: r.top, bottom: r.bottom }, "above");
+    if (dragging && i !== t.at()) t.go(i);
   });
   strip.addEventListener("pointerup", () => { dragging = false; });
   strip.addEventListener("pointerleave", hideTip);
+  new ResizeObserver(drawStrip).observe($("#stripWrap"));
 }
 
-$("#tlStart").addEventListener("click", () => { stopPlay(); goto(0); });
-$("#tlEnd").addEventListener("click", () => { stopPlay(); goto(Infinity); });
-$("#tlPrev").addEventListener("click", () => { stopPlay(); goto(st.at - 1); });
-$("#tlNext").addEventListener("click", () => { stopPlay(); goto(st.at + 1); });
+$("#tlStart").addEventListener("click", () => { stopPlay(); track().go(0); });
+$("#tlEnd").addEventListener("click", () => { stopPlay(); track().go(Infinity); });
+$("#tlPrev").addEventListener("click", () => stepBy(-1));
+$("#tlNext").addEventListener("click", () => stepBy(1));
 $("#tlPlay").addEventListener("click", () => {
   if (st.playing) { stopPlay(); renderTimeline(); return; }
-  if (finished()) st.at = 0;
+  const t = track();
+  if (t.at() >= t.max) t.go(0);
   st.playing = setInterval(() => {
-    if (finished()) { stopPlay(); renderTimeline(); return; }
-    goto(st.at + 1);
+    const t = track();
+    if (t.at() >= t.max) { stopPlay(); renderTimeline(); return; }
+    t.go(t.at() + 1);
   }, 380);
-  goto(st.at);
+  renderTimeline();
 });

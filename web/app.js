@@ -5,14 +5,17 @@
 //
 // This is the entry: the build (streamed from the server and drawn as it happens), the index of a loaded
 // frame, what repaints when, the stats and rules on the left, the tabs, the header and the keys. The views
-// live in their own modules: state.js, view3d.js, elevations.js, inspect.js, editor.js, runs.js, live.js.
+// live in their own modules: state.js, view3d.js, views.js, elevations.js, verifier.js, inspect.js, editor.js, runs.js,
+// live.js.
 import * as THREE from "three";
 import { $, esc, num, oneLine, PALETTE, SITE, st, finished, applied, trigger, current, present, runsMode, stopPlay, api,
   status, remember, recall, loadLists, dirty, surfaceList, hideTip, byPanel } from "./state.js";
 import { setup3d, resize, render3d, look3d, renderSurfaces, fit, startLiveDraw, addMember, removeMember, edgeMaterial,
   measuring, setMeasure, meshes } from "./view3d.js";
 import { renderElev, renderStoreys, renderCaption, scrollElevTo } from "./elevations.js";
-import { renderInspect, renderVerifier, renderReport, renderTimeline, chooseFault, goto } from "./inspect.js";
+import { renderInspect, renderReport, renderTimeline, stepBy } from "./inspect.js";
+import { renderVerifier, chooseFault } from "./verifier.js";
+import { setView, renderSide } from "./views.js";
 import { loadGrammar } from "./editor.js";
 import { rs, pollJobs, loadRunsList, enterRuns } from "./runs.js";
 import { startLive, setFollow } from "./live.js";
@@ -77,7 +80,6 @@ export async function build(keepStep = false) {
 
 function index() {
   const d = st.data;
-  st.builds++;
   st.byId = Object.fromEntries(d.members.map((m) => [m.id, m]));
   st.surf = Object.fromEntries(surfaceList().map((x) => [x.id, x]));
   st.level = Object.fromEntries(surfaceList().map((x) => [x.id, x.storey]));
@@ -114,11 +116,14 @@ function index() {
   stopPlay();
   if (st.sel?.kind === "member" && !st.byId[st.sel.id]) st.sel = null;
   if (st.sel?.kind === "rule" && !names.includes(st.sel.id)) st.sel = null;
+  if (st.sel?.kind === "panel" && !d.members.some((m) => m.panel === st.sel.id)) st.sel = null;
+  st.asm = Math.min(st.asm, d.assembly?.length || 0);
 }
 
 function renderAll() {
   renderStats();
   renderRules();
+  renderSide();
   render3d();
   renderElev();
   renderStoreys();
@@ -134,6 +139,7 @@ export function select(sel) {
   st.sel = sel;
   if (st.fault != null) { st.fault = null; renderVerifier(); }   // a selection replaces the fault being explained
   renderRules();
+  renderSide();
   look3d();
   renderElev();
   renderInspect();
@@ -157,7 +163,8 @@ function renderStats() {
   ];
   $("#stats").innerHTML = rows.map(([k, v, kind, tip]) =>
     `<span class="k" title="${esc(tip)}">${k}</span><span class="v ${kind}" title="${esc(tip)}">${v}</span>`).join("");
-  $("#faultCount").textContent = s.hard + s.soft ? `(${s.hard} + ${s.soft})` : "";
+  $("#faultCount").innerHTML = (s.hard ? `<i class="bad" title="hard faults">${s.hard}</i>` : "") +
+    (s.soft ? `<i class="warn" title="soft faults">${s.soft}</i>` : "") + (s.hard + s.soft ? "" : `<i class="good" title="no faults">0</i>`);
 }
 
 export function renderRules() {
@@ -225,6 +232,7 @@ export function showTab(id) {
   remember("tab." + host.id, id);
   if (host.id === "center") {
     document.body.classList.toggle("runs-mode", id === "runs");
+    document.body.classList.toggle("verifier-mode", id === "verifier");
     hideTip();
     renderCaption();
     if (id === "runs") enterRuns();
@@ -242,18 +250,6 @@ $("#showFaults").addEventListener("change", () => { look3d(); renderElev(); });
 $("#showSurfaces").addEventListener("change", () => { remember("surfaces", $("#showSurfaces").checked ? "1" : "0"); look3d(); renderElev(); });
 $("#showGuides").addEventListener("change", () => { remember("guides", $("#showGuides").checked ? "1" : "0"); look3d(); renderElev(); });
 
-function setColourBy(by) {
-  st.colourBy = by === "panel" ? "panel" : "rule";
-  remember("colourBy", st.colourBy);
-  $("#colourBy").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.by === st.colourBy));
-}
-$("#colourBy").addEventListener("click", (e) => {
-  const b = e.target.closest("button[data-by]");
-  if (!b) return;
-  setColourBy(b.dataset.by);
-  look3d();
-  renderElev();
-});
 $("#rebuild").addEventListener("click", () => build());
 
 $("#house").addEventListener("change", () => { remember("house", $("#house").value); build(); });
@@ -281,8 +277,8 @@ document.addEventListener("keydown", (e) => {
   const typing = ["TEXTAREA", "INPUT", "SELECT"].includes(document.activeElement?.tagName);
   if (typing || runsMode()) return;
   if (e.key === "Escape") { if (measuring()) setMeasure(false); else if (st.fault != null) chooseFault(st.fault); else select(null); }
-  if (e.key === "ArrowLeft") { e.preventDefault(); stopPlay(); goto(st.at - 1); }
-  if (e.key === "ArrowRight") { e.preventDefault(); stopPlay(); goto(st.at + 1); }
+  if (e.key === "ArrowLeft") { e.preventDefault(); stepBy(-1); }
+  if (e.key === "ArrowRight") { e.preventDefault(); stepBy(1); }
 });
 
 // ---------------------------------------------------------------- start
@@ -290,7 +286,7 @@ document.addEventListener("keydown", (e) => {
 (async function start() {
   if (recall("surfaces") === "0") $("#showSurfaces").checked = false;
   if (recall("guides") === "1") $("#showGuides").checked = true;
-  setColourBy(recall("colourBy"));
+  setView(recall("view"));
   setup3d();
   for (const host of ["center", "right"]) {
     const t = recall("tab." + host);
