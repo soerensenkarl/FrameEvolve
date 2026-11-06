@@ -177,13 +177,17 @@ Pareto search keeps the grammars that do well across many houses.
   the backing check scans that outline, so floors of any shape and later gable walls work the same way.
 - Walls that continue in the same line do not "meet" each other; only crossing walls make corners and Ts.
 - Roofs are surfaces like walls and floors: a roof plane is the top of its rafters, u along the eave, v up
-  the slope, w square into the framing; its outline is any polygon in its plane. Where two planes share an
-  edge they make a seam (ridge or hip), derived like corners. A box house gets a gable roof: two planes,
-  a 9" raised heel, a 12" eave overhang, a pitch from 6 to 12 in 12 chosen so rafters fit 20 ft stock;
-  its end walls become gable walls whose outline reaches up to the roof planes (balloon framed); and a
-  ceiling (a floor with role "ceiling", framing above its underside) sits on the top storey's walls.
-- Next: roofs over L, T, ell and U houses (planes clipped where they meet, valleys), hips, sheds and
-  dormers; then angled bays, turrets and porches. See the reference photos in `reference_houses/`.
+  the slope, w square into the framing; its outline is any polygon in its plane. Where two planes share (part
+  of) an edge they make a seam: a ridge, a hip or a valley, derived like corners. Every house is complete:
+  each block gets a gable roof (9" raised heel, 12" eave overhang, pitch 6 to 12 in 12 so rafters fit 20 ft
+  stock), gable walls at its free ends (balloon framed, outline up to the roof) and a ceiling on its top
+  storey (a floor with role "ceiling", framing above its underside, turned so its joists run with the
+  rafters). The main ridge runs along x; a wing's ridge runs away from the main block. A wing as tall as the
+  main block meets its roof in valleys (the main back plane gives way under the wing's planes: the true upper
+  envelope); a lower wing's roof stops against the main wall, pitched to stay under the main eave. The taller
+  block (or the main block) owns the junction wall, as the wall that rises past the other.
+- Next: hips, sheds and dormers; then angled bays, turrets and porches. See the reference photos in
+  `reference_houses/`.
 
 ## Scope now
 

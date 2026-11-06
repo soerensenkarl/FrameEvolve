@@ -146,3 +146,17 @@ further than both in checking its own drafts and in faults that name the rule to
 - Left for later: rule-level merge (GEPA), parallel proposers and a model mix (AlphaEvolve), code excerpts
   per fault, LLM-graded readability, optimize_anything as a baseline. Workbench still draws its Pareto set
   over training houses.
+
+## 2026-11-05 Roofs on every house
+
+- Every house in the dataset is complete now. L, T and U wings as tall as the main block make cross gables
+  with valleys; lower wings and ells get a roof that stops against the main wall. Ceilings turn so their
+  joists run with the rafters above (and tie them).
+- Seed: rafters follow each plane's outline (jacks run from the valleys), valley rafters grooved to both
+  planes (`s.fit`), end framing set in from walls that rise past a roof or ceiling, ceiling joists notched
+  around roof framing. Verifier: a jack hanging on a valley needs no tie; valley and hip thrust not checked.
+- Seed on h000 to h019: box houses clean, the others 0 to 10 hard faults, 42 in all (before roofs: 1 to 5
+  per non-box house). Most are floor and stair details at junctions; a few are sheathing strips at valleys.
+- Lessons: a wall "rising past" a roof must be judged where it is inside the roof's outline, not against
+  the plane extended; cutting a joist by a rafter's underside plane cut it far away too, so joists are now
+  notched (local); the main block should own a junction wall, which also puts a plate under each valley.
