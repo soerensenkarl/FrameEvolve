@@ -155,8 +155,8 @@ function index() {
   const d = st.data;
   st.builds++;
   st.byId = Object.fromEntries(d.members.map((m) => [m.id, m]));
-  st.surf = Object.fromEntries([...d.walls, ...d.floors].map((x) => [x.id, x]));
-  st.level = Object.fromEntries([...d.walls, ...d.floors].map((x) => [x.id, x.storey]));
+  st.surf = Object.fromEntries(surfaceList().map((x) => [x.id, x]));
+  st.level = Object.fromEntries(surfaceList().map((x) => [x.id, x.storey]));
   st.fault = null;
   if (st.only && !d.faults.some((f) => f.check === st.only)) st.only = null;
   const names = d.rules.filter((r) => r.name).map((r) => r.name);
@@ -246,11 +246,12 @@ function renderRules() {
   $("#rulesHint").textContent = done ? "Click a rule to see what it does and highlight its members."
     : st.at === 0 ? "Step 0: no rule has fired yet."
     : "Marked: the rule at this step. Faded: not fired yet. Grey: what each rule matches.";
-  ul.innerHTML = rules.map((r) => {
+  ul.innerHTML = rules.map((r, i) => {
     const isNow = cur?.rule === r.name;
     const cls = [st.sel?.kind === "rule" && st.sel.id === r.name ? "sel" : "", st.hidden.has(r.name) ? "off" : "",
       isNow ? "now" : "", !done && !fired.has(r.name) ? "notyet" : ""].join(" ");
     return `<li data-rule="${esc(r.name)}" class="${cls}" style="--c:${st.colors[r.name]}" title="${esc(oneLine(r.doc))}">
+      <span class="no" title="rule ${i + 1}, in the order the builder tries them">${i + 1}</span>
       <span class="sw" style="background:${st.colors[r.name]}"></span>
       <span class="nm">${esc(r.name)}${r.match ? `<small>${esc(r.match)}${r.when ? `, when ${esc(r.when)}` : ""}</small>` : ""}</span>
       ${isNow ? `<span class="firing">${trigger() ? "matched" : "fired"}</span>` : ""}
@@ -398,6 +399,7 @@ function setMeasure(on) {
   if (!on) clear(measure.group);    // measurements stay while measuring, go when you stop
 }
 $("#measureBtn").addEventListener("click", () => setMeasure(!measure.on));
+$("#centerBtn").addEventListener("click", () => fit());
 
 function measurePoint(e) {
   // the point under the cursor on a member (or the ground), snapped to the nearest corner or edge midpoint
@@ -414,10 +416,14 @@ function measurePoint(e) {
   const m = st.byId[hit.object.userData.id];
   const xs = [m.lo[0], (m.lo[0] + m.hi[0]) / 2, m.hi[0]], ys = [m.lo[1], (m.lo[1] + m.hi[1]) / 2, m.hi[1]],
         zs = [m.lo[2], (m.lo[2] + m.hi[2]) / 2, m.hi[2]];
+  const pts = [];   // a box's corners and edge midpoints; a shaped member's own corners
+  if (m.mesh) for (let i = 0; i < m.mesh.verts.length; i += 3) pts.push(m.mesh.verts.slice(i, i + 3));
+  else for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) for (let k = 0; k < 3; k++) {
+    if ((i === 1) + (j === 1) + (k === 1) <= 1) pts.push([xs[i], ys[j], zs[k]]);
+  }
   let best = null, bestPx = 14;
-  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) for (let k = 0; k < 3; k++) {
-    if ((i === 1) + (j === 1) + (k === 1) > 1) continue;   // corners and edge midpoints only
-    const p = new THREE.Vector3(xs[i] * S, ys[j] * S, zs[k] * S);
+  for (const q of pts) {
+    const p = new THREE.Vector3(...q.map((x) => x * S));
     const s = p.clone().project(camera);
     const px = Math.hypot((s.x - ndc.x) * r.width / 2, (s.y - ndc.y) * r.height / 2);
     if (px < bestPx) { bestPx = px; best = p; }
@@ -525,10 +531,13 @@ function toLocal(s, p) {
   return [s.eu, s.ev, s.ew].map((a) => a[0] * q[0] + a[1] * q[1] + a[2] * q[2]);
 }
 
-const surfaceList = () => [...st.data.walls, ...st.data.floors];
+const surfaceList = () => [...st.data.walls, ...st.data.floors, ...(st.data.roofs || [])];
 const isFloor = (s) => s.kind === "floor";
-const faceName = (s, face) => (isFloor(s) ? { outer: "subfloor (top)", inner: "ceiling (underside)" }
-  : { outer: s.role === "interior" ? "face side" : "outside face", inner: s.role === "interior" ? "back side" : "inside face" })[face];
+const isWall = (s) => s.kind === "wall";
+const kindName = (s) => (isWall(s) ? (s.role === "interior" ? "partition" : "wall") : s.role === "ceiling" ? "ceiling" : s.kind);
+const FACES = { exterior: { outer: "outside face", inner: "inside face" }, interior: { outer: "face side", inner: "back side" },
+  floor: { outer: "subfloor (top)", inner: "ceiling (underside)" }, ceiling: { outer: "ceiling (underside)" }, roof: { outer: "roof sheathing (top)" } };
+const faceName = (s, face) => (FACES[s.role] || FACES[isWall(s) ? "exterior" : s.kind])[face];
 const storeyOf = (id) => st.level[id] ?? 1;
 const shown3d = (id) => !st.storey || storeyOf(id) <= st.storey;        // 3D: this storey and the ones below
 const listed = (id) => !st.storey || storeyOf(id) === st.storey;         // surfaces list: this storey only
@@ -567,9 +576,9 @@ function renderSurfaces() {
     line.applyMatrix4(M);
     surfGroup.add(mesh, line);
     const [U, V] = s.size;
-    const at = isFloor(s) ? new THREE.Vector3(U * S * 0.08, V * S * 0.08, 0) : new THREE.Vector3(U * S / 2, V * S + 0.25, 0);
-    const name = isFloor(s) ? "floor" : s.role === "interior" ? "partition" : "";
-    const lbl = label(`${esc(s.id)} <i>${name ? name + ", " : ""}${ftin(U)}${isFloor(s) ? ` x ${ftin(V)}` : ""}</i>`, "wall", at.applyMatrix4(M));
+    const at = isWall(s) ? new THREE.Vector3(U * S / 2, V * S + 0.25, 0) : new THREE.Vector3(U * S * 0.08, V * S * 0.08, 0);
+    const name = kindName(s) === "wall" ? "" : kindName(s);
+    const lbl = label(`${esc(s.id)} <i>${name ? name + ", " : ""}${ftin(U)}${isWall(s) ? "" : ` x ${ftin(V)}`}</i>`, "wall", at.applyMatrix4(M));
     const ol = s.openings.map((o) => label(`${esc(o.kind)} ${ftin(o.u1 - o.u0)} x ${ftin(o.v1 - o.v0)}`, "op",
       new THREE.Vector3(((o.u0 + o.u1) / 2) * S, ((o.v0 + o.v1) / 2) * S, 0).applyMatrix4(M)));
     surfs.push({ wall: s.id, mesh, line, label: lbl, opLabels: ol });
@@ -604,17 +613,31 @@ function renderMarks() {
   }
 }
 
+function memberMesh(m, mat, edgeMat) {
+  // a member's solid, in world metres: its triangle mesh where it is cut, notched or at an angle, else its box
+  let geo;
+  if (m.mesh) {
+    geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(m.mesh.verts.map((x) => x * S), 3));
+    geo.setIndex(m.mesh.idx.flat());
+    geo = geo.toNonIndexed();   // a normal per triangle, so cut faces stay flat and crisp
+    geo.computeVertexNormals();
+  } else {
+    geo = new THREE.BoxGeometry(...[0, 1, 2].map((k) => (m.hi[k] - m.lo[k]) * S))
+      .translate(...[0, 1, 2].map((k) => ((m.lo[k] + m.hi[k]) / 2) * S));
+  }
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.userData.id = m.id;
+  mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo, 20), edgeMat));   // real edges, not the triangles'
+  return mesh;
+}
+
 function render3d() {
   clear(group);
   meshes.clear();
   const edgeMat = new THREE.LineBasicMaterial({ color: 0x1d1d1b, transparent: true, opacity: 0.35 });
   for (const m of st.data.members) {
-    const size = [0, 1, 2].map((k) => (m.hi[k] - m.lo[k]) * S);
-    const geo = new THREE.BoxGeometry(...size);
-    const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ roughness: 0.85, transparent: true }));
-    mesh.position.set(...[0, 1, 2].map((k) => ((m.lo[k] + m.hi[k]) / 2) * S));
-    mesh.userData.id = m.id;
-    mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), edgeMat));
+    const mesh = memberMesh(m, new THREE.MeshStandardMaterial({ roughness: 0.85, transparent: true }), edgeMat);
     group.add(mesh);
     meshes.set(m.id, mesh);
   }
@@ -773,6 +796,11 @@ function renderTarget3d() {
 
 // ---------------------------------------------------------------- surfaces: wall elevations and floor plans, by storey
 
+// a member on its surface: its outline polygons where it is cut or at an angle, else its rectangle u0..u1, v0..v1
+const memberSvg = (b, attrs, title) => (b.poly
+  ? `<path ${attrs} d="${b.poly.map((p) => `M${p.map(([u, v]) => `${u} ${-v}`).join("L")}z`).join("")}"><title>${title}</title></path>`
+  : `<rect ${attrs} x="${b.u0}" y="${-b.v1}" width="${b.u1 - b.u0}" height="${b.v1 - b.v0}"><title>${title}</title></rect>`);
+
 function surfaceSvg(s, span, rel) {
   // one surface drawn in its own u (right) and v (up): an elevation of a wall, a plan of a floor from above
   const [U, V] = s.size;
@@ -793,10 +821,11 @@ function surfaceSvg(s, span, rel) {
     const cls = ["m", rel && !r ? "dim" : "", r === "self" ? "sel" : "", showFaults && st.faulty.has(m.id) ? "fault" : "",
       isNow || (hit && trigger()) ? "now" : "", gone ? "gone" : ""].join(" ");
     const fillc = r && REL[r] ? REL[r] : gone ? "none" : hit ? st.colors[cur.rule] : done || isNow || r === "rule" ? st.colors[m.rule] : PAST;
-    return `<rect class="${cls}" data-id="${m.id}" x="${lo[0]}" y="${-hi[1]}" width="${hi[0] - lo[0]}" height="${hi[1] - lo[1]}" fill="${fillc}"><title>${m.id} ${esc(m.role || "")}, ${esc(m.rule)}, ${esc(m.section)}${gone ? ", removed at this step" : ""}</title></rect>`;
+    return memberSvg({ u0: lo[0], v0: lo[1], u1: hi[0], v1: hi[1], poly: m.poly }, `class="${cls}" data-id="${m.id}" fill="${fillc}"`,
+      `${m.id} ${esc(m.role || "")}, ${esc(m.rule)}, ${esc(m.section)}${gone ? ", removed at this step" : ""}`);
   }).join("");
   // around it: other walls' members at a wall's face; the walls under a floor (faint) and on it (dashed)
-  const nbs = isFloor(s) ? ["bearers", "loads"].map((key) => s[key].map((b) => {
+  const nbs = !isWall(s) ? ["bearers", "loads"].map((key) => (s[key] || []).map((b) => {
     const [sx, sy] = b.side, d = b.depth || 3.5;
     const pts = [b.a, b.b, [b.b[0] + sx * d, b.b[1] + sy * d], [b.a[0] + sx * d, b.a[1] + sy * d]];
     return `<polygon class="${key === "bearers" ? "under" : "onit"}" points="${pts.map(([u, v]) => `${u},${-v}`).join(" ")}"><title>${esc(b.wall)} ${key === "bearers" ? "under" : "on"} this floor</title></polygon>`;
@@ -829,11 +858,16 @@ function surfaceSvg(s, span, rel) {
 
 function surfaceCaption(s) {
   const [U, V] = s.size;
-  if (isFloor(s)) {
-    return `<b>${s.id}</b> floor of storey ${s.storey}, ${ftin(U)} by ${ftin(V)}, seen from above, x to the right.
-      On ${s.bearers.length} walls below (faint); ${s.loads.length} walls stand on it (dashed).`;
+  if (s.kind === "roof") {
+    return `<b>${s.id}</b> roof plane over storey ${s.storey}, ${ftin(U)} along the eave, ${ftin(V)} up the slope,
+      pitch ${s.pitch} in 12; seen from above, eave at the bottom.`;
   }
-  return `<b>${s.id}</b> ${s.role === "interior" ? "partition, " : ""}${ftin(U)} long, ${ftin(V)} high,
+  if (isFloor(s)) {
+    return `<b>${s.id}</b> ${kindName(s)} of storey ${s.storey}, ${ftin(U)} by ${ftin(V)}, seen from above, x to the right.
+      On ${s.bearers.length} walls below (faint)${s.loads.length ? `; ${s.loads.length} walls stand on it (dashed)` : ""}.`;
+  }
+  const gable = V > s.height + 0.01 ? ` (${ftin(V)} at the gable peak)` : "";
+  return `<b>${s.id}</b> ${s.role === "interior" ? "partition, " : ""}${ftin(U)} long, ${ftin(s.height)} high${gable},
     seen from ${s.role === "interior" ? "its face side" : "outside"}, its start on the left.
     Meets ${s.start_meets ?? "nothing"} at its start, ${s.end_meets ?? "nothing"} at its end.`;
 }
@@ -851,19 +885,20 @@ function renderElev() {
   const span = Math.max(...surfaceList().map((s) => s.size[0]));
   const cur = current();
   const levels = [...new Set(list.map((s) => s.storey))].sort();
+  const rank = (s) => (s.role === "ceiling" ? 2 : { floor: 0, wall: 1, roof: 3 }[s.kind]);   // floor, walls, ceiling, roof
   el.innerHTML = levels.map((n) => `<h3 class="storey">Storey ${n}</h3>` + list.filter((s) => s.storey === n)
-    .sort((a, b) => isFloor(b) - isFloor(a)).map((s) => {
+    .sort((a, b) => rank(a) - rank(b)).map((s) => {
       const active = cur && (cur.wall === s.id || cur.target?.other === s.id);
       const tag = !active ? "" : `<span class="steptag">${pill(cur.rule, st.colors[cur.rule])} ${cur.wall !== s.id ? `matched ${esc(cur.match)} on ${esc(cur.wall)}, which meets this one`
         : trigger() ? `matched ${esc(cur.match)}` : `placed ${cur.placed.length} here`} at step ${stepNo()}</span>`;
-      return `<div class="wall ${isFloor(s) ? "floor" : ""} ${active ? "active" : ""} ${cur && !active ? "rest" : ""}" id="wall-${s.id}">
+      return `<div class="wall ${isWall(s) ? "" : "floor"} ${active ? "active" : ""} ${cur && !active ? "rest" : ""}" id="wall-${s.id}">
         <div class="cap">${surfaceCaption(s)} ${tag}</div>${surfaceSvg(s, span, rel)}</div>`;
     }).join("")).join("") + `<div class="legend"><span style="--c:${SURF}">surface (the input)</span>
      <span style="--c:${PAST}">placed by earlier steps</span>
      <span style="--c:${REL.bears}">the selection bears on it</span>
      <span style="--c:${REL.carries}">it bears on the selection</span><span style="--c:${REL.side}">beside the selection</span>
      <span style="--c:#e4e2dd">member of another surface</span>
-     <span style="--c:${FACE.outer}">no backing: outside face, subfloor</span><span style="--c:${FACE.inner}">no backing: inside face, ceiling</span></div>`;
+     <span style="--c:${FACE.outer}">no backing: outside face, subfloor, ceiling, roof</span><span style="--c:${FACE.inner}">no backing: inside face, ceiling under a floor</span></div>`;
   el.scrollTop = keep;
 }
 
@@ -880,7 +915,7 @@ function targetSvg(s, k) {
 }
 
 $("#elev").addEventListener("click", (e) => {
-  const r = e.target.closest("rect[data-id]");
+  const r = e.target.closest("[data-id]");
   select(r && st.byId[r.dataset.id] ? { kind: "member", id: r.dataset.id } : null);
 });
 
@@ -913,14 +948,16 @@ function renderCaption() {
   el.hidden = false;
   const n = d.steps.length;
   if (st.at === 0) {
-    const ops = [...d.walls, ...d.floors].reduce((a, w) => a + w.openings.length, 0);
+    const ops = surfaceList().reduce((a, w) => a + w.openings.length, 0);
     const parts = d.walls.filter((w) => w.role === "interior").length;
+    const ceilings = d.floors.filter((f) => f.role === "ceiling").length, roofs = (d.roofs || []).length;
     const levels = Math.max(...d.walls.map((w) => w.storey));
     const plural = (k, word) => `${k} ${word}${k === 1 ? "" : "s"}`;
+    const bits = [plural(levels, "storey"), plural(d.walls.length - parts, "wall"), plural(parts, "partition"),
+      plural(d.floors.length - ceilings, "floor"), ceilings && plural(ceilings, "ceiling"), roofs && plural(roofs, "roof plane")].filter(Boolean);
     el.innerHTML = `<div class="c-top">step 0 of ${n}</div>
-      <div class="c-main">The bare house: ${plural(levels, "storey")}, ${plural(d.walls.length - parts, "wall")}, ${plural(parts, "partition")}
-        and ${plural(d.floors.length, "floor")}, with ${plural(ops, "opening")}; no timber yet.</div>
-      <div class="c-doc">Each wall and floor is a surface: the plane of its framing's face. Press &#x2192; to fire the first rule.</div>`;
+      <div class="c-main">The bare house: ${bits.slice(0, -1).join(", ")} and ${bits.at(-1)}, with ${plural(ops, "opening")}; no timber yet.</div>
+      <div class="c-doc">Each wall, floor and roof plane is a surface: the plane of its framing's face. Press &#x2192; to fire the first rule.</div>`;
     return;
   }
   const s = current();
@@ -1027,7 +1064,7 @@ function demoSvg(d, after) {
   const w = d.wall, [L, H] = w.size, [SL, SH] = d.span;
   const pad = Math.max(SL, SH) / 50;
   const c = st.colors[d.rule] || "#888";
-  const box = (b, cls, fillc) => `<rect class="${cls}" x="${b.u0}" y="${-b.v1}" width="${b.u1 - b.u0}" height="${b.v1 - b.v0}" fill="${fillc}"><title>${esc(b.id)} ${esc(b.role || b.rule)}</title></rect>`;
+  const box = (b, cls, fillc) => memberSvg(b, `class="${cls}" fill="${fillc}"`, `${esc(b.id)} ${esc(b.role || b.rule)}`);
   const removed = new Set(d.removed.map((b) => b.id));
   const holes = w.openings.map((o) => `M${o.u0} ${-o.v1}h${o.u1 - o.u0}v${o.v1 - o.v0}h${o.u0 - o.u1}z`).join("");
   const before = d.before.filter((b) => !after || !removed.has(b.id));
@@ -1041,7 +1078,7 @@ function demoSvg(d, after) {
     }).join("")}
     ${d.neighbours.map((b) => box(b, "nb", "#e4e2dd")).join("")}
     ${before.map((b) => (t?.member === b.id ? box(b, `m now${after ? "" : " hit"}`, c) : box(b, "m", PAST))).join("")}
-    ${after ? d.placed.map((b) => box(b, "m now", c)).join("") : d.removed.map((b) => box(b, "m gone", "none")).join("")}
+    ${after ? [...d.placed, ...(d.shaped || [])].map((b) => box(b, "m now", c)).join("") : d.removed.map((b) => box(b, "m gone", "none")).join("")}
     ${w.openings.map((o) => `<rect class="op" x="${o.u0}" y="${-o.v1}" width="${o.u1 - o.u0}" height="${o.v1 - o.v0}"/>`).join("")}
     ${w.tees.map((t) => `<g class="tee"><line x1="${t.u}" x2="${t.u}" y1="0" y2="${-H}"/><text x="${t.u}" y="${-H - pad / 4}" text-anchor="middle" font-size="${pad * 0.9}">${esc(t.wall)}</text></g>`).join("")}
     ${t && t.kind !== "member" ? (isLine(t)
@@ -1056,8 +1093,9 @@ function demoHtml(d) {
       ${d.errors?.length ? `<p class="bad">${esc(d.errors[0])}</p>` : ""}`;
   }
   const c = st.colors[d.rule] || "#888";
-  const n = d.placed.length, r = d.removed.length;
-  const what = [n ? `placed ${n} member${n === 1 ? "" : "s"}` : "", r ? `removed ${r}` : ""].filter(Boolean).join(", ") || "changed nothing visible";
+  const n = d.placed.length, r = d.removed.length, k = (d.shaped || []).length;
+  const what = [n ? `placed ${n} member${n === 1 ? "" : "s"}` : "", k ? `cut ${k}` : "", r ? `removed ${r}` : ""]
+    .filter(Boolean).join(", ") || "changed nothing visible";
   const many = d.firings.length > 1;
   const nav = many ? `<span class="dnav" title="other firings of this rule on the toy house"><button data-firing="${d.firing - 1}" ${d.firing === 0 ? "disabled" : ""} title="previous firing">&#x2039;</button>
       firing ${d.firing + 1} of ${d.firings.length}
@@ -1066,7 +1104,7 @@ function demoHtml(d) {
     <div class="dlab">Trigger: matched ${esc(d.match || "")} ${nav}</div>${demoSvg(d, false)}
     <div class="darrow">&#x2193; ${pill(d.rule, c)}</div>
     <div class="dlab">Output</div>${demoSvg(d, true)}
-    <p class="dcap">On the toy house, ${d.wall.kind === "floor" ? "floor" : "wall"} ${esc(d.wall.id)}${d.wall.kind === "floor" ? " seen from above" : ""}${d.target?.other ? ` where it meets ${esc(d.target.other)}` : ""}${d.target?.face === "inner" ? `, ${d.wall.kind === "floor" ? "ceiling" : "inside face"}` : ""},
+    <p class="dcap">On the toy house, ${d.wall.kind === "roof" ? "roof plane" : d.wall.role === "ceiling" ? "ceiling" : d.wall.kind} ${esc(d.wall.id)}${d.wall.kind !== "wall" ? (d.wall.role === "ceiling" ? " seen from below" : " seen from above") : ""}${d.target?.other ? ` where it meets ${esc(d.target.other)}` : ""}${d.target?.face === "inner" ? `, ${d.wall.kind === "floor" ? "ceiling" : "inside face"}` : ""},
       pass ${d.pass}: ${what}.${many ? "" : " It fires once there."}</p>
   </div>`;
 }
@@ -2502,17 +2540,24 @@ async function regenerate() {
   const colorOf = (r) => colors[r] || (colors[r] = PALETTE[Object.keys(colors).length % PALETTE.length]);
   const reader = res.body.getReader(), dec = new TextDecoder();
   let buf = "", pieces = 0, frame = null, built = 0;
+  const drop = (id) => {
+    const x = meshes.get(id);
+    if (!x) return;
+    group.remove(x);
+    x.traverse((c) => c.geometry?.dispose());
+    meshes.delete(id);
+  };
+  const put = (m) => {   // a new member, or a new shape for one a later rule cut or notched
+    drop(m.id);
+    const mesh = memberMesh(m, new THREE.MeshStandardMaterial({ roughness: 0.85, color: colorOf(m.rule) }), mat);
+    group.add(mesh);
+    meshes.set(m.id, mesh);
+  };
   const handle = (msg) => {
     if (msg.step) {
-      for (const m of msg.step.placed) {
-        const geo = new THREE.BoxGeometry(...[0, 1, 2].map((k) => (m.hi[k] - m.lo[k]) * S));
-        const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ roughness: 0.85, color: colorOf(m.rule) }));
-        mesh.position.set(...[0, 1, 2].map((k) => ((m.lo[k] + m.hi[k]) / 2) * S));
-        mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), mat));
-        group.add(mesh);
-        meshes.set(m.id, mesh);
-      }
-      for (const id of msg.step.removed) { const x = meshes.get(id); if (x) { group.remove(x); meshes.delete(id); } }
+      for (const m of msg.step.placed) put(m);
+      for (const m of msg.step.shaped || []) put(m);
+      for (const id of msg.step.removed) drop(id);
       pieces += msg.step.placed.length - msg.step.removed.length;
       status(`framing: ${Math.round(1000 * msg.step.t)} ms, ${pieces} pieces, ${msg.step.rule}`);
     } else if (msg.built != null) {

@@ -1,4 +1,5 @@
-"""The shared data model: houses as labelled surfaces (walls and floors), frames as lists of members. Inches, z up."""
+"""The shared data model: houses as labelled surfaces (walls, floors, ceilings, roofs), frames as lists of members.
+Inches, z up."""
 from __future__ import annotations
 
 import json
@@ -7,7 +8,8 @@ from dataclasses import asdict, dataclass, field
 from functools import cached_property
 from pathlib import Path
 
-from frameevolve.geometry import EPS, Box, Vec, add, axis_aligned, corners, dot, inside, mul, sub, unit
+from frameevolve import solid
+from frameevolve.geometry import EPS, Box, Vec, add, axis_aligned, corners, cross, dot, inside, mul, sub, unit
 
 THICK = 1.5
 # nominal name: (actual width, actual depth), inches
@@ -58,8 +60,10 @@ class Bearer:
 
 
 class Surface:
-    """What walls and floors share: local axes eu, ev, ew from an origin, a size along u and v, and an outline
-    in u, v (a rectangle for a wall today; a floor's plan shape)."""
+    """What every surface shares: local axes eu, ev, ew from an origin, a size along u and v, and an outline in
+    u, v. w runs into the framing from the surface. faces: the faces that get boards, "outer" on the surface
+    itself and "inner" on the far side of the framing."""
+    faces = ("outer", "inner")
 
     def world(self, u: float, v: float, w: float) -> Vec:
         return add(self.origin, add(mul(self.eu, u), add(mul(self.ev, v), mul(self.ew, w))))
@@ -68,10 +72,23 @@ class Surface:
         q = sub(p, self.origin)
         return (dot(q, self.eu), dot(q, self.ev), dot(q, self.ew))
 
-    def local_box(self, box: Box) -> Box:
-        """A world box in this surface's coordinates: lo = (u0, v0, w0), hi = (u1, v1, w1)."""
-        return Box.around([self.local((x, y, z)) for x in (box.lo[0], box.hi[0])
-                           for y in (box.lo[1], box.hi[1]) for z in (box.lo[2], box.hi[2])])
+    def world_dir(self, d: Vec) -> Vec:
+        return add(mul(self.eu, d[0]), add(mul(self.ev, d[1]), mul(self.ew, d[2])))
+
+    def local_dir(self, d: Vec) -> Vec:
+        return (dot(d, self.eu), dot(d, self.ev), dot(d, self.ew))
+
+    def local_box(self, x) -> Box:
+        """A member's (or a world box's) bounding box in this surface's coordinates: lo = (u0, v0, w0),
+        hi = (u1, v1, w1). Exact for a member square to the surface."""
+        if isinstance(x, Box):
+            return Box.around([self.local((a, b, c)) for a in (x.lo[0], x.hi[0])
+                               for b in (x.lo[1], x.hi[1]) for c in (x.lo[2], x.hi[2])])
+        return Box.around([self.local(p) for p in x.points])
+
+    def square(self, m: "Member") -> bool:
+        """True if a plain member's axes run along this surface's axes, so its local box is exact."""
+        return m.plain and all(sum(abs(c) > 1e-9 for c in self.local_dir(v)) == 1 for v in (sub(m.end, m.start), m.up))
 
 
 @dataclass
@@ -93,8 +110,9 @@ class Wall(Surface):
     start_meets: str | None = None   # the wall this one meets at its start (a corner or a T)
     end_meets: str | None = None     # the wall this one meets at its end
     tees: list[Tee] = field(default_factory=list)   # walls whose end meets this one along its length
-    above: str | None = None         # the floor resting on this wall's top
+    above: str | None = None         # the floor or ceiling resting on this wall's top
     below: str | None = None         # the floor this wall stands on
+    outline: list[tuple[float, float]] | None = None   # in u, v, where not a rectangle: a gable wall up to its roof
 
     @property
     def length(self) -> float:
@@ -102,11 +120,13 @@ class Wall(Surface):
 
     @property
     def size(self) -> tuple[float, float]:
-        return (self.length, self.height)
+        return (self.length, max(v for _, v in self.outline) if self.outline else self.height)
 
     @property
     def outline_uv(self) -> list[tuple[float, float]]:
-        L, H = self.size
+        if self.outline:
+            return [tuple(p) for p in self.outline]
+        L, H = self.length, self.height
         return [(0.0, 0.0), (L, 0.0), (L, H), (0.0, H)]
 
     @property
@@ -130,11 +150,13 @@ class Wall(Surface):
 
 @dataclass
 class Floor(Surface):
-    """A floor surface: a horizontal polygon at height z, the top of its framing (the subfloor sits on it).
+    """A floor surface: a horizontal polygon at height z, the top of its framing (the subfloor sits on it). Or,
+    with role "ceiling", the ceiling under a roof: z is the underside of its framing (the drywall), on the walls'
+    top, and w runs up into the attic framing; only its underside gets boards.
 
     outline: its plan shape, counter-clockwise. Local coordinates: u along x and v along y from the corner of
-    its bounding box, w down into the framing. bearers are the walls under it, loads the walls standing on it;
-    both are worked out from the geometry. Openings (stairs) are rectangles in u, v.
+    its bounding box, w into the framing (down for a floor). bearers are the walls under it, loads the walls
+    standing on it; both are worked out from the geometry. Openings (stairs) are rectangles in u, v.
     """
     id: str
     outline: list[tuple[float, float]]
@@ -173,30 +195,101 @@ class Floor(Surface):
 
     eu = property(lambda self: (1.0, 0.0, 0.0))
     ev = property(lambda self: (0.0, 1.0, 0.0))
-    ew = property(lambda self: (0.0, 0.0, -1.0))
+    ew = property(lambda self: (0.0, 0.0, 1.0 if self.role == "ceiling" else -1.0))
+    faces = property(lambda self: ("outer",) if self.role == "ceiling" else ("outer", "inner"))
 
     def contains(self, p: tuple[float, float]) -> bool:
         return inside(p, self.outline)
 
 
+@dataclass
+class Seam:
+    """Where this roof plane meets another along an edge of its outline: a ridge (level, at the top of both),
+    or a hip or valley (sloped). a, b: the edge in this plane's u, v."""
+    other: str
+    a: tuple[float, float]
+    b: tuple[float, float]
+    kind: str
+
+
+@dataclass
+class Roof(Surface):
+    """A roof plane: the top of its rafters, where the sheathing sits. Its eave line runs level from start to end
+    in plan at height z (the outer edge of the overhang); the plane rises to the left of that line at pitch
+    inches per 12.
+
+    Local coordinates: u along the eave from its start, v up the slope from the eave line (in the plane), w into
+    the framing, square to the plane. outline: the plane's shape in u, v. seams: the edges it shares with other
+    roof planes, worked out from the geometry; each seam is listed on the plane with the lower id.
+    """
+    id: str
+    start: tuple[float, float]
+    end: tuple[float, float]
+    z: float
+    pitch: float
+    outline: list[tuple[float, float]]
+    role: str = "roof"
+    openings: list[Opening] = field(default_factory=list)
+    seams: list[Seam] = field(default_factory=list)
+    faces = ("outer",)
+
+    @property
+    def slope(self) -> float:
+        return self.pitch / 12
+
+    @property
+    def outline_uv(self) -> list[tuple[float, float]]:
+        return [tuple(p) for p in self.outline]
+
+    @property
+    def size(self) -> tuple[float, float]:
+        return (max(u for u, _ in self.outline), max(v for _, v in self.outline))
+
+    @property
+    def origin(self) -> Vec:
+        return (self.start[0], self.start[1], self.z)
+
+    @property
+    def eu(self) -> Vec:
+        return unit((self.end[0] - self.start[0], self.end[1] - self.start[1], 0.0))
+
+    @property
+    def ev(self) -> Vec:
+        e = self.eu
+        return unit((-e[1], e[0], self.slope))
+
+    @property
+    def ew(self) -> Vec:
+        return cross(self.ev, self.eu)
+
+    def height(self, x: float, y: float) -> float:
+        """The plane's height over a point in plan."""
+        e = self.eu
+        run = (x - self.start[0]) * -e[1] + (y - self.start[1]) * e[0]
+        return self.z + run * self.slope
+
+
 WALL_DERIVED = ("start_meets", "end_meets", "tees", "above", "below")
 FLOOR_DERIVED = ("bearers", "loads")
+ROOF_DERIVED = ("seams",)
 
 
 @dataclass
 class House:
-    """Labelled surfaces: walls with their openings, and floors. Junctions are derived, never stored."""
+    """Labelled surfaces: walls with their openings, floors and ceilings, roof planes. Junctions are derived,
+    never stored."""
     id: str
     walls: list[Wall]
     floors: list[Floor] = field(default_factory=list)
     kind: str = ""                   # what sort of house: box, L, T, ell, U
+    roofs: list[Roof] = field(default_factory=list)
 
     def __post_init__(self):
         self.link()
 
     @property
     def surfaces(self) -> list[Surface]:
-        return [*self.walls, *self.floors]
+        return [*self.walls, *self.floors, *self.roofs]
 
     def surface(self, id: str) -> Surface:
         return next(x for x in self.surfaces if x.id == id)
@@ -239,22 +332,37 @@ class House:
                     f.loads.append(line)
         for w in self.walls:
             w.tees.sort(key=lambda t: t.u)
+        for r in self.roofs:
+            r.seams = []
+        for r, q in ((r, q) for r in self.roofs for q in self.roofs if r.id < q.id):
+            ours = [(r.world(*a, 0), r.world(*b, 0), a, b) for a, b in zip(r.outline_uv, r.outline_uv[1:] + r.outline_uv[:1])]
+            theirs = [(q.world(*a, 0), q.world(*b, 0)) for a, b in zip(q.outline_uv, q.outline_uv[1:] + q.outline_uv[:1])]
+            for pa, pb, a, b in ours:
+                if any(math.dist(pa, x) <= EPS and math.dist(pb, y) <= EPS or math.dist(pa, y) <= EPS and math.dist(pb, x) <= EPS
+                       for x, y in theirs):
+                    level = abs(pa[2] - pb[2]) <= EPS
+                    r.seams.append(Seam(q.id, a, b, "ridge" if level else "hip"))
 
     def to_dict(self) -> dict:
         return {"id": self.id, "kind": self.kind,
                 "walls": [{k: v for k, v in asdict(w).items() if k not in WALL_DERIVED} for w in self.walls],
-                "floors": [{k: v for k, v in asdict(f).items() if k not in FLOOR_DERIVED} for f in self.floors]}
+                "floors": [{k: v for k, v in asdict(f).items() if k not in FLOOR_DERIVED} for f in self.floors],
+                "roofs": [{k: v for k, v in asdict(r).items() if k not in ROOF_DERIVED} for r in self.roofs]}
 
     @staticmethod
     def from_dict(d: dict) -> "House":
         def openings(x):
             return [Opening(**o) for o in x.get("openings", [])]
         walls = [Wall(**{**{k: v for k, v in w.items() if k not in WALL_DERIVED}, "start": tuple(w["start"]),
-                         "end": tuple(w["end"]), "openings": openings(w)}) for w in d["walls"]]
+                         "end": tuple(w["end"]), "openings": openings(w),
+                         "outline": [tuple(p) for p in w["outline"]] if w.get("outline") else None}) for w in d["walls"]]
         floors = [Floor(**{**{k: v for k, v in f.items() if k not in FLOOR_DERIVED},
                            "outline": [tuple(p) for p in f["outline"]], "openings": openings(f)})
                   for f in d.get("floors", [])]
-        return House(d["id"], walls, floors, d.get("kind", ""))
+        roofs = [Roof(**{**{k: v for k, v in r.items() if k not in ROOF_DERIVED}, "start": tuple(r["start"]),
+                         "end": tuple(r["end"]), "outline": [tuple(p) for p in r["outline"]], "openings": openings(r)})
+                 for r in d.get("roofs", [])]
+        return House(d["id"], walls, floors, d.get("kind", ""), roofs)
 
     def save(self, path) -> None:
         Path(path).write_text(json.dumps(self.to_dict(), indent=1))
@@ -266,7 +374,9 @@ class House:
 
 @dataclass(eq=False)
 class Member:
-    """One piece of timber, an oriented box. `role` is a label for reading; the verifier never trusts it."""
+    """One piece of timber: an oriented box around the centreline start to end, its depth along up, trimmed by
+    cut planes and less any notches. A cut (n, d) keeps n.x <= d; a notch is a convex region (a list of such
+    planes) taken out. `role` is a label for reading; the verifier never trusts it."""
     id: str
     section: str
     start: Vec
@@ -275,6 +385,8 @@ class Member:
     rule: str
     surface: str = ""
     role: str = ""
+    cuts: list = field(default_factory=list)
+    notches: list = field(default_factory=list)
 
     @property
     def width(self) -> float:
@@ -290,18 +402,50 @@ class Member:
 
     @cached_property
     def box(self) -> Box:
-        return Box.around(corners(self.start, self.end, self.up, self.width, self.depth))
+        """The world bounding box of what is left of the member."""
+        return Box.around(self.points)
+
+    @cached_property
+    def points(self) -> list[Vec]:
+        if self.plain:
+            return corners(self.start, self.end, self.up, self.width, self.depth)
+        return [p for piece in self.pieces for p in solid.points(piece)]
+
+    @cached_property
+    def pieces(self) -> list:
+        """The solid as convex pieces (see solid.py)."""
+        return solid.solid(self.start, self.end, self.up, self.width, self.depth, self.cuts, self.notches)
 
     @property
     def aligned(self) -> bool:
+        """Its axes run along the world's axes."""
         return axis_aligned(sub(self.end, self.start)) and axis_aligned(self.up)
 
+    @property
+    def plain(self) -> bool:
+        """An axis-aligned box, uncut: its bounding box is the member."""
+        return self.aligned and not self.cuts and not self.notches
+
+    def reshape(self, cut=None, notch=None) -> None:
+        """Add a cut plane or a notch region, and forget the shape worked out before."""
+        if cut is not None:
+            self.cuts.append(cut)
+        if notch is not None:
+            self.notches.append(notch)
+        for k in ("box", "points", "pieces"):
+            self.__dict__.pop(k, None)
+
     def to_dict(self) -> dict:
-        return {k: getattr(self, k) for k in ("id", "section", "start", "end", "up", "rule", "surface", "role")}
+        d = {k: getattr(self, k) for k in ("id", "section", "start", "end", "up", "rule", "surface", "role")}
+        if self.cuts or self.notches:
+            d.update(cuts=self.cuts, notches=self.notches)
+        return d
 
     @staticmethod
     def from_dict(d: dict) -> "Member":
-        return Member(**{**d, "start": tuple(d["start"]), "end": tuple(d["end"]), "up": tuple(d["up"])})
+        t = lambda planes: [(tuple(n), d_) for n, d_ in planes]
+        return Member(**{**d, "start": tuple(d["start"]), "end": tuple(d["end"]), "up": tuple(d["up"]),
+                         "cuts": t(d.get("cuts", [])), "notches": [t(r) for r in d.get("notches", [])]})
 
 
 @dataclass

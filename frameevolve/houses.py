@@ -4,21 +4,28 @@ A house is a main block (two or three storeys) with up to two wings: a box, an L
 lower wing to one side) or a U. Each storey's exterior walls trace the outline of the blocks that reach it,
 split where one block meets the next; where two blocks meet inside, a junction wall carries the floors. A block
 too deep for one joist span gets a spine partition down its middle; the main block gets cross partitions; a
-stair opening goes through every floor. Doors and windows go in last, clear of every junction.
+stair opening goes through every floor. Doors and windows go in last, clear of every junction. A box house gets
+a gable roof: two roof planes, gable end walls up to them, and a ceiling on the top storey's walls. (Roofs over
+L, T, ell and U houses, where roofs meet in valleys, come next.)
 
 The house gives only surfaces and openings: which walls bear, and how, is the grammar's business. Inches.
 """
 from __future__ import annotations
 
+import math
 import random
 from dataclasses import dataclass
 
-from frameevolve.model import Floor, House, Opening, Wall
+from frameevolve.model import Floor, House, Opening, Roof, Wall
 
 HEAD = 82.5      # rough-opening head height of every door and window: 6'-10 1/2"
 LEVEL = 120.0    # floor to floor: a wall under a floor reaches up to the floor's top
 SPAN = 192.0     # a block deeper than 16 ft gets a spine
 KINDS = {"box": 3, "L": 3, "T": 2, "ell": 2, "U": 1}   # how often each kind of house comes up
+PITCHES = (6, 7, 8, 9, 10, 12)   # roof pitch, inches of rise per 12 of run
+HEEL = 9.0       # the roof plane's height over the top of the eave walls, at their outside face
+EAVE = 12.0      # eave overhang, level
+LONGEST = 236.0  # a rafter must come out of 20 ft stock
 
 
 @dataclass
@@ -158,8 +165,31 @@ def generate(seed: int) -> House:
     stairs(rng, house, blocks[0])
     for w in house.walls:
         openings(rng, w)
+    if kind == "box":
+        gable(rng, house, blocks[0], top)
     house.link()
     return house
+
+
+def gable(rng, house: House, b: Block, top: float, pitch: float | None = None) -> None:
+    """A gable roof over a block: ridge along x, eaves front and back, the end walls of its top storey made
+    gable walls reaching up to the roof planes, and a ceiling on the top storey's walls."""
+    k = b.storeys
+    base = (k - 1) * LEVEL
+    W, D = b.x1 - b.x0, b.y1 - b.y0
+    run = D / 2 + EAVE
+    if pitch is None:
+        pitch = rng.choice([p for p in PITCHES if run * math.hypot(1, p / 12) <= LONGEST] or [PITCHES[0]])
+    s = pitch / 12
+    z, V = base + top + HEEL - EAVE * s, run * math.hypot(1, s)
+    plane = [(0.0, 0.0), (W, 0.0), (W, V), (0.0, V)]
+    house.roofs += [Roof("r1", (b.x0, b.y0 - EAVE), (b.x1, b.y0 - EAVE), z, pitch, plane),
+                    Roof("r2", (b.x1, b.y1 + EAVE), (b.x0, b.y1 + EAVE), z, pitch, list(plane))]
+    for w in house.walls:
+        if w.base == base and w.role == "exterior" and w.start[0] == w.end[0] in (b.x0, b.x1):
+            L, H = w.length, top + HEEL
+            w.height, w.outline = H, [(0.0, 0.0), (L, 0.0), (L, H), (L / 2, H + s * L / 2), (0.0, H)]
+    house.floors.append(Floor("c", [(b.x0, b.y0), (b.x1, b.y0), (b.x1, b.y1), (b.x0, b.y1)], base + top, role="ceiling"))
 
 
 def storey(rng, house: House, k: int, here: list[Block], top: float) -> None:
@@ -248,4 +278,6 @@ def toy() -> House:
     add_opening(house.wall("1w0"), "window", 24, 36, 48)
     add_opening(house.wall("1w0"), "door", 70, 38, HEAD)
     add_opening(house.wall("2w0"), "window", 60, 48, 48)
+    gable(None, house, blocks[0], 97.125, pitch=8)
+    house.link()
     return house

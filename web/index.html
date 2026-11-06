@@ -34,12 +34,13 @@
   <section id="center">
     <nav class="tabs">
       <button data-tab="view3d" class="on">3D</button>
-      <button data-tab="elev" title="Every wall in elevation and every floor in plan, by storey">Surfaces</button>
+      <button data-tab="elev" title="Every wall in elevation, every floor, ceiling and roof plane in plan, by storey">Surfaces</button>
       <button data-tab="runs" title="The search: runs, grammars it kept, what the proposer did">Runs <span id="runDot"></span></button>
       <span class="spacer"></span>
       <span class="seg2 viewopt" id="storeys" title="Look at one storey at a time"></span>
-      <label class="chk viewopt" title="The input: each wall is the plane of its outer face, with its openings"><input type="checkbox" id="showSurfaces" checked> wall surfaces</label>
+      <label class="chk viewopt" title="The input: each wall, floor and roof plane is the plane of its outer face, with its openings"><input type="checkbox" id="showSurfaces" checked> surfaces</label>
       <label class="chk viewopt" title="Fault markers on the finished frame"><input type="checkbox" id="showFaults" checked> faults</label>
+      <button id="centerBtn" class="viewopt tool" title="Frame the whole house again">Center</button>
       <button id="measureBtn" class="viewopt tool" title="Click two points to measure; snaps to member corners and edge midpoints. Esc ends.">Measure</button>
     </nav>
     <div id="stage">

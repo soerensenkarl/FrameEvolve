@@ -6,10 +6,15 @@ drywall. Jacks and headers only in bearing walls (exterior walls, and any wall u
 headers on the outside; elsewhere a flat head nailed between the kings. Cripples only on the layout.
 Floors: a 2x12 rim along the outline, joists at 24" cut over walls below that cross them, a joist along any
 partition above or below that runs with them, and stair openings trimmed and headed with doubled 2x12s.
+Roofs: rafters at 24", each beside a ceiling joist that ties it, plumb cut against a ridge board bevelled to
+both planes, birdsmouthed over the top plate; balloon-framed gable walls, their studs cut to the rafters.
 Inches.
 """
+import math
+
 from frameevolve.builder import rule
 from frameevolve.geometry import scan
+from frameevolve.model import Wall
 
 T = 1.5
 SPACING = 24
@@ -17,6 +22,9 @@ MAX_PIECE = 240                          # longest stock, 20 ft
 JOIST, JOIST_DEPTH = "2x12", 11.25
 DEPTH = {"2x4": 3.5, "2x6": 5.5, "2x8": 7.25, "2x10": 9.25, "2x12": 11.25}
 HEADERS = [(42, "2x4"), (65, "2x6"), (82, "2x8"), (101, "2x10"), (117, "2x12")]   # clear span: section
+CEILING = [(118, "2x4"), (186, "2x6"), (245, "2x8"), (312, "2x10")]   # ceiling joist clear span: section
+RAFTERS = [(141, "2x8"), (172, "2x10"), (200, "2x12")]                 # rafter level span: section
+RIDGE = "2x12"
 
 
 def section(w):
@@ -28,7 +36,19 @@ def depth(w):
 
 
 def in_wall(s):
-    return s.surface.role != "floor"
+    return isinstance(s.surface, Wall)
+
+
+def is_gable(w):
+    """A wall whose top follows the roof (its outline is not a rectangle)."""
+    return isinstance(w, Wall) and w.outline is not None
+
+
+def rake(w, u):
+    """How high a gable wall reaches at u: the top of its outline there."""
+    pts = w.outline_uv
+    return max(a[1] + (b[1] - a[1]) * (u - a[0]) / (b[0] - a[0])
+               for a, b in zip(pts, pts[1:] + pts[:1]) if min(a[0], b[0]) <= u <= max(a[0], b[0]) and a[0] != b[0])
 
 
 def bearing(w):
@@ -58,8 +78,10 @@ def extent(s):
 
 
 def top(s):
-    """Where a wall's framing stops: under the floor joists if a floor rests on it."""
-    return s.surface.height - (JOIST_DEPTH if s.surface.above else 0.0)
+    """Where a wall's framing stops: under the floor joists if a floor rests on it (a ceiling's joists sit on
+    its top plate)."""
+    w = s.surface
+    return w.height - (JOIST_DEPTH if w.above and s.house.surface(w.above).role == "floor" else 0.0)
 
 
 def tee_range(s, t):
@@ -91,9 +113,12 @@ def pieces(s, u0, u1):
 
 
 def posts(s):
-    """The u-ranges of this wall's full-height uprights, sorted."""
-    tall = [s.local(m) for m in s.members()]
-    return sorted((b.lo[0], b.hi[0]) for b in tall if b.hi[1] - b.lo[1] > 0.8 * (top(s) - 2 * T))
+    """This wall's full-height uprights, sorted: (u0, u1, top)."""
+    tops = {}
+    for b in map(s.local, s.members()):
+        if b.hi[1] - b.lo[1] > 0.8 * (top(s) - 2 * T):        # a spliced stud is one upright
+            tops[(b.lo[0], b.hi[0])] = max(b.hi[1], tops.get((b.lo[0], b.hi[0]), 0.0))
+    return sorted((u0, u1, t) for (u0, u1), t in tops.items())
 
 
 def rungs(s):
@@ -102,13 +127,15 @@ def rungs(s):
 
 
 def ladder(s, lo, hi, role):
-    """Flat blocks every 24" in each bay between uprights, from the last one left of lo to the first right of hi."""
+    """Flat blocks every 24" in each bay between uprights, from the last one left of lo to the first right of hi,
+    kept below the uprights' tops (a gable wall's are cut to the roof)."""
     ps = posts(s)
-    i = max(k for k, (a, b) in enumerate(ps) if b <= lo + 0.01)
-    j = min(k for k, (a, b) in enumerate(ps) if a >= hi - 0.01)
-    for (_, left), (right, _) in zip(ps[i:j], ps[i + 1:j + 1]):
+    i = max(k for k, (a, b, _) in enumerate(ps) if b <= lo + 0.01)
+    j = min(k for k, (a, b, _) in enumerate(ps) if a >= hi - 0.01)
+    for (_, left, t0), (right, _, t1) in zip(ps[i:j], ps[i + 1:j + 1]):
         for v in rungs(s):
-            s.place(section(s.surface), left, right, v, v + T, role=role)
+            if v + T <= min(t0, t1) - (2 if is_gable(s.surface) else 0):
+                s.place(section(s.surface), left, right, v, v + T, role=role)
 
 
 @rule(10, match="wall")
@@ -124,7 +151,7 @@ def bottom_plate(s, w):
             s.place(section(w), u0, u1, 0, T, role="bottom plate")
 
 
-@rule(11, match="wall")
+@rule(11, match="wall", when=lambda s, w: not is_gable(w))
 def top_plate(s, w):
     """A single top plate: with studs and joists on one grid, framing above lines up within an inch."""
     a, b = extent(s)
@@ -132,17 +159,32 @@ def top_plate(s, w):
         s.place(section(w), u0, u1, top(s) - T, top(s), role="top plate")
 
 
+def stud_top(s, u0, u1):
+    """Up to the top plate, or in a gable wall up to the roof (cut to fit the rafters later)."""
+    w = s.surface
+    return max(rake(w, u0), rake(w, u1)) if is_gable(w) else top(s) - T
+
+
+def upright(s, u0, u1, v0, role):
+    """A stud from v0 up to the top plate or the roof; one too long for stock is spliced where the top plate
+    would be."""
+    v1 = stud_top(s, u0, u1)
+    cuts = [v0, top(s) - T, v1] if v1 - v0 > MAX_PIECE else [v0, v1]
+    for a, b in zip(cuts, cuts[1:]):
+        s.place(section(s.surface), u0, u1, a, b, role=role)
+
+
 @rule(20, match="wall")
 def end_studs(s, w):
     a, b = extent(s)
     for u in (a, b - T):
-        s.place(section(w), u, u + T, T, top(s) - T, role="end stud")
+        upright(s, u, u + T, T, "end stud")
 
 
 @rule(30, match="wall")
 def studs(s, w):
     for c in layout(s):
-        s.place(section(w), c - T / 2, c + T / 2, T, top(s) - T, role="stud")
+        upright(s, c - T / 2, c + T / 2, T, "stud")
 
 
 @rule(40, match="opening", when=lambda s, o: in_wall(s) and bearing(s.surface))
@@ -156,8 +198,8 @@ def jacks(s, o):
 def kings(s, o):
     """A full-height king each side: outside the jack in a bearing wall, at the opening's edge otherwise."""
     k = 2 * T if bearing(s.surface) else T
-    s.place(section(s.surface), o.u0 - k, o.u0 - k + T, T, top(s) - T, role="king")
-    s.place(section(s.surface), o.u1 + k - T, o.u1 + k, T, top(s) - T, role="king")
+    upright(s, o.u0 - k, o.u0 - k + T, T, "king")
+    upright(s, o.u1 + k - T, o.u1 + k, T, "king")
 
 
 @rule(42, match="opening", when=lambda s, o: in_wall(s) and bearing(s.surface))
@@ -178,25 +220,33 @@ def sill(s, o):
     s.place(section(s.surface), o.u0, o.u1, o.v0 - T, o.v0, role="sill")
 
 
+def spaced(a, b):
+    """Centres on the 24" layout between a and b, plus one beside a or b wherever a bay would be too wide."""
+    cs = [c for c in range(SPACING, int(b) + 1, SPACING) if a <= c - T / 2 and c + T / 2 <= b]
+    edges = [a - T / 2, *cs, b + T / 2]
+    return cs + [x + T for x, y in zip(edges, edges[1:]) if y - x - T > SPACING - T and x + 2 * T < y]
+
+
 @rule(45, match="opening", when=lambda s, o: in_wall(s))
 def cripples(s, o):
     """Short studs on the 24" layout above the head and under the sill."""
     over = T if bearing(s.surface) else 0.0
     head = o.v1 + (header_for(o.width)[1] if over else T)
+    if head < top(s) - T - 0.06:
+        for c in spaced(o.u0 - over, o.u1 + over):
+            upright(s, c - T / 2, c + T / 2, head, "cripple")
     for c in range(SPACING, int(s.surface.length), SPACING):
-        if o.u0 - over <= c - T / 2 and c + T / 2 <= o.u1 + over and head < top(s) - T - 0.06:
-            s.place(section(s.surface), c - T / 2, c + T / 2, head, top(s) - T, role="cripple")
         if o.kind == "window" and o.u0 <= c - T / 2 and c + T / 2 <= o.u1:
             s.place(section(s.surface), c - T / 2, c + T / 2, T, o.v0 - T, role="cripple")
 
 
-@rule(50, match="corner", when=lambda s, c: c.end == "start" and s.surface.role == "exterior")
+@rule(80, match="corner", when=lambda s, c: c.end == "start" and s.surface.role == "exterior")
 def corner_ladder(s, c):
     """Two-stud corner: blocks every 24" from the end stud to the next upright catch the drywall at the corner."""
     ladder(s, T, T, "ladder block")
 
 
-@rule(51, match="tee")
+@rule(81, match="tee")
 def partition_ladder(s, t):
     """Ladder junction: blocks every 24" across where a partition meets this wall catch both drywall edges."""
     lo, hi = tee_range(s, t)
@@ -206,19 +256,19 @@ def partition_ladder(s, t):
 def minus(runs, cuts):
     """The parts of runs outside every cut."""
     for c0, c1 in cuts:
-        runs = [r for a, b in runs for r in ((a, min(b, c0)), (max(a, c1), b)) if r[1] - r[0] > 0.1]
+        runs = [r for a, b in runs for r in ((a, min(b, c0)), (max(a, c1), b)) if r[1] - r[0] > 2 * T]
     return runs
 
 
-def runs_at(s, f, c):
+def runs_at(s, f, c, rim=T):
     """Where a joist at u = c can run: inside the rim, cut over interior walls below that cross it, and
     stopped at the headers of any floor opening it would cross."""
-    runs = [(a + T, b - T) for a, b in scan([(v, u) for u, v in f.outline_uv], c)]
+    runs = [(a + rim, b - rim) for a, b in scan([(v, u) for u, v in f.outline_uv], c)]
     cuts = sorted(b.a[1] + b.side[1] * depth(s.house.wall(b.wall)) / 2 for b in f.bearers
                   if b.role == "interior" and b.along_u and min(b.a[0], b.b[0]) < c < max(b.a[0], b.b[0]))
     runs = [r for v0, v1 in runs for r in zip([v0, *[x for x in cuts if v0 < x < v1]],
                                               [*[x for x in cuts if v0 < x < v1], v1])]
-    rims = [(min(a[1], b[1]), max(a[1], b[1])) for a, b in edges_v(f) if abs(a[0] - c) < 2 * T]
+    rims = [(min(a[1], b[1]), max(a[1], b[1])) for a, b in edges_v(f) if rim and abs(a[0] - c) < 2 * T]
     return minus(runs, rims + [(o.v0 - 2 * T, o.v1 + 2 * T) for o in f.openings if o.u0 < c < o.u1])
 
 
@@ -252,7 +302,7 @@ def stock(a, b):
     return [(a + (b - a) * i / n, a + (b - a) * (i + 1) / n) for i in range(n)]
 
 
-@rule(60, match="floor")
+@rule(60, match="floor", when=lambda s, f: f.role == "floor")
 def rim(s, f):
     """A rim joist along every edge of the floor's outline, on the walls below; those along v fit between."""
     pts = f.outline_uv
@@ -266,7 +316,7 @@ def rim(s, f):
                 s.place(JOIST, u0, u0 + inward * T, a, b, role="rim")
 
 
-@rule(61, match="floor")
+@rule(61, match="floor", when=lambda s, f: f.role == "floor")
 def joists(s, f):
     """Joists at 24" across the floor, on the same grid as the studs, clear of rims, trimmers and the
     joists along partitions."""
@@ -275,7 +325,7 @@ def joists(s, f):
             joist(s, f, c)
 
 
-@rule(62, match="floor")
+@rule(62, match="floor", when=lambda s, f: f.role == "floor")
 def joists_along_partitions(s, f):
     """A joist along every partition above or below that runs with the joists: something for its plates."""
     for c in along(s, f):
@@ -297,6 +347,97 @@ def opening_headers(s, o):
         s.place(JOIST, o.u0, o.u1, v, v + T, role="header")
 
 
+@rule(66, match="floor", when=lambda s, f: f.role == "ceiling")
+def ceiling_joists(s, f):
+    """Ceiling joists at 24" on the stud grid, on the walls' top plates and split over the spine, sized for the
+    longest run; one beside each gable wall catches the ceiling's edge. Each ties a rafter."""
+    edge = DEPTH["2x6"] + T / 2
+    cs = [c for c in range(SPACING, int(f.length), SPACING) if edge + T <= c <= f.length - edge - T]
+    cs += [edge, f.length - edge]
+    longest = max(v1 - v0 for c in cs for v0, v1 in runs_at(s, f, c, rim=0))
+    sec = next(x for span, x in CEILING if longest <= span)
+    for c in cs:
+        for v0, v1 in runs_at(s, f, c, rim=0):
+            s.place(sec, c - T / 2, c + T / 2, v0, v1, role="ceiling joist")
+
+
+def eave_wall(s, r):
+    """The exterior wall under the roof plane's eave, and how far in from the eave line it stands."""
+    e = r.eu
+    inward = lambda w: (w.start[0] - r.start[0]) * -e[1] + (w.start[1] - r.start[1]) * e[0]
+    walls = [w for w in s.house.walls if w.role == "exterior" and abs(w.dir[0] * e[0] + w.dir[1] * e[1]) > 0.99
+             and inward(w) >= 0]
+    w = max(walls, key=lambda w: (-inward(w), w.base))
+    return w, inward(w)
+
+
+def rafter_section(s, r):
+    """The smallest rafter that spans from the eave wall to the ridge and is deep enough to sit 1 1/2" on the
+    plate under the heel (the roof's height over the plate at the wall's face)."""
+    w, inset = eave_wall(s, r)
+    span = r.size[1] / math.hypot(1, r.slope) - inset
+    heel = r.height(*w.start) - (w.base + w.height)
+    return next(x for run, x in RAFTERS if span <= run and DEPTH[x] * math.hypot(1, r.slope) >= heel + T * r.slope)
+
+
+@rule(70, match="roof")
+def rafters(s, r):
+    """Rafters at 24", each just past a ceiling joist on the stud grid so the joist ties it, one at each end
+    over the gable walls, and one more beside an end where the gap would be too wide for the sheathing."""
+    sec = rafter_section(s, r)
+    L, V = r.size
+    g0 = sum(r.origin[k] * r.eu[k] for k in range(2))   # the grid runs from the house's corner
+    us = [c + T / 2 - g0 for c in range(SPACING * math.floor(g0 / SPACING), int(g0 + L) + 1, SPACING)]
+    us = sorted([0.0, L - T] + [u for u in us if T + 0.01 < u < L - 2 * T - 0.01])
+    us += [a + T for a, b in zip(us, us[1:]) if b - a - T > SPACING - T]
+    for u in us:
+        s.place(sec, u, u + T, 0, V, role="rafter")
+
+
+@rule(71, match="seam", when=lambda s, x: x.kind == "ridge")
+def ridge(s, x):
+    """A ridge board under the ridge, its top bevelled flush with both roof planes."""
+    up = s.surface.local_dir((0.0, 0.0, 1.0))
+    sink = [-c * DEPTH[RIDGE] / 2 for c in up]
+    (u0, v), (u1, _) = sorted([x.a, x.b])
+    for a, b in stock(u0, u1):
+        m = s.put(RIDGE, (a + sink[0], v + sink[1], sink[2]), (b + sink[0], v + sink[1], sink[2]), up, role="ridge")
+        s.cut(m, (0, 0, 0), (0, 0, -1))
+        s.cut(m, (0, 0, 0), (0, 0, -1), surface=s.house.surface(x.other))
+
+
+@rule(72, match="member", when=lambda s, m: m.role == "rafter")
+def rafter_ends(s, m):
+    """A plumb cut against the ridge board, and a birdsmouth over the top plate: a seat on the plate and a heel
+    at its outside face."""
+    for n in s.overlapping(m):
+        if n.role == "ridge":
+            s.trim(m, n)
+        elif n.role == "top plate":
+            s.notch(m, n, below=True)
+
+
+def above_underside(m, roof, d):
+    """True if part of m reaches above the underside of a roof plane's rafters (d deep), under the plane."""
+    L, V = roof.size
+    return any(w < d - 0.01 and 0 <= u <= L and 0 <= v <= V for u, v, w in map(roof.local, m.points))
+
+
+@rule(75, match="member", when=lambda s, m: is_gable(s.surface) and s.overlapping(m))
+def fit_under_roof(s, m):
+    """Gable wall framing that runs up into the roof framing, cut along the rafters' underside and under the
+    ridge board; a piece wholly above the rafters comes out."""
+    for roof in s.house.roofs:
+        d = max([n.depth for n in s.members(wall=roof.id, role="rafter")] or [0])
+        if d and above_underside(m, roof, d):
+            try:
+                s.cut(m, (0, 0, d), (0, 0, -1), surface=roof)
+            except ValueError:
+                return s.remove(m)
+    for n in s.overlapping(m):   # a ridge board deeper than the rafters
+        s.trim(m, n)
+
+
 @rule(95, match="load", when=lambda s, b: b.role == "interior" and b.along_u)
 def blocking_under_plate_ends(s, b):
     """A block between joists under each end of a bottom plate upstairs that runs across the joists."""
@@ -311,11 +452,13 @@ def blocking_under_plate_ends(s, b):
         s.place(JOIST, left, right, v - T / 2, v + T / 2, role="block")
 
 
-@rule(90, match="gap", when=lambda s, g: g.kind == "field" and g.face == "outer")
+@rule(90, match="gap", when=lambda s, g: g.kind == "field" and g.face == "outer" and s.surface.role != "roof")
 def fill_gaps(s, g):
     """An upright (in a wall) or a joist (in a floor) wherever a board would span too far."""
     u, v = (g.u0 + g.u1) / 2, (g.v0 + g.v1) / 2
     if s.surface.role == "floor":
         return joist(s, s.surface, u)
+    if s.surface.role == "ceiling":
+        return s.place("2x6", u - T / 2, u + T / 2, g.v0, g.v1, role="ceiling joist")
     lo, hi = s.below(u - T / 2, u + T / 2, v), s.above(u - T / 2, u + T / 2, v)
     s.place(section(s.surface), u - T / 2, u + T / 2, lo, hi, role="stud")

@@ -33,13 +33,14 @@ Pareto search keeps the grammars that do well across many houses.
 
 - Inches, z up, ground at z = 0. Reason: the numbers then match the IRC tables and the Cambridge (MA)
   code directly. Reports write lengths as feet and inches.
-- A member is an oriented box: centreline start and end, a section (width x depth), and an up vector
-  for the direction its depth faces. Reason: every framing member is a box or a box with cut ends, so
-  the representation is exact and small, and an LLM can read it. No meshes or NURBS in the core.
-- End cuts (planes) and notches (convex pieces removed) come with roofs. Reason: rafters, hips and
-  birdsmouths need them; walls do not. Notches will also turn an overlap into a joint.
-- Contacts are computed on axis-aligned boxes, exact for orthogonal plans. Members at other angles are
-  listed as unresolved until roofs need them.
+- A member is an oriented box (centreline start and end, a section, an up vector for the direction its
+  depth faces), trimmed by cut planes, less notches (convex regions). Any member, at any angle. Reason:
+  every framing member is a box with cut ends and notches, so the representation is exact and small, and
+  an LLM can read it. No meshes or NURBS in the core.
+- A cut member's solid is kept as convex pieces (a box clipped by its cuts, split around each notch), so
+  overlap volumes and contact areas between any two members are exact, by clipping (`solid.py`). Plain
+  axis-aligned boxes keep the fast box path. A notch turns an overlap into a joint: a birdsmouth over a
+  plate becomes a seat that bears on it.
 - Section inventory: 2x4 to 2x12 by nominal name, at actual sizes (1 1/2" x 3 1/2" to 11 1/4").
   Stock lengths 8 to 20 ft.
 
@@ -56,7 +57,12 @@ Pareto search keeps the grammars that do well across many houses.
 ## Builder
 
 - A rule declares what it matches and when: `@rule(priority, match="opening", when=...)`. Match kinds:
-  wall, opening, corner, tee, gap (a stretch of face with no backing), member.
+  wall, floor (and ceiling), roof, seam (where two roof planes meet), opening, corner, tee, bearer, load,
+  gap (a stretch of face with no backing), member.
+- A rule acts through `s`: place (by a rectangle on the current surface), put (a centreline at any angle),
+  cut (by a plane), trim (back to the face of another member it runs into), notch (around another member,
+  optionally everything under it too: a seat cut), remove. Reason: these are the carpenter's operations; a
+  cut or notch is a property of the member, so a joint is exact and readable.
 - The builder goes rule by rule in priority order. For each rule it lists every match of its kind in the
   current design state and fires the rule once per match whose condition holds. Passes repeat until a
   pass changes nothing (cap 10), so a condition that becomes true later still fires.
@@ -71,18 +77,27 @@ Pareto search keeps the grammars that do well across many houses.
 - The frame's contact graph is the main representation for reasoning, for both rules and proposer.
   Reason: rules should ask framing questions ("what does this header bear on") rather than search
   coordinates within a tolerance; and LLMs reason well about relations, badly about raw coordinates.
-- Edges: bears (a bottom face on a top face, with bearing area), side (faces touching side to side),
-  clash (solids overlap). The ground is a node.
+- Edges: bears (a face resting on another, closer to level than plumb, with area), side (faces touching
+  otherwise, with area and direction), clash (solids overlap). Every contact keeps where it is. The ground
+  is a node.
+- Held up: a chain of bearing to the ground, or nailed between held members on opposite faces (blocking
+  between studs, a ridge board between rafters). Upright members must bear.
 
 ## Verifier
 
 - A placeholder for the codes: simplified readings of IRC chapter 6 and the WFCM, with limits marked
   as placeholders in `verifier.py` until each is checked against the tables.
 - Hard faults (unbuildable): rule error, too long, opening, clash, floating, span, overhang, bearing,
-  backing, head, sill. Soft faults (code or practice): single top plate.
-- Backing is checked on both faces of every wall: sheathing outside, drywall inside and on partitions.
-  A face's boards stop where another wall's framing meets it, so those edges need backing too. This one
-  check asks for the inside corner stud, the backers at partitions, and full-depth headers.
+  backing, head, sill, insulation, thrust.
+- Backing is checked on every boarded face: sheathing and drywall on walls, subfloor and ceiling on floors,
+  the ceiling under a roof, roof sheathing. A face's boards stop where another wall's framing meets it,
+  or where any framing passes through it, so those edges need backing too. Members square to the surface
+  back it by their boxes; anything else by where it is cut by the face, so a sloped rafter backs only the
+  strip it covers.
+- Rafters: level span between what they rest on and the ridge they butt (IRC rafter table, 40 psf ground
+  snow for Cambridge); a tie (something level nailed to the rafter's side in the lower third of its rise)
+  unless the rafter also rests on something high up (a gable wall, a beam). Tie continuity across the
+  house (lapped or spliced joists) is not checked yet. Ceiling joists have their own span table.
 - Every fault carries where it is (wall, u, v, world point), the members involved, and the rules that
   placed them. A missing member has no rule to blame, and the report says so.
 - Score per house: (hard faults, soft faults, cost), compared in that order. Reason: with soft faults
@@ -159,14 +174,22 @@ Pareto search keeps the grammars that do well across many houses.
 - Floors are polygons (the outline of the blocks above). Every surface has an outline in its own u, v, and
   the backing check scans that outline, so floors of any shape and later gable walls work the same way.
 - Walls that continue in the same line do not "meet" each other; only crossing walls make corners and Ts.
-- Next: roofs (gable, hip, shed, dormers) with sloped members, cut ends and notches; then angled bays,
-  turrets and porches. See the reference photos in `reference_houses/`.
+- Roofs are surfaces like walls and floors: a roof plane is the top of its rafters, u along the eave, v up
+  the slope, w square into the framing; its outline is any polygon in its plane. Where two planes share an
+  edge they make a seam (ridge or hip), derived like corners. A box house gets a gable roof: two planes,
+  a 9" raised heel, a 12" eave overhang, a pitch from 6 to 12 in 12 chosen so rafters fit 20 ft stock;
+  its end walls become gable walls whose outline reaches up to the roof planes (balloon framed); and a
+  ceiling (a floor with role "ceiling", framing above its underside) sits on the top storey's walls.
+- Next: roofs over L, T, ell and U houses (planes clipped where they meet, valleys), hips, sheds and
+  dormers; then angled bays, turrets and porches. See the reference photos in `reference_houses/`.
 
-## MVP scope
+## Scope now
 
-- One storey, rectangular plan, 8 or 9 ft walls, exterior walls with doors and windows. Corners in 3D.
-- Verifier: a simplified placeholder of the codes (support, clashes, sheathing backing, spans, cost).
-- Search: Pareto set over houses with a Claude proposer.
+- Houses: two or three storeys; box, L, T, ell and U plans; partitions, stairs, doors and windows; gable
+  roofs on box houses. Twenty training houses, h000 to h019 in `data/houses`.
+- Verifier: a simplified placeholder of the codes (support, clashes, backing, spans, thrust, cost).
+- Search: Pareto set over houses with a Claude proposer. No run yet on the current houses; the first two
+  runs (one-storey houses) are summarised in the journal and were deleted.
 
 ## Workbench
 

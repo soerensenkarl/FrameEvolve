@@ -26,7 +26,7 @@ def main(argv=None) -> None:
     e.add_argument("houses", nargs="+")
     e.add_argument("--images", help="folder for each house's elevations, hard faults marked")
     v = sub.add_parser("evolve", help="run the search; creates the run folder on first use")
-    v.add_argument("run", help="run folder, e.g. runs/first")
+    v.add_argument("run", help="run folder, e.g. runs/gable")
     v.add_argument("--seed-grammar", default="grammars/seed.py")
     v.add_argument("--train", nargs="+", default=[f"data/houses/h{i:03d}.json" for i in range(10)],
                    help="houses the proposer reads reports on")
