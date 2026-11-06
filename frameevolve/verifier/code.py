@@ -19,12 +19,19 @@ STUD_SPACING = {3.5: (24.0, 16.0, None), 5.5: (24.0, 24.0, 16.0)}
 NONBEARING_SPACING = 24.0   # Table R602.3(5): studs in a wall that carries nothing
 STUD_HEIGHT = 120.0         # Table R602.3(5): a bearing wall stud, 10 ft between points of lateral support
 NONBEARING_HEIGHT = {3.5: 168.0, 5.5: 240.0}   # Table R602.3(5): non-bearing 2x4 14 ft, 2x6 20 ft
-# Table R602.7(1), headers in an exterior bearing wall carrying roof and ceiling, 30 psf ground snow, 24 ft
-# building width: (plies, depth) -> (span, jack studs at each end). Note f: 0.70 of the span for a 2x8 or
+# Table R602.7(1), headers in an exterior bearing wall, 30 psf ground snow, 24 ft building width: (plies,
+# depth) -> (span, jack studs at each end), for a wall carrying roof and ceiling only, and for one carrying a
+# floor as well (the clear-span floor column, the stricter). One ply under a floor is not tabulated there: its
+# roof span times the table's two-ply ratio between the cases (0.73). Note f: 0.70 of the span for a 2x8 or
 # deeper header whose top is not braced (cripples on it rather than the top plate).
 HEADER_SPAN = {(1, 5.5): (37.0, 2), (1, 7.25): (47.0, 2), (1, 9.25): (56.0, 2), (1, 11.25): (65.0, 2),
                (2, 3.5): (37.0, 1), (2, 5.5): (55.0, 1), (2, 7.25): (69.0, 1), (2, 9.25): (82.0, 2),
-               (2, 11.25): (97.0, 2)}
+               (2, 11.25): (97.0, 2), (3, 7.25): (87.0, 1), (3, 9.25): (103.0, 1), (3, 11.25): (121.0, 2),
+               (4, 7.25): (100.0, 1), (4, 9.25): (119.0, 1), (4, 11.25): (140.0, 1)}
+HEADER_SPAN_FLOOR = {(1, 5.5): (27.0, 2), (1, 7.25): (34.0, 2), (1, 9.25): (41.0, 2), (1, 11.25): (47.0, 2),
+                     (2, 3.5): (27.0, 1), (2, 5.5): (40.0, 2), (2, 7.25): (51.0, 2), (2, 9.25): (60.0, 2),
+                     (2, 11.25): (71.0, 2), (3, 7.25): (63.0, 2), (3, 9.25): (75.0, 2), (3, 11.25): (89.0, 2),
+                     (4, 7.25): (73.0, 1), (4, 9.25): (87.0, 2), (4, 11.25): (102.0, 2)}
 UNBRACED_HEADER = 0.70      # Table R602.7(1) note f
 # Table R602.7.5: full-height (king) studs at each end of a header in an exterior wall, by header span, for
 # winds under 140 mph, exposure B (Cambridge, MA, about 128 mph): (longest span, kings).
@@ -117,7 +124,8 @@ def header_checks(s: Site) -> list[Fault]:
                 continue
             done.add(o.id)
             m = s.by_id[mid]
-            span, nj = HEADER_SPAN.get((min(plies, 2), m.depth), (0.0, 2))
+            table = HEADER_SPAN_FLOOR if floors_above(s.house, w) else HEADER_SPAN
+            span, nj = table.get((min(plies, 4), m.depth), (0.0, 2))
             cripples = any(vertical(s.by_id[n]) for n in s.g.carries[m.id] if n in s.by_id)
             if cripples and m.depth >= 7.25:
                 span *= UNBRACED_HEADER
