@@ -100,3 +100,20 @@ def test_a_short_bearing_away_from_an_end_may_press_harder():
         stud = named[f"w2 {u}"]
         area = site.g.bears[stud.id][plate.id]
         assert analysis.bearing_factor(site, plate, stud, plate, area) == pytest.approx(cb)
+
+
+def test_a_header_end_on_two_jacks_bears_on_both():
+    """A span's end reaction goes to every support of that end, by contact area: a header on two jacks side by
+    side loads both, not only the inner one."""
+    pts = [(0.0, 0.0), (240.0, 0.0), (240.0, 120.0), (0.0, 120.0)]
+    house = House("t", [Wall(f"w{i}", pts[i], pts[(i + 1) % 4], 97.125) for i in range(4)])
+    s = State(house)
+    s.surface = house.walls[0]
+    s.place("2x4", 0, 240, 0, 1.5)
+    jacks = [s.place("2x4", u, u + 1.5, 1.5, 80) for u in (78.0, 79.5, 160.5, 162.0)]
+    header = s.place("2x8", 78.0, 163.5, 80, 87.25)
+    s.place("2x4", 100, 101.5, 87.25, 95.625)                           # a post on the header, loaded below
+    beams = analysis.takedown(Site(house, Frame("t", "test", s.members("*"))))
+    got = beams[header.id].reactions
+    load = [got[j.id].under((1, 1, 1)) for j in jacks]
+    assert 0.8 < load[0] / load[1] < 1.25 and 0.8 < load[2] / load[3] < 1.25, load   # the pair shares, side by side

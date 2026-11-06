@@ -33,7 +33,7 @@ RAFTER_RUN = {3.5: {12: 92.0, 16: 80.0, 19.2: 73.0, 24: 65.0}, 5.5: {12: 135.0, 
               7.25: {12: 171.0, 16: 148.0, 19.2: 135.0, 24: 121.0}, 9.25: {12: 209.0, 16: 181.0, 19.2: 165.0, 24: 148.0},
               11.25: {12: 242.0, 16: 210.0, 19.2: 191.0, 24: 171.0}}
 MAX_OVERHANG = 2.0       # a loaded member past its last support
-MIN_BEARING = 1.5        # IRC R502.6, R802.6: joists, beams and rafters bear 1 1/2" on wood
+MIN_BEARING = 1.5        # IRC R502.6, R802.6: the ends of joists, beams and rafters bear 1 1/2" on wood
 MIN_BEARING_FLAT = 0.75  # a plate laid flat: half a stud
 LAP = 3.0                # IRC R802.5.2.1: ceiling joists lapped at least 3", or butted over a bearing (connector)
 
@@ -148,11 +148,14 @@ def spans(s: Site) -> list[Fault]:
             p[k] = x
             return tuple(p)
 
-        for s0, s1, n in sup:
-            if s0 < s1 and s1 - s0 < least - EPS:
-                out.append(s.at(m, point((s0 + s1) / 2), "bearing", True,
-                                f"{name(m)} bears only {inches(s1 - s0)} on {name(s.by_id[n])}, minimum {inches(least)}",
-                                [s.by_id[n]]))
+        places = bearings(sup)        # what it rests on at one place, together (a plate on two joists side by side);
+        for place in places[:1] + places[-1:] if len(places) > 1 else places:   # the minimum is for its ends
+            length = sum(s1 - s0 for s0, s1, _ in merged(place))
+            if length < least - EPS:
+                ms = [s.by_id[n] for _, _, n in place if n in s.by_id]
+                out.append(s.at(m, point((place[0][0] + place[-1][1]) / 2), "bearing", True,
+                                f"{name(m)} bears only {inches(length)} on {', '.join(name(x) for x in ms)}, minimum "
+                                f"{inches(least)}", ms))
         reach = sup[0][1]
         for s0, s1, n in sup[1:]:      # no table (a beam or header in a floor, a rim): analysis.py checks it
             gap = s0 - reach
@@ -165,6 +168,29 @@ def spans(s: Site) -> list[Fault]:
                 x = a0 + over / 2 if over == sup[0][0] - a0 else a1 - over / 2
                 out.append(s.at(m, point(x), "overhang", True,
                                 f"{name(m)} runs {ftin(over)} past its last support, limit {inches(MAX_OVERHANG)}"))
+    return out
+
+
+def bearings(sup: list[tuple]) -> list[list[tuple]]:
+    """A member's supports (from, to, id), in order, gathered into places it rests on: those that overlap or touch
+    are one place. Hangers (a point) are not bearings."""
+    out: list[list[tuple]] = []
+    for x in sorted(x for x in sup if x[1] > x[0]):
+        if out and x[0] <= max(y[1] for y in out[-1]) + EPS:
+            out[-1].append(x)
+        else:
+            out.append([x])
+    return out
+
+
+def merged(place: list[tuple]) -> list[tuple]:
+    """The stretches of a place covered by its supports, overlaps counted once."""
+    out = []
+    for s0, s1, n in sorted(place):
+        if out and s0 <= out[-1][1]:
+            out[-1] = (out[-1][0], max(out[-1][1], s1), n)
+        else:
+            out.append((s0, s1, n))
     return out
 
 
@@ -266,8 +292,10 @@ def rafter(s: Site, m: Member, tied: list[str], across: bool | None, roofs: set[
     out = []
     rests = sorted(where(n) for n in g.bears[m.id] if n in s.held)
     top = [n for n in g.side[m.id] if n in s.held and where(n) > m.length - 3 * m.depth]
-    for n in top:
-        if s.by_id[n].surface in roofs and abs(dot(g.facing[(m.id, n)], a)) > 0.5:
+    for n in top:     # a ridge board, hip or valley runs across the rafter in plan; an opposite rafter met
+        o = axis(s.by_id[n])   # head on (with a gusset, IRC R802.3) runs the same way and is no ridge
+        across = abs(o[0] * a[0] + o[1] * a[1]) < 0.9 * run * math.hypot(o[0], o[1]) if math.hypot(o[0], o[1]) > EPS else True
+        if s.by_id[n].surface in roofs and abs(dot(g.facing[(m.id, n)], a)) > 0.5 and across:
             if m.depth / run > cut_ends.get(n, (0.0, None))[0]:
                 cut_ends[n] = (m.depth / run, m)
     butts = [where(n) for n in top]

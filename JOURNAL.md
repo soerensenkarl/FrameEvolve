@@ -260,3 +260,10 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
   cut faults went to 0.
 - The proposer reads the frame: the parent's overview of every surface in its prompt, and frame (members of a
   surface with places, contacts and faults), trace (a rule's firings) and raw (the house file, stored members).
+- test3 (3 iterations from nb1's best, every tool in): all kept, 271 -> 250 hard on validation. Its lessons found
+  three verifier errors, now fixed: a span's end reaction went only to the innermost jack under a header (the
+  proposer had turned 2x6s on edge under each ply to get by; now the end reaction is shared by contact area:
+  crushing on nb1's best fell from 15 to 2 over five houses); bearing was judged contact by contact, so a plate
+  grazing a joist by 1/4" failed (now everything a member rests on at a place counts together, and the
+  minimum is for its ends, R502.6); and an opposite rafter met head on was taken for a ridge board too shallow
+  (rafters may meet with a gusset, R802.3).

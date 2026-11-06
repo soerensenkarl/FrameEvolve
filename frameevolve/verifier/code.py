@@ -324,7 +324,7 @@ def notches(s: Site) -> list[Fault]:
 
 def ridges(s: Site, cut_ends: dict[str, tuple[float, Member]]) -> list[Fault]:
     """R802.3, R802.4.3: a ridge board, hip or valley is at least as deep as the cut end of the rafters framing
-    into it; R802.4.4: under 3:12 they are beams to design. cut_ends: member id -> (deepest cut end into it,
+    into it (rafters may instead meet head on, tied with a gusset: then there is no ridge to check); R802.4.4: under 3:12 they are beams to design. cut_ends: member id -> (deepest cut end into it,
     that rafter)."""
     out = []
     for n, (need, m) in cut_ends.items():

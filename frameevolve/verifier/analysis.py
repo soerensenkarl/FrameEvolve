@@ -377,14 +377,15 @@ def ends(p: Piece) -> tuple[Load, Load]:
     return load + right * -1, right
 
 
-def shares(b: Beam) -> list[list[tuple[float, Load]]]:
-    """For each support group, the loads it takes and where along the member they arrive."""
+def shares(b: Beam) -> list[list[tuple[float | None, Load]]]:
+    """For each support group, the loads it takes and where along the member they arrive (None: a span's end
+    reaction, which the whole group takes, as one bearing: a header end on two jacks bears on both)."""
     got = [[] for _ in b.groups]
     for p in b.pieces:
         if p.kind == "span":
             left, right = ends(p)
-            got[p.left].append((p.x0, left))
-            got[p.right].append((p.x1, right))
+            got[p.left].append((None, left))
+            got[p.right].append((None, right))
             continue
         i = p.left if p.left is not None else p.right
         if p.kind == "overhang":
@@ -395,10 +396,14 @@ def shares(b: Beam) -> list[list[tuple[float, Load]]]:
     return got
 
 
-def under(g: list[Support], x: float) -> list[tuple[Support, float]]:
+def under(g: list[Support], x: float | None) -> list[tuple[Support, float]]:
     """The supports of a group that take a load at x, and their shares: those right under it, by the width
-    they bear on (contact area over length); else the nearest."""
+    they bear on (contact area over length); else the nearest. x None: every support of the group, by its
+    contact area (a span's end reaction on the group as one bearing)."""
     ok = [y for y in g if y.passes]
+    if x is None:
+        whole = sum(y.area for y in ok)
+        return [(y, y.area / whole) for y in ok] if whole > 0 else [(y, 1 / len(ok)) for y in ok]
     over = [y for y in ok if y.lo - EPS <= x <= y.hi + EPS] or [min(ok, key=lambda y: min(abs(x - y.lo), abs(x - y.hi)))]
     width = [y.area / (y.hi - y.lo) if y.hi - y.lo > EPS else y.area for y in over]
     whole = sum(width)
@@ -412,7 +417,7 @@ def pass_down(b: Beam, arriving: dict[str, list[tuple[Vec, Load]]]) -> None:
         return
     if b.run <= EPS:              # upright: everything goes down, split by contact area
         b.groups = [b.supports]
-        got = [[(0.0, b.load)]]
+        got = [[(None, b.load)]]
     else:
         cut(b)
         got = shares(b)
@@ -427,7 +432,8 @@ def pass_down(b: Beam, arriving: dict[str, list[tuple[Vec, Load]]]) -> None:
             for y, share in under(b.groups[i], x):
                 b.reactions[y.n] = b.reactions.get(y.n, NONE) + q * share
                 if y.n != GROUND:
-                    arriving.setdefault(y.n, []).append((b.world(min(max(x, y.lo), y.hi)), q * share))
+                    at = (y.lo + y.hi) / 2 if x is None else min(max(x, y.lo), y.hi)
+                    arriving.setdefault(y.n, []).append((b.world(at), q * share))
 
 
 def takedown(s: Site) -> dict[str, Beam]:

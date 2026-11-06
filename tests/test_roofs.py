@@ -67,3 +67,23 @@ def test_seed_frames_the_toy_roof_cleanly_and_ties_every_rafter(toy_seeded):
     assert rafters and all(m.notches or m.cuts for m in rafters)
     untied = Frame(house.id, frame.grammar, [m for m in frame.members if m.role != "ceiling joist"])
     assert any(f.check == "thrust" for f in verify(house, untied).faults)
+
+
+def test_rafters_meeting_head_on_have_no_ridge_to_check(toy_state):
+    """Opposite rafters plumb cut to meet each other (with a gusset, IRC R802.3) need no ridge board, so the ridge
+    check does not mistake one for a ridge too shallow for the other."""
+    from frameevolve.verifier import Site
+    from frameevolve.verifier.physical import rafters
+    house, s = toy_state
+    ms, x = [], house.surface("r1").world(25.5, 0, 0)[0]
+    for rid in ("r1", "r2"):
+        s.surface = r = house.surface(rid)
+        u = r.local((x, r.origin[1], r.origin[2]))[0]            # the same x in plan on both slopes
+        v = r.size[1]
+        m = s.place("2x12", u - 0.75, u + 0.75, 0, v + 12, role="rafter")
+        s.cut(m, (u, v, 0), r.local_dir((0, 1 if rid == "r1" else -1, 0)))
+        ms.append(m)
+    site = Site(house, Frame(house.id, "test", ms))
+    site.held = set(site.by_id)                                         # as if they sat on their walls
+    assert ms[1].id in site.g.side[ms[0].id]                         # they meet head on
+    assert not [f for f in rafters(site) if f.check == "ridge"]
