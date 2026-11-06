@@ -136,12 +136,18 @@ def clear(s, u):
     return not any(z0 - 6 < u < z1 + 6 for z0, z1 in zones(s)[:len(s.surface.openings)])
 
 
+def next_joint(s, a):
+    """The furthest grid line within a panel's length of a that is clear of openings (any grid line if none)."""
+    grid = [c for c in s.crossings("grid") if a + SPACING <= c <= a + PANEL]
+    return max([c for c in grid if clear(s, c)] or grid)
+
+
 @rule(5, match="wall")
 def wall_joints(s, w):
-    """Panel joints on the grid, as far apart as a panel may be long, clear of openings."""
+    """Panel joints on the grid, as far apart as a panel may be long, clear of openings where it can."""
     a, b = extent(s)
     while b - a > PANEL:
-        a = max(c for c in s.crossings("grid") if a + 4 * SPACING <= c <= a + PANEL and clear(s, c))
+        a = next_joint(s, a)
         s.guide("panel joint", (a, 0), (a, w.size[1]))
 
 

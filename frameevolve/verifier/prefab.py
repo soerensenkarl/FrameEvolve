@@ -2,8 +2,9 @@
 place one after another, bottom up.
 
 A panel is the members a grammar builds into one named piece (Member.panel): a wall panel, a floor cassette, a
-roof panel. It is flat (one surface, one layer of framing, not a volume), framed at both ends so it holds its
-shape when lifted and its boards end on wood, one piece, small enough to truck and light enough to lift.
+roof panel. It is flat (one surface, one layer of framing, not a volume), framed all round (a member along every
+edge of its outline) so it holds its shape when lifted and its boards end on wood, one piece, small enough to
+truck and light enough to lift.
 Members without a panel are cut and nailed on site; cost.py charges them more, and a crane lift per panel.
 
 The saw: every piece is cut from stock by a standard automated framing saw. It crosscuts square or at a miter
@@ -20,7 +21,7 @@ from __future__ import annotations
 
 import math
 
-from frameevolve import solid
+from frameevolve import solid, surface
 from frameevolve.geometry import EPS, cross, dot, unit
 from frameevolve.graph import GROUND
 from frameevolve.model import Member
@@ -76,13 +77,34 @@ def panels(s: Site) -> list[Fault]:
             loose = min(parts, key=len)
             out.append(here("panel", f"panel {p} on {x.id} is {len(parts)} separate pieces, not one: "
                                      f"{', '.join(sorted(loose)[:4])} touch nothing else in it"))
-        k = 0 if du >= dv else 1           # its length runs along u or v
-        for end, at in (("start", lo[k]), ("end", hi[k])):
-            if not any(abs((b.lo[k] if end == "start" else b.hi[k]) - at) <= 0.1
-                       and b.hi[1 - k] - b.lo[1 - k] >= 0.5 * (hi[1 - k] - lo[1 - k]) for b in boxes):
-                out.append(here("panel", f"panel {p} on {x.id} has nothing across its {end} at "
-                                         f"{'u' if k == 0 else 'v'} {ftin(at)}: frame each end of a panel so it holds "
-                                         f"its shape when lifted and its boards end on wood"))
+        for (a, b) in unframed(x, ms):
+            out.append(here("panel", f"panel {p} on {x.id} has nothing along its edge from u {ftin(a[0])}, v "
+                                     f"{ftin(a[1])} to u {ftin(b[0])}, v {ftin(b[1])}: frame a panel all round, so it "
+                                     f"holds its shape when lifted and its boards end on wood"))
+    return out
+
+
+def unframed(x, ms: list[Member]) -> list[tuple]:
+    """The edges of a panel's outline (the hull of its members seen square to its surface, edges over a foot)
+    with no member running along at least half of them."""
+    shapes = [poly for m in ms for poly in surface.outlines(x, m)]
+    rim = hull([q for poly in shapes for q in poly])
+    out = []
+    for a, b in zip(rim, rim[1:] + rim[:1]):
+        L = math.dist(a, b)
+        if L < 12.0:
+            continue
+        d = ((b[0] - a[0]) / L, (b[1] - a[1]) / L)
+        off = lambda q: abs((q[0] - a[0]) * d[1] - (q[1] - a[1]) * d[0])
+        t = lambda q: (q[0] - a[0]) * d[0] + (q[1] - a[1]) * d[1]
+        spans = sorted((max(0.0, min(t(p), t(q))), min(L, max(t(p), t(q)))) for poly in shapes
+                       for p, q in zip(poly, poly[1:] + poly[:1]) if off(p) <= 0.3 and off(q) <= 0.3)
+        covered, reach = 0.0, 0.0
+        for s0, s1 in spans:
+            covered += max(0.0, s1 - max(s0, reach))
+            reach = max(reach, s1)
+        if covered < 0.5 * L:
+            out.append((a, b))
     return out
 
 

@@ -303,7 +303,7 @@ def frame_payload(house: House, frame: Frame, source: str) -> dict:
         "timing": {"verify": verify_s},
         "stats": {"members": m["members"], "hard": report.hard, "soft": report.soft, "cost": m["cost"],
                   "bought_ft": m["bought_ft"], "waste_pct": m["waste_pct"], "steps": len(frame.steps),
-                  "by_section": m["by_section"]},
+                  "by_section": m["by_section"], "panels": m["panels"], "site_pieces": m["site_pieces"]},
     }
 
 
@@ -358,9 +358,17 @@ def constants() -> dict:
                 note = " ".join(above)
             value = getattr(mod, name)
             if isinstance(value, (int, float, str, tuple, dict)):
-                out[name] = {"value": list(value) if isinstance(value, tuple) else value, "note": note,
-                             "module": mod.__name__.split(".")[-1]}
+                out[name] = {"value": jsonable(value), "note": note, "module": mod.__name__.split(".")[-1]}
     return out
+
+
+def jsonable(v):
+    """A limit as JSON can hold it: tuples as lists, dict keys as text ("1, 5.5" for a tuple key)."""
+    if isinstance(v, dict):
+        return {(", ".join(map(str, k)) if isinstance(k, tuple) else str(k)): jsonable(x) for k, x in v.items()}
+    if isinstance(v, (tuple, list)):
+        return [jsonable(x) for x in v]
+    return v
 
 
 def verifier_info() -> dict:

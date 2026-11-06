@@ -40,6 +40,8 @@
       <span class="seg2 viewopt" id="storeys" title="Look at one storey at a time"></span>
       <label class="chk viewopt" title="The input: each wall, floor and roof plane is the plane of its outer face, with its openings"><input type="checkbox" id="showSurfaces" checked> surfaces</label>
       <label class="chk viewopt" title="Fault markers on the finished frame"><input type="checkbox" id="showFaults" checked> faults</label>
+      <label class="chk viewopt" title="Lines the rules lay out to frame by: the grid (grey) and panel joints (blue)"><input type="checkbox" id="showGuides"> guides</label>
+      <span class="seg2 viewopt" id="colourBy" title="Colour members by the rule that placed them, or by the prefab panel they are built into (grey: built on site)"><span class="lab">colour</span><button data-by="rule" class="on">rule</button><button data-by="panel">panel</button></span>
       <button id="centerBtn" class="viewopt tool" title="Frame the whole house again">Center</button>
       <button id="measureBtn" class="viewopt tool" title="Click two points to measure; snaps to member corners and edge midpoints. Esc ends.">Measure</button>
     </nav>

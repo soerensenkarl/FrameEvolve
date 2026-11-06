@@ -11,6 +11,8 @@ export const PAST = "#d9d4c9";   // members placed by earlier build steps
 export const SURF = "#8fb0cf";   // the house's surfaces: the input
 export const GONE = "#d8342c";   // members a step removes
 export const FACE = { outer: "#d8342c", inner: "#8a4fc8" };   // backing gaps on the outside and inside face
+export const SITE = "#b3afa6";   // by panel: members built on site
+export const GUIDE = { grid: "#9a978f", "panel joint": "#2f6fdf" };   // guide lines by kind; others as grid
 export const S = 0.0254;         // the 3D view is in metres; the model is in inches
 
 // ---------------------------------------------------------------- units: inches shown as feet and inches
@@ -69,6 +71,8 @@ export const st = {
   only: null,           // show only this check's faults
   fault: null,          // the fault chosen in the Verifier tab, an index into data.faults
   openChecks: new Set(),
+  colourBy: "rule",     // members coloured by "rule" or by prefab "panel"
+  panelColors: {}, panelAt: {}, guideAt: {},   // each panel's colour; the step a member got its panel, a guide was laid
 };
 export const finished = () => !st.data || st.at >= 2 * st.data.steps.length;
 export const applied = () => Math.floor(st.at / 2);           // steps whose output is shown
@@ -85,12 +89,20 @@ export const chosenFault = () => (st.fault != null ? st.data.faults[st.fault] : 
 // the surface the current step is on, or the one its match meets, is "active" in the views
 export const isActive = (sid) => { const cur = current(); return !!cur && (cur.surface === sid || cur.target?.other === sid); };
 
+// prefab panels and guides as of the step shown: a member's panel ("" built on site), whether a guide is laid yet
+export const byPanel = () => st.colourBy === "panel";
+export const panelOf = (m) => (m.panel && (finished() || st.panelAt[m.id] < applied()) ? m.panel : "");
+export const panelColour = (p) => (p ? st.panelColors[p] || SITE : SITE);
+export const guideShown = (g) => finished() || st.guideAt[g.id] < applied();
+
 export function memberColour(m, r, goneColour = GONE) {
   // a member's colour given its relation `r` to the selection ("self", "bears", "carries", "side", "rule" or
   // undefined). While stepping, earlier members are neutral; the rule's output, or the member it matched,
-  // carry its colour. A member the step removes shows `goneColour`.
+  // carry its colour. A member the step removes shows `goneColour`. By panel, every member shows its panel's
+  // colour, or grey when it is built on site.
   if (r && REL[r]) return REL[r];
   if (goneNow(m.id)) return goneColour;
+  if (byPanel()) return panelColour(panelOf(m));
   if (matchedMember(m.id)) return st.colors[current().rule];
   return finished() || placedNow(m.id) || r === "rule" ? st.colors[m.rule] : PAST;
 }

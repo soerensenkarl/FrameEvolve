@@ -7,10 +7,10 @@
 // frame, what repaints when, the stats and rules on the left, the tabs, the header and the keys. The views
 // live in their own modules: state.js, view3d.js, elevations.js, inspect.js, editor.js, runs.js, live.js.
 import * as THREE from "three";
-import { $, esc, num, oneLine, PALETTE, st, finished, applied, trigger, current, present, runsMode, stopPlay, api, status,
-  remember, recall, loadLists, dirty, surfaceList, hideTip } from "./state.js";
+import { $, esc, num, oneLine, PALETTE, SITE, st, finished, applied, trigger, current, present, runsMode, stopPlay, api,
+  status, remember, recall, loadLists, dirty, surfaceList, hideTip, byPanel } from "./state.js";
 import { setup3d, resize, render3d, look3d, renderSurfaces, fit, startLiveDraw, addMember, removeMember, edgeMaterial,
-  measuring, setMeasure } from "./view3d.js";
+  measuring, setMeasure, meshes } from "./view3d.js";
 import { renderElev, renderStoreys, renderCaption, scrollElevTo } from "./elevations.js";
 import { renderInspect, renderVerifier, renderReport, renderTimeline, chooseFault, goto } from "./inspect.js";
 import { loadGrammar } from "./editor.js";
@@ -31,9 +31,12 @@ export async function build(keepStep = false) {
   const res = await fetch("/api/build", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!res.ok || !res.body) { status((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`, true); return false; }
   startLiveDraw();
-  const colors = { ...st.colors }, edgeMat = edgeMaterial();
+  const colors = { ...st.colors }, panels = {}, edgeMat = edgeMaterial();
   const colorOf = (r) => colors[r] || (colors[r] = PALETTE[Object.keys(colors).length % PALETTE.length]);
-  const put = (m) => addMember(m, new THREE.MeshStandardMaterial({ roughness: 0.85, color: colorOf(m.rule) }), edgeMat);
+  // by panel, a panel takes the next colour as it first appears; the finished frame orders them by name
+  const panelOf = (p) => (!p ? SITE : panels[p] || (panels[p] = PALETTE[Object.keys(panels).length % PALETTE.length]));
+  const live = (m) => (byPanel() ? panelOf(m.panel) : colorOf(m.rule));
+  const put = (m) => addMember(m, new THREE.MeshStandardMaterial({ roughness: 0.85, color: live(m) }), edgeMat);
   const reader = res.body.getReader(), dec = new TextDecoder();
   let buf = "", pieces = 0, frame = null, built = 0;
   const handle = (msg) => {
@@ -45,6 +48,7 @@ export async function build(keepStep = false) {
       for (const m of msg.step.placed) put(m);
       for (const m of msg.step.shaped) put(m);   // a new shape for a member a later rule cut or notched
       for (const id of msg.step.removed) removeMember(id);
+      if (byPanel()) for (const a of msg.step.assigned || []) meshes.get(a.id)?.material.color.set(panelOf(a.panel));
       pieces += msg.step.placed.length - msg.step.removed.length;
       status(`framing: ${Math.round(1000 * msg.step.t)} ms, ${pieces} pieces, ${msg.step.rule}`);
     } else if (msg.built != null) {
@@ -94,6 +98,18 @@ function index() {
     for (const id of s.removed) st.removedAt[id] = i;
   });
   for (const m of d.members) if (!(m.id in st.placedAt)) st.placedAt[m.id] = -1;
+  d.guides ||= [];
+  const panels = [...new Set(d.members.filter((m) => m.panel).map((m) => m.panel))]
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  st.panelColors = Object.fromEntries(panels.map((p, i) => [p, PALETTE[i % PALETTE.length]]));
+  st.panelAt = {};
+  st.guideAt = {};
+  d.steps.forEach((s, i) => {
+    for (const id of s.assigned || []) st.panelAt[id] = i;
+    for (const id of s.guides || []) st.guideAt[id] = i;
+  });
+  for (const m of d.members) if (m.panel && !(m.id in st.panelAt)) st.panelAt[m.id] = st.placedAt[m.id];
+  for (const g of d.guides) if (!(g.id in st.guideAt)) st.guideAt[g.id] = -1;
   st.at = 2 * d.steps.length;
   stopPlay();
   if (st.sel?.kind === "member" && !st.byId[st.sel.id]) st.sel = null;
@@ -135,6 +151,8 @@ function renderStats() {
     ["timber bought", `${num(s.bought_ft)} ft`, "", "Linear feet bought in stock lengths."],
     ["waste", `${s.waste_pct} %`, "", "Offcuts, as a share of the timber bought."],
     ["members", s.members, "", "Pieces of timber in the finished frame."],
+    ...(s.panels != null ? [["panels", s.panels, "", "Prefab panels built in the shop, trucked and lifted into place."]] : []),
+    ...(s.site_pieces != null ? [["built on site", s.site_pieces, "", "Pieces in no panel: cut and nailed on site."]] : []),
     ["build steps", s.steps, "", "Rule firings that changed something. Step through them below the view."],
   ];
   $("#stats").innerHTML = rows.map(([k, v, kind, tip]) =>
@@ -222,6 +240,20 @@ document.querySelectorAll("nav.tabs").forEach((nav) => nav.addEventListener("cli
 
 $("#showFaults").addEventListener("change", () => { look3d(); renderElev(); });
 $("#showSurfaces").addEventListener("change", () => { remember("surfaces", $("#showSurfaces").checked ? "1" : "0"); look3d(); renderElev(); });
+$("#showGuides").addEventListener("change", () => { remember("guides", $("#showGuides").checked ? "1" : "0"); look3d(); renderElev(); });
+
+function setColourBy(by) {
+  st.colourBy = by === "panel" ? "panel" : "rule";
+  remember("colourBy", st.colourBy);
+  $("#colourBy").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.by === st.colourBy));
+}
+$("#colourBy").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-by]");
+  if (!b) return;
+  setColourBy(b.dataset.by);
+  look3d();
+  renderElev();
+});
 $("#rebuild").addEventListener("click", () => build());
 
 $("#house").addEventListener("change", () => { remember("house", $("#house").value); build(); });
@@ -257,6 +289,8 @@ document.addEventListener("keydown", (e) => {
 
 (async function start() {
   if (recall("surfaces") === "0") $("#showSurfaces").checked = false;
+  if (recall("guides") === "1") $("#showGuides").checked = true;
+  setColourBy(recall("colourBy"));
   setup3d();
   for (const host of ["center", "right"]) {
     const t = recall("tab." + host);

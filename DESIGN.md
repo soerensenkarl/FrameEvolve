@@ -57,8 +57,15 @@ Pareto search keeps the grammars that do well across many houses.
 ## Builder
 
 - A rule declares what it matches and when: `@rule(priority, match="opening", when=...)`. Match kinds:
-  wall, floor (and ceiling), roof, seam (where two roof planes meet), opening, corner, tee, bearer, load,
-  gap (a stretch of face with no backing), member.
+  house (once), guide, wall, floor (and ceiling), roof, seam (where two roof planes meet), opening, corner,
+  tee, bearer, load, gap (a stretch of face with no backing), member.
+- Guides: lines a rule lays out to frame by, not timber (`s.guide`): a grid over the plan, panel joints.
+  Later rules read them (`s.guides`, `s.crossings`: where they cross the current surface) or match them.
+  Reason: framers lay out from a global grid and mark where panels break before cutting anything; making
+  that a step of its own puts the layout in one readable rule instead of arithmetic repeated in many.
+- Prefab panels: `s.assign(m, panel)` builds a member into a named panel (a wall panel, a floor cassette,
+  a roof panel); members without one are built on site. The verifier checks the panels and charges site
+  work and crane lifts. Reason: the frames are meant to be prefabricated as flat panels, trucked and lifted.
 - A rule acts through `s`: place (by a rectangle on the current surface), put (a centreline at any angle),
   cut (by a plane), trim (back to the face of another member it runs into), notch (around another member,
   optionally everything under it too: a seat cut), remove. Reason: these are the carpenter's operations; a
@@ -85,25 +92,36 @@ Pareto search keeps the grammars that do well across many houses.
 
 ## Verifier
 
-- A placeholder for the codes: simplified readings of IRC chapter 6 and the WFCM, with limits marked
-  as placeholders in `verifier.py` until each is checked against the tables.
-- Hard faults (unbuildable): rule error, too long, opening, clash, floating, span, overhang, bearing,
-  backing, head, sill, insulation, thrust.
-- Backing is checked on every boarded face: sheathing and drywall on walls, subfloor and ceiling on floors,
-  the ceiling under a roof, roof sheathing. A face's boards stop where another wall's framing meets it,
-  or where any framing passes through it, so those edges need backing too. Members square to the surface
-  back it by their boxes; anything else by where it is cut by the face, so a sloped rafter backs only the
-  strip it covers.
-- Rafters: level span between what they rest on and the ridge they butt (IRC rafter table, 40 psf ground
-  snow for Cambridge); a tie (something level nailed to the rafter's side in the lower third of its rise)
-  unless the rafter also rests on something high up (a gable wall, a beam). Tie continuity across the
-  house (lapped or spliced joists) is not checked yet. Ceiling joists have their own span table.
+- A package read in order (`frameevolve/verifier/__init__.py` lists every check), one module per question,
+  each opening with what it checks in plain words and its limits at the top, each citing its source:
+  - `physical.py`, can it stand: rule errors, stock length, openings, clashes, support down to the ground,
+    spans and bearing by the IRC tables (Spruce-Pine-Fir No. 2, by spacing: a member's spacing is measured to
+    its neighbours), rafters' level span (50 psf snow table, the one above Cambridge's 40) and a tie in the
+    lower third that reaches across to the rafters on the other slope (lapped 3", or butted over a bearing).
+  - `analysis.py`, will it hold: a simple gravity structural analysis. Area loads on floors, ceilings and
+    roofs; taken down through the contact graph as simply supported reactions; bending, compression with
+    column stability, bearing across the grain and deflection against NDS values for SPF No. 2.
+  - `boards.py`: backing for every board, heads and sills, room for R-20 insulation.
+  - `code.py`, the IRC's prescriptive rules: stud spacing and height by size and load (Table R602.3(5)),
+    studs in one piece plate to plate, headers by plies with their jacks (Table R602.7(1)) and kings
+    (Table R602.7.5, soft), bearing walls over the floor below within the joist depth (R502.4), notches
+    (R502.8.1, R802.7.1: a birdsmouth at most a quarter of the depth), in-line framing on a single top plate
+    (R602.3.2), ridges, hips and valleys as deep as the rafter cut ends (R802.3), lateral restraint (soft).
+  - `prefab.py`, can it be built: panels flat on one surface, one piece, framed at both ends, at most 40 ft
+    by 11'-6" (a drop-deck trailer) and 3,000 lb (a boom truck); pieces a standard automated saw cuts
+    (6" or longer, miter to 60 degrees, bevel to 45, no rips, notches of up to three faces); and an erection
+    order, bottom up, where everything rests on what is already up and every panel is lowered straight down
+    without passing through anything already up.
+  - `cost.py`: timber bought in stock lengths, a cost per piece (three times as much on site as in a
+    panel), and a crane lift per panel.
+- Checks read geometry and the contact graph, never role labels. Hard faults: unbuildable or unsafe.
+  Soft: details a good grammar also gets right.
 - Every fault carries where it is (surface, u, v, world point), the members involved, and the rules that
   placed them. A missing member has no rule to blame, and the report says so.
 - Score per house: (hard faults, soft faults, cost), compared in that order. Reason: with soft faults
-  outside the score, the search would never spend timber to fix a single top plate. Cost is timber bought (first fit decreasing into stock lengths,
-  deeper sections weighted by depth) plus a fixed cost per piece.
-- The report also comes as text, which is what the proposer will read.
+  outside the score, the search would never spend timber to fix a single top plate.
+- The report also comes as text, which is what the proposer reads, with two pictures: the frame in 3D, and
+  the six surfaces with the most faults, panels outlined.
 
 ## Build history
 

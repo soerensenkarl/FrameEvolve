@@ -1,9 +1,9 @@
 // The Surfaces tab: each wall as an elevation, each floor, ceiling and roof plane as a plan, grouped by
 // storey, with the members on it, the step's target and a chosen fault's evidence; the storey filter in the
 // view bar; the caption over the view while stepping. The SVG helpers here also draw the rule demo.
-import { $, esc, ftin, pill, oneLine, SURF, PAST, REL, FACE, st, finished, current, trigger, stepNo, present,
+import { $, esc, ftin, pill, oneLine, SURF, PAST, REL, FACE, SITE, GUIDE, st, finished, current, trigger, stepNo, present,
   placedNow, goneNow, matchedMember, runsMode, surfaceList, isFloor, isWall, kindName, faceName, listed, isActive,
-  memberColour } from "./state.js";
+  memberColour, byPanel, panelOf, guideShown } from "./state.js";
 import { select } from "./app.js";
 import { related, look3d, otherEnd, isLine, toLocal } from "./view3d.js";
 import { evidence, chosenFault } from "./inspect.js";
@@ -54,8 +54,23 @@ function surfaceSvg(s, span, rel) {
     const cls = ["m", rel && !r ? "dim" : "", r === "self" ? "sel" : "", showFaults && st.faulty.has(m.id) ? "fault" : "",
       isNow || (hit && trigger()) ? "now" : "", gone ? "gone" : ""].join(" ");
     return memberSvg({ u0: lo[0], v0: lo[1], u1: hi[0], v1: hi[1], poly: m.poly }, `class="${cls}" data-id="${m.id}" fill="${memberColour(m, r, "none")}"`,
-      `${m.id} ${esc(m.role || "")}, ${esc(m.rule)}, ${esc(m.section)}${gone ? ", removed at this step" : ""}`);
+      `${m.id} ${esc(m.role || "")}, ${esc(m.rule)}, ${esc(m.section)}${panelOf(m) ? `, panel ${esc(panelOf(m))}` : ""}${gone ? ", removed at this step" : ""}`);
   }).join("");
+  // prefab panels: the box round each panel's members on this surface, dashed, named at its top left
+  const boxes = {};
+  for (const m of own) {
+    const p = panelOf(m);
+    if (!p || !m.local) continue;
+    const [lo, hi] = m.local, b = boxes[p] ||= [lo[0], lo[1], hi[0], hi[1]];
+    boxes[p] = [Math.min(b[0], lo[0]), Math.min(b[1], lo[1]), Math.max(b[2], hi[0]), Math.max(b[3], hi[1])];
+  }
+  const panels = Object.entries(boxes).map(([p, [u0, v0, u1, v1]]) => {
+    const c = byPanel() ? st.panelColors[p] || SITE : GUIDE["panel joint"];
+    return `<g class="panel"><title>panel ${esc(p)}</title><rect x="${u0}" y="${-v1}" width="${u1 - u0}" height="${v1 - v0}" stroke="${c}"/>
+      <text x="${u0 + 2 * k}" y="${-v1 - 4 * k}" font-size="${14 * k}" style="fill:${c}">${esc(p)}</text></g>`;
+  }).join("");
+  const guides = $("#showGuides").checked ? (st.data.guides || []).filter((g) => g.surface === s.id && guideShown(g)).map((g) =>
+    `<line class="guide ${g.kind === "panel joint" ? "joint" : ""}" x1="${g.a[0]}" y1="${-g.a[1]}" x2="${g.b[0]}" y2="${-g.b[1]}"><title>${esc(g.kind)} ${esc(g.id)}${g.rule ? `, by ${esc(g.rule)}` : ""}</title></line>`).join("") : "";
   // around it: other walls' members at a wall's face; the walls under a floor (faint) and on it (dashed)
   const nbs = isFloor(s) ? ["bearers", "loads"].map((key) => s[key].map((b) =>
     bearerPoly(b, key === "bearers" ? "under" : "onit", `${esc(b.wall)} ${key === "bearers" ? "under" : "on"} this floor`)).join("")).join("")
@@ -79,7 +94,7 @@ function surfaceSvg(s, span, rel) {
   return `<svg viewBox="${-pad} ${-(V + pad)} ${Math.max(span, U) + 2 * pad} ${V + 2 * pad}">
       <defs>${hatch("outer", 45)}${hatch("inner", -45)}</defs>
       ${surf}<path class="outline" d="${outlinePath(s.outline)}"/>
-      ${nbs}${rects}${tees}${ops}${gaps}${marks}${isActive(s.id) ? targetSvg(s, k) : ""}${evidenceSvg(s, k)}
+      ${nbs}${rects}${guides}${panels}${tees}${ops}${gaps}${marks}${isActive(s.id) ? targetSvg(s, k) : ""}${evidenceSvg(s, k)}
     </svg>`;
 }
 
@@ -113,6 +128,8 @@ export function renderElev() {
   const cur = current();
   const levels = [...new Set(list.map((s) => s.storey))].sort();
   const rank = (s) => (s.role === "ceiling" ? 2 : { floor: 0, wall: 1, roof: 3 }[s.kind]);   // floor, walls, ceiling, roof
+  const anyPanel = st.data.members.some((m) => m.panel);
+  const anyGuide = $("#showGuides").checked && (st.data.guides || []).some((g) => g.surface);
   el.innerHTML = levels.map((n) => `<h3 class="storey">Storey ${n}</h3>` + list.filter((s) => s.storey === n)
     .sort((a, b) => rank(a) - rank(b)).map((s) => {
       const active = isActive(s.id);
@@ -121,6 +138,9 @@ export function renderElev() {
       return `<div class="surface ${isWall(s) ? "" : s.kind} ${active ? "active" : ""} ${cur && !active ? "rest" : ""}" id="surface-${s.id}">
         <div class="cap">${surfaceCaption(s)} ${tag}</div>${surfaceSvg(s, span, rel)}</div>`;
     }).join("")).join("") + `<div class="legend"><span style="--c:${SURF}">surface (the input)</span>
+     ${byPanel() ? `<span style="--c:${SITE}">built on site</span>` : ""}
+     ${anyPanel ? `<span class="dash" style="--c:${byPanel() ? "#9a978f" : GUIDE["panel joint"]}">prefab panel</span>` : ""}
+     ${anyGuide ? `<span class="dash" style="--c:${GUIDE["panel joint"]}">panel joint</span><span class="dash" style="--c:${GUIDE.grid}">grid</span>` : ""}
      <span style="--c:${PAST}">placed by earlier steps</span>
      <span style="--c:${REL.bears}">the selection bears on it</span>
      <span style="--c:${REL.carries}">it bears on the selection</span><span style="--c:${REL.side}">beside the selection</span>

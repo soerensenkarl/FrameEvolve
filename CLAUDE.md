@@ -1,7 +1,8 @@
 # FrameEvolve: how to work here
 
 An LLM proposer edits a grammar of framing rules, a deterministic verifier scores the frames it builds, and a
-Pareto search over houses keeps what improves. Timber framing is the case study; the loop is the contribution.
+Pareto search over houses keeps what improves. The frames are meant to be built as prefab panels: wall panels,
+floor cassettes and roof panels, cut by an automated saw, trucked and lifted into place bottom up. Timber framing is the case study; the loop is the contribution.
 DESIGN.md holds the design and its reasons; JOURNAL.md is the lab journal (add to it when you decide, build or
 learn something). Imperial units, inches in code.
 
@@ -13,8 +14,8 @@ learn something). Imperial units, inches in code.
 | `frameevolve/geometry.py`, `solid.py` | vectors, boxes, polygons; members at any angle as convex pieces, exact overlap and contact |
 | `frameevolve/graph.py` | the contact graph: bears, side, clashes, grounded |
 | `frameevolve/surface.py` | backing: where a face's boards have nothing behind them; outlines of members on a surface |
-| `frameevolve/builder.py` | `@rule(priority, match, when)`, `State` (what rules see and do), `build()`; the docstring lists match kinds |
-| `frameevolve/verifier.py` | `verify(house, frame) -> Report`: every check, the limits with the code they approximate, cost |
+| `frameevolve/builder.py` | `@rule(priority, match, when)`, `State` (what rules see and do: place, cut, notch, guide, assign to a panel), `build()`; the docstring lists match kinds |
+| `frameevolve/verifier/` | `verify(house, frame) -> Report`; one module per question (physical, analysis, boards, code, prefab, cost), read in the order `__init__.py` lists |
 | `frameevolve/houses.py` | procedural houses: blocks, storeys, openings, stairs, roofs; `generate(seed)`, `toy()` |
 | `frameevolve/render.py` | elevations and an axonometric as PNGs, for the proposer |
 | `frameevolve/search.py` | the GEPA-style search: `Run`, `evaluate` (separate processes, cached), Pareto set |
@@ -32,7 +33,7 @@ learn something). Imperial units, inches in code.
   targets and faults name their surface as `surface`.
 - Small and tidy: delete rather than keep dead code; no compatibility shims; one way to do each thing.
 - Docstrings say what and why in a sentence or two. Comments explain a choice, not the code.
-- Limits in `verifier.py` and `surface.py` carry the code reference in the comment beside them; the
+- Limits at the top of each `verifier/` module and `surface.py` carry the code reference in the comment beside them; the
   workbench reads those comments.
 - `references/` (codes, papers) and `reference_houses/` stay out of git.
 

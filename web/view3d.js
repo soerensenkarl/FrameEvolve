@@ -4,12 +4,13 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
-import { $, esc, ftin, S, SURF, FACE, st, finished, current, trigger, present, placedNow, goneNow, matchedMember,
-  surfaceList, isWall, kindName, faceName, shown3d, isActive, memberColour } from "./state.js";
+import { $, esc, ftin, S, SURF, FACE, GUIDE, st, finished, current, trigger, present, placedNow, goneNow, matchedMember,
+  surfaceList, isWall, kindName, faceName, shown3d, isActive, memberColour, byPanel, panelOf, guideShown, showTip,
+  hideTip } from "./state.js";
 import { select, showTab } from "./app.js";
 import { evidence, chosenFault } from "./inspect.js";
 
-export let renderer, labeler, scene, camera, controls, group, gapGroup, markGroup, surfGroup, targetGroup, evGroup;
+export let renderer, labeler, scene, camera, controls, group, gapGroup, markGroup, surfGroup, targetGroup, evGroup, guideGroup;
 export const meshes = new Map();   // member id -> its mesh in `group`
 export let surfs = [];   // per surface: {surface, mesh, line, label, opLabels}
 
@@ -49,7 +50,8 @@ export function setup3d() {
   surfGroup = new THREE.Group();
   targetGroup = new THREE.Group();
   evGroup = new THREE.Group();
-  scene.add(group, gapGroup, markGroup, surfGroup, targetGroup, evGroup);
+  guideGroup = new THREE.Group();
+  scene.add(group, gapGroup, markGroup, surfGroup, targetGroup, evGroup, guideGroup);
 
   new ResizeObserver(resize).observe(el);
   bindViewInput(renderer.domElement);
@@ -77,6 +79,24 @@ function bindViewInput(canvas) {
   });
   canvas.addEventListener("contextmenu", (e) => e.preventDefault());
   canvas.addEventListener("pointermove", (e) => { if (measure.on && !e.buttons) measureHover(e); });
+  // by panel, the member under the pointer names its panel
+  let hoverAt = null;
+  canvas.addEventListener("pointermove", (e) => {
+    if (!byPanel() || measure.on || e.buttons) { if (hoverAt !== null) { hoverAt = null; hideTip(); } return; }
+    if (hoverAt) { hoverAt = e; return; }
+    hoverAt = e;
+    requestAnimationFrame(() => {
+      const ev = hoverAt;
+      hoverAt = false;
+      if (!ev || !byPanel()) return;
+      const id = pick(ev).hit?.object.userData.id, m = id && st.byId[id];
+      if (!m) return hideTip();
+      const p = panelOf(m);
+      showTip(`${esc(m.id)} ${esc(m.role || m.rule)}: ${p ? `panel <b>${esc(p)}</b>` : "built on site"}`,
+        { left: ev.clientX, top: ev.clientY - 8, width: 0, bottom: ev.clientY }, "above");
+    });
+  });
+  canvas.addEventListener("pointerleave", () => { hoverAt = null; hideTip(); });
   canvas.addEventListener("pointerdown", (e) => { down = [e.clientX, e.clientY, e.button]; });
   canvas.addEventListener("pointerup", (e) => {
     if (zoomDrag) { zoomDrag = null; return; }
@@ -410,8 +430,9 @@ export function removeMember(id) {
 }
 
 export function startLiveDraw() {
-  // the view while a build streams in: no members, no marks; the surfaces come with the stream's first line
+  // the view while a build streams in: no members, no marks, no guides; the surfaces come with the stream's first line
   clear(group);
+  clear(guideGroup);
   meshes.clear();
   gapGroup.visible = markGroup.visible = false;
 }
@@ -423,6 +444,7 @@ export function render3d() {
   for (const m of st.data.members) addMember(m, new THREE.MeshStandardMaterial({ roughness: 0.85, transparent: true }), edgeMat);
   renderMarks();
   renderSurfaces();
+  renderGuides();
   if (st.fitFor !== st.data.house) {
     st.fitFor = st.data.house;
     fit();
@@ -489,8 +511,29 @@ export function look3d() {
       o.element.classList.toggle("faint", st.at > 0 && !active);
     }
   }
+  const guides = $("#showGuides").checked;
+  guideGroup.visible = guides;
+  if (guides) for (const o of guideGroup.children) o.visible = guideShown(o.userData.guide) && shown3d(o.userData.guide.surface);
   renderTarget3d();
   renderEvidence3d();
+}
+
+function renderGuides() {
+  // guide lines, thin and dashed, a hair off the surface they lie on (plan guides just above the ground)
+  clear(guideGroup);
+  const mats = {};
+  const mat = (kind) => mats[kind] || (mats[kind] = new THREE.LineDashedMaterial({ color: GUIDE[kind] || GUIDE.grid,
+    dashSize: 0.1, gapSize: 0.07, transparent: true, opacity: kind === "panel joint" ? 0.9 : 0.45 }));
+  for (const g of st.data.guides) {
+    const s = st.surf[g.surface];
+    const off = s ? new THREE.Vector3(...s.ew).multiplyScalar(-0.006) : new THREE.Vector3(0, 0, 0.003);
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(g.world.map((p) =>
+      new THREE.Vector3(...p.map((x) => x * S)).add(off))), mat(g.kind));
+    line.computeLineDistances();
+    line.userData.guide = g;
+    line.renderOrder = 4;
+    guideGroup.add(line);
+  }
 }
 
 // ---------------------------------------------------------------- marks on a surface: the step's target, a fault's evidence

@@ -154,12 +154,11 @@ def spans(s: Site) -> list[Fault]:
                                 f"{name(m)} bears only {inches(s1 - s0)} on {name(s.by_id[n])}, minimum {inches(least)}",
                                 [s.by_id[n]]))
         reach = sup[0][1]
-        for s0, s1, n in sup[1:]:
+        for s0, s1, n in sup[1:]:      # no table (a beam or header in a floor, a rim): analysis.py checks it
             gap = s0 - reach
-            if gap > EPS and (limit is None or gap > limit + EPS):
+            if limit is not None and gap > limit + EPS:
                 out.append(s.at(m, point((reach + s0) / 2), "span", True,
-                                f"{name(m)} spans {ftin(gap)} clear between supports, limit "
-                                f"{ftin(limit) + ' for ' + kind if limit else 'none: ' + kind}"))
+                                f"{name(m)} spans {ftin(gap)} clear between supports, limit {ftin(limit)} for {kind}"))
             reach = max(reach, s1)
         for over in (sup[0][0] - a0, a1 - max(s1 for _, s1, _ in sup)):
             if over > MAX_OVERHANG + EPS:

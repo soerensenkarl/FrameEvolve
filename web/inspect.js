@@ -2,7 +2,7 @@
 // before/after demo on the toy house), the Verifier tab (the score, every check, each fault with its
 // evidence), the Report tab, and the build timeline under the view (the strip of firings and stepping).
 import { $, esc, ftin, inch, num, pill, PAST, st, finished, trigger, stepNo, current, stopPlay, api, dirty,
-  faceName, shown3d, chosenFault, showTip, hideTip } from "./state.js";
+  faceName, shown3d, chosenFault, showTip, hideTip, panelOf, panelColour } from "./state.js";
 import { select, renderRules } from "./app.js";
 import { look3d, renderMarks, zoomTo } from "./view3d.js";
 import { renderElev, renderStoreys, renderCaption, scrollElevTo, memberSvg, outlinePath, surfPath, openingRect,
@@ -56,6 +56,7 @@ export function renderInspect() {
     ${m.removed ? `<p class="empty">Removed later in the build.</p>` : ""}
     <table class="kv">
       <tr><td>rule</td><td><span class="chip" data-rule="${esc(m.rule)}"><i style="background:${st.colors[m.rule]}"></i>${esc(m.rule)}</span></td></tr>
+      <tr><td>panel</td><td>${panelOf(m) ? `<span class="chip"><i style="background:${panelColour(panelOf(m))}"></i>${esc(panelOf(m))}</span> <span class="muted">${st.data.members.filter((x) => x.panel === m.panel && !x.removed).length} members</span>` : "built on site"}</td></tr>
       <tr><td>section</td><td>${esc(m.section)}</td></tr>
       <tr><td>length</td><td>${ftin(m.length)}</td></tr>
       <tr><td>surface</td><td>${m.surface ?? "-"}${st.surf[m.surface] ? `, storey ${st.level[m.surface]}` : ""}</td></tr>
