@@ -549,6 +549,9 @@ def strength(s: Site, b: Beam) -> Fault | None:
         at = min(m.start, m.end, key=lambda p: p[2])
     else:
         what = f"bending {stress:,.0f} psi, allowed {allowed:,.0f} psi for a {m.section} SPF No. 2"
+        if b.riders:   # say that the plies resting on it were counted: they bend with it
+            what += (f", with {', '.join(r.id for r in b.riders)} resting along it and bending with it "
+                     f"({1 + len(b.riders)} plies together)")
         at = b.world(x)
     return s.at(m, at, "strength", True, f"{name(m)} carries {lb(carried)} ({label}); {what}")
 
