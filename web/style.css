@@ -499,3 +499,22 @@ body.view-panels #timeline, body.view-faults #timeline { display: none; }
 /* tools that act on the 3D view sit in its corner */
 #canvasTools { position: absolute; top: 8px; right: 8px; z-index: 5; display: flex; gap: 4px; }
 #canvasTools button.tool { margin: 0; font-size: 12px; background: rgba(255, 255, 255, .85); backdrop-filter: blur(4px); }
+
+/* the house picker: the current house drawn in the header, every house as a card below it */
+#housePick { display: flex; align-items: center; gap: 7px; padding: 2px 9px 2px 4px; }
+#housePick span { font-weight: 600; color: var(--text); }
+#housePick small { color: var(--muted); font-size: 11px; }
+#housePick.on { border-color: var(--accent); }
+#housePop { position: absolute; top: 46px; left: 60px; z-index: 50; width: min(820px, calc(100vw - 80px)); max-height: 72vh;
+  overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, .12); padding: 10px; }
+.hgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
+.hcard { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 6px 8px 8px; text-align: left;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--bg, #fff); }
+.hcard:hover { border-color: #b9c6d6; }
+.hcard.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.hcard small { color: var(--muted); font-size: 11px; }
+.sketch { display: block; }
+.sketch .wall { fill: #efe9de; stroke: #8e877b; stroke-width: .7; stroke-linejoin: round; }
+.sketch .roof { fill: #c8b39b; stroke: #85735f; stroke-width: .7; stroke-linejoin: round; }
+.hcard .sketch { margin: 0 auto 4px; }

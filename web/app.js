@@ -10,6 +10,7 @@
 import * as THREE from "three";
 import { $, esc, num, oneLine, PALETTE, SITE, st, finished, applied, trigger, current, present, runsMode, stopPlay, api,
   status, remember, recall, loadLists, dirty, surfaceList, hideTip, byPanel } from "./state.js";
+import "./houses.js";
 import { setup3d, resize, render3d, look3d, renderSurfaces, fit, startLiveDraw, addMember, removeMember, edgeMaterial,
   measuring, setMeasure, meshes } from "./view3d.js";
 import { renderElev, renderStoreys, renderCaption, scrollElevTo } from "./elevations.js";
@@ -24,14 +25,25 @@ import { startLive, setFollow } from "./live.js";
 
 // Build: frame the house from scratch and draw each piece the moment the server places it, at the build's
 // own speed; the full frame and its verification follow when the build is done. True when it built.
+let building = null;   // the build in progress: a new one (another house, Regenerate, an edit) ends it
+
 export async function build(keepStep = false) {
+  building?.abort();
+  const mine = building = new AbortController();
   stopPlay();
   status("framing...");
   const was = st.data && !finished() ? st.at : null;   // a live draft rebuilds where the user is stepping
   const body = { house: $("#house").value, grammar: $("#grammar").value };
   if (dirty()) body.source = $("#src").value;
   const t0 = performance.now();
-  const res = await fetch("/api/build", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  let res;
+  try {
+    res = await fetch("/api/build", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body), signal: mine.signal });
+  } catch (e) {
+    if (mine.signal.aborted) return false;      // a newer build took over
+    throw e;
+  }
   if (!res.ok || !res.body) { status((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`, true); return false; }
   startLiveDraw();
   const colors = { ...st.colors }, panels = {}, edgeMat = edgeMaterial();
@@ -60,13 +72,17 @@ export async function build(keepStep = false) {
     } else if (msg.frame) frame = msg.frame;
   };
   for (;;) {
-    const { done, value } = await reader.read();
+    let got;
+    try { got = await reader.read(); } catch (e) { if (mine.signal.aborted) return false; throw e; }
+    if (mine.signal.aborted) return false;      // stopped: the server stops building when the page stops listening
+    const { done, value } = got;
     if (done) break;
     buf += dec.decode(value, { stream: true });
     const lines = buf.split("\n");
     buf = lines.pop();
     for (const l of lines) if (l.trim()) handle(JSON.parse(l));
   }
+  if (building === mine) building = null;
   if (!frame || frame.error) { status(frame?.error || "the build stopped before it finished", true); return false; }
   st.data = frame;
   index();

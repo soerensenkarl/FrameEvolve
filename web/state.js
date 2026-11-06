@@ -159,6 +159,7 @@ export async function loadLists(houseId) {
   fill($("#house"), houseList.map((h) => [h.id,
     `${h.id}   ${ftin(h.size[0])} x ${ftin(h.size[1])}, ${h.openings} openings`]),
     houseId || recall("house"));
+  document.dispatchEvent(new Event("houses"));      // the house picker redraws
   grammarList = await api("GET", "/api/grammars");
   const label = (g) => (g.includes(".") ? `run ${g.split(".")[0]}: ${g.split(".")[1]}` : g);
   fill($("#grammar"), grammarList.map((g) => [g, label(g)]), $("#grammar").value || recall("grammar") || "seed");

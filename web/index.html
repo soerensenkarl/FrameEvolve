@@ -13,7 +13,8 @@
 <body>
 <header>
   <span class="brand">FrameEvolve</span>
-  <label>House <select id="house"></select></label>
+  <label>House <select id="house" hidden></select><button id="housePick" title="Choose a house: every house, drawn"></button></label>
+  <div id="housePop" hidden></div>
   <button id="newHouse" title="Generate a random house and build it">New house</button>
   <label>Grammar <select id="grammar"></select></label>
   <button id="rebuild" class="primary" title="Frame this house from scratch with this grammar, and time it (Cmd+Enter)">Regenerate</button>

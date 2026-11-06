@@ -325,6 +325,19 @@ def frame_payload(house: House, frame: Frame, source: str) -> dict:
     }
 
 
+def house_card(h: House) -> dict:
+    """A house as the house picker shows it: its size, kind and storeys, and its outside as polygons in the world
+    (exterior walls with their gables, and roof planes), for a small drawing."""
+    xs = [q[0] for w in h.walls for q in (w.start, w.end)]
+    ys = [q[1] for w in h.walls for q in (w.start, w.end)]
+    polys = [{"k": "wall", "p": [[round(c, 1) for c in w.world(u, v, 0)] for u, v in w.outline_uv]}
+             for w in h.walls if w.role == "exterior"]
+    polys += [{"k": "roof", "p": [[round(c, 1) for c in r.world(u, v, 0)] for u, v in r.outline_uv]} for r in h.roofs]
+    return {"id": h.id, "kind": h.kind, "walls": len(h.walls), "storeys": len({round(w.base, 3) for w in h.walls}),
+            "openings": sum(len(x.openings) for x in h.surfaces),
+            "size": [round(max(xs) - min(xs)), round(max(ys) - min(ys))], "polys": polys}
+
+
 def guide_payload(house: House, gd) -> dict:
     """A guide with its ends in the world, for drawing: on its surface, or in plan at the ground."""
     if gd.surface:
@@ -566,15 +579,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(200, f.read_bytes(), TYPES.get(f.suffix, "application/octet-stream"))
                 return self.send(404, {"error": "not found"})
             if path == "/api/houses":
-                out = []
-                for p in sorted(HOUSES.glob("*.json")):
-                    h = House.load(p)
-                    xs = [p[0] for w in h.walls for p in (w.start, w.end)]
-                    ys = [p[1] for w in h.walls for p in (w.start, w.end)]
-                    out.append({"id": h.id, "walls": len(h.walls), "storeys": len({round(w.base, 3) for w in h.walls}),
-                                "openings": sum(len(x.openings) for x in h.surfaces),
-                                "size": [round(max(xs) - min(xs)), round(max(ys) - min(ys))]})
-                return self.send(200, out)
+                return self.send(200, [house_card(House.load(f)) for f in sorted(HOUSES.glob("*.json"))])
             if path == "/api/verifier":
                 return self.send(200, verifier_info())
             if path == "/api/grammars":
