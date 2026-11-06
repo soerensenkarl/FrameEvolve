@@ -298,11 +298,15 @@ class State:
 
     def trim(self, m: Member, other: Member) -> None:
         """Cut m back to the face of `other` it runs into: whatever of m lies in or past that face comes off.
-        The face is where m's centreline, from its end further from other, enters other; if the centreline
-        misses other, the face m's middle lies furthest outside of."""
+        The face is where m's centreline, from its end further from other's centreline, enters other; if the
+        centreline misses other, the face m's middle lies furthest outside of."""
         planes = solid.box_planes(other.start, other.end, other.up, other.width, other.depth)
-        oc = tuple((other.start[k] + other.end[k]) / 2 for k in range(3))
-        far = lambda p: sum((p[k] - oc[k]) ** 2 for k in range(3))
+        ax = unit(tuple(other.end[k] - other.start[k] for k in range(3)))
+
+        def far(p):   # squared distance from other's centreline
+            q = tuple(p[k] - other.start[k] for k in range(3))
+            t = dot(q, ax)
+            return sum((q[k] - t * ax[k]) ** 2 for k in range(3))
         p0, p1 = (m.start, m.end) if far(m.start) >= far(m.end) else (m.end, m.start)
         d = tuple(p1[k] - p0[k] for k in range(3))
         enter, leave, face = 0.0, 1.0, None
@@ -321,6 +325,16 @@ class State:
             face = max(planes, key=lambda pl: dot(pl[0], c) - pl[1])
         n, h = face
         self._reshape(m, cut=(mul(n, -1), -h))
+
+    def under(self, m: Member, other: Member) -> None:
+        """Cut m along the underside of `other` (its face that looks most downward): what of m is above comes off."""
+        n, d = min(solid.box_planes(other.start, other.end, other.up, other.width, other.depth), key=lambda pl: pl[0][2])
+        self._reshape(m, cut=(mul(n, -1), -d))
+
+    def fit(self, m: Member, *surfaces) -> None:
+        """Take off what of m lies above all of these surfaces at once: one surface is a cut flush with its
+        plane; two roof planes meeting in a valley groove a valley rafter's top to both."""
+        self._reshape(m, notch=[(x.ew, dot(x.ew, x.origin)) for x in surfaces])
 
     def notch(self, m: Member, other: Member, below: bool = False) -> None:
         """Cut a notch in m where `other`'s box is, so the two fit together. below=True also takes off everything

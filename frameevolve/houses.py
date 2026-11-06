@@ -4,9 +4,12 @@ A house is a main block (two or three storeys) with up to two wings: a box, an L
 lower wing to one side) or a U. Each storey's exterior walls trace the outline of the blocks that reach it,
 split where one block meets the next; where two blocks meet inside, a junction wall carries the floors. A block
 too deep for one joist span gets a spine partition down its middle; the main block gets cross partitions; a
-stair opening goes through every floor. Doors and windows go in last, clear of every junction. A box house gets
-a gable roof: two roof planes, gable end walls up to them, and a ceiling on the top storey's walls. (Roofs over
-L, T, ell and U houses, where roofs meet in valleys, come next.)
+stair opening goes through every floor. Doors and windows go in last, clear of every junction.
+
+Every block gets a gable roof, a ceiling on its top storey's walls, and gable walls at its free ends. The main
+block's ridge runs along x; a wing's ridge runs away from the main block. A wing as tall as the main block meets
+the main roof in valleys (a cross gable), and the main roof's back plane gives way under it; a lower wing's roof
+stops against the main block's wall, pitched low enough to stay under its eave.
 
 The house gives only surfaces and openings: which walls bear, and how, is the grammar's business. Inches.
 """
@@ -55,7 +58,8 @@ def blocks_for(rng: random.Random, kind: str) -> list[Block]:
         return main + [Block("wing", x0, D, x0 + ww, D + wd, wn)]
     if kind == "ell":
         return main + [Block("ell", W, 0.0, W + wd, min(ww, D), rng.randint(1, n - 1))]
-    if kind == "U":
+    if kind == "U":     # the wings keep 4 ft apart, so their roofs do too
+        ww = min(ww, 24.0 * ((W - 48) // 48))
         return main + [Block("left", 0.0, D, ww, D + wd, wn), Block("right", W - ww, D, W, D + wd, rng.randint(1, n))]
     return main
 
@@ -165,31 +169,80 @@ def generate(seed: int) -> House:
     stairs(rng, house, blocks[0])
     for w in house.walls:
         openings(rng, w)
-    if kind == "box":
-        gable(rng, house, blocks[0], top)
+    roofs(rng, house, blocks, top)
     house.link()
     return house
 
 
-def gable(rng, house: House, b: Block, top: float, pitch: float | None = None) -> None:
-    """A gable roof over a block: ridge along x, eaves front and back, the end walls of its top storey made
-    gable walls reaching up to the roof planes, and a ceiling on the top storey's walls."""
-    k = b.storeys
-    base = (k - 1) * LEVEL
-    W, D = b.x1 - b.x0, b.y1 - b.y0
-    run = D / 2 + EAVE
-    if pitch is None:
-        pitch = rng.choice([p for p in PITCHES if run * math.hypot(1, p / 12) <= LONGEST] or [PITCHES[0]])
-    s = pitch / 12
-    z, V = base + top + HEEL - EAVE * s, run * math.hypot(1, s)
-    plane = [(0.0, 0.0), (W, 0.0), (W, V), (0.0, V)]
-    house.roofs += [Roof("r1", (b.x0, b.y0 - EAVE), (b.x1, b.y0 - EAVE), z, pitch, plane),
-                    Roof("r2", (b.x1, b.y1 + EAVE), (b.x0, b.y1 + EAVE), z, pitch, list(plane))]
-    for w in house.walls:
-        if w.base == base and w.role == "exterior" and w.start[0] == w.end[0] in (b.x0, b.x1):
-            L, H = w.length, top + HEEL
-            w.height, w.outline = H, [(0.0, 0.0), (L, 0.0), (L, H), (L / 2, H + s * L / 2), (0.0, H)]
-    house.floors.append(Floor("c", [(b.x0, b.y0), (b.x1, b.y0), (b.x1, b.y1), (b.x0, b.y1)], base + top, role="ceiling"))
+def roofs(rng, house: House, blocks: list[Block], top: float, pitch: float | None = None) -> None:
+    """A gable roof over every block, a ceiling on its top storey, gable walls at its free ends."""
+    main, O = blocks[0], EAVE
+    W, D = main.x1, main.y1
+    pitch = pitch or pitch_for(rng, D / 2, 1e9)
+    eave = lambda b: (b.storeys - 1) * LEVEL + top + HEEL - O * pitch_of[b.name] / 12
+    pitch_of = {"main": pitch}
+    tall = [b for b in blocks[1:] if b.name != "ell" and b.storeys == main.storeys]
+    for b in blocks[1:]:
+        gap = (main.storeys - b.storeys) * LEVEL - HEEL - 12   # a lower wing's ridge stays under the main eave
+        half = (b.x1 - b.x0 if b.name != "ell" else b.y1 - b.y0) / 2
+        pitch_of[b.name] = pitch if b in tall else pitch_for(rng, half, gap / half * 12)
+
+    def profile(x):     # the main back plane's eave edge, giving way to the valleys of tall wings
+        return min([D + O] + [D - (w.x1 - w.x0) / 2 + abs(x - (w.x0 + w.x1) / 2) for w in tall
+                              if w.x0 - O <= x <= w.x1 + O])
+    xs = sorted({0.0, W} | {x for w in tall for x in (w.x0 - O, (w.x0 + w.x1) / 2, w.x1 + O) if 0 < x < W}, reverse=True)
+    planes = [("r1", (0.0, -O), (W, -O), main, [(0.0, -O), (W, -O), (W, D / 2), (0.0, D / 2)]),
+              ("r2", (W, D + O), (0.0, D + O), main, [(0.0, D / 2), (W, D / 2)] + [(x, profile(x)) for x in xs])]
+    for b in blocks[1:]:
+        k = b.name[0]
+        if b.name == "ell":         # ridge along x, against the main block's side wall at x = W
+            yc = (b.y0 + b.y1) / 2
+            planes += [(f"r{k}1", (b.x0, b.y0 - O), (b.x1, b.y0 - O), b, [(b.x0, b.y0 - O), (b.x1, b.y0 - O), (b.x1, yc), (b.x0, yc)]),
+                       (f"r{k}2", (b.x1, b.y1 + O), (b.x0, b.y1 + O), b, [(b.x1, b.y1 + O), (b.x0, b.y1 + O), (b.x0, yc), (b.x1, yc)])]
+            continue
+        xc, half = (b.x0 + b.x1) / 2, (b.x1 - b.x0) / 2   # ridge along y, away from the main block's back wall
+        near, top_ = ((D + O, D - half) if b in tall else (D, D))
+        planes += [(f"r{k}1", (b.x0 - O, b.y1), (b.x0 - O, D), b, [(b.x0 - O, b.y1), (b.x0 - O, near), (xc, top_), (xc, b.y1)]),
+                   (f"r{k}2", (b.x1 + O, D), (b.x1 + O, b.y1), b, [(b.x1 + O, near), (b.x1 + O, b.y1), (xc, b.y1), (xc, top_)])]
+    for rid, a, e, b, pts in planes:
+        house.roofs.append(plane(rid, a, e, eave(b), pitch_of[b.name], pts))
+    for b in blocks:
+        H, sb = top + HEEL, pitch_of[b.name] / 12
+        across = b.name in ("main", "ell")      # the gable ends: across the ridge
+        for w in house.walls:
+            if w.base == (b.storeys - 1) * LEVEL and w.role == "exterior" and gable_end(w, b, across):
+                L = w.length
+                w.height, w.outline = H, [(0.0, 0.0), (L, 0.0), (L, H), (L / 2, H + sb * L / 2), (0.0, H)]
+        house.floors.append(Floor("c" if b.name == "main" else f"c{b.name[0]}",
+                                  [(b.x0, b.y0), (b.x1, b.y0), (b.x1, b.y1), (b.x0, b.y1)],
+                                  (b.storeys - 1) * LEVEL + top, role="ceiling", axis=(1.0, 0.0) if across else (0.0, 1.0)))
+
+
+def gable_end(w: Wall, b: Block, across: bool) -> bool:
+    """True if wall w is a whole free end of block b's gable roof: across the ridge, on the block's edge."""
+    if across:     # ridge along x: the ends are at x0 and x1, except where the block is joined to another
+        return w.start[0] == w.end[0] and w.start[0] in (b.x0, b.x1) and \
+            {w.start[1], w.end[1]} == {b.y0, b.y1} and not (b.name == "ell" and w.start[0] == b.x0)
+    return w.start[1] == w.end[1] == b.y1 and {w.start[0], w.end[0]} == {b.x0, b.x1}
+
+
+def pitch_for(rng, half: float, most: float) -> float:
+    """A pitch whose rafters, over a half-width plus the eave, fit 20 ft stock, and no steeper than `most`."""
+    ok = [p for p in PITCHES if (half + EAVE) * math.hypot(1, p / 12) <= LONGEST and p <= most]
+    return rng.choice(ok) if rng and ok else (ok or [PITCHES[0]])[-1 if rng is None else 0]
+
+
+def plane(rid: str, a, e, z: float, pitch: float, pts) -> Roof:
+    """A roof plane from its eave line a to e (the plane rising to its left) and its outline in plan."""
+    d = math.dist(a, e)
+    eu = ((e[0] - a[0]) / d, (e[1] - a[1]) / d)
+    up = (-eu[1], eu[0])
+    u0 = min((x - a[0]) * eu[0] + (y - a[1]) * eu[1] for x, y in pts)
+    start = (a[0] + u0 * eu[0], a[1] + u0 * eu[1])
+    k = math.hypot(1, pitch / 12)
+    uv = [((x - start[0]) * eu[0] + (y - start[1]) * eu[1], ((x - start[0]) * up[0] + (y - start[1]) * up[1]) * k)
+          for x, y in pts]
+    return Roof(rid, start, (start[0] + eu[0], start[1] + eu[1]), z, pitch, [(round(u, 6), round(v, 6)) for u, v in uv])
 
 
 def storey(rng, house: House, k: int, here: list[Block], top: float) -> None:
@@ -204,6 +257,9 @@ def storey(rng, house: House, k: int, here: list[Block], top: float) -> None:
             house.walls.append(Wall(f"{k}w{n}", a, b, height(o), base))
             n += 1
     for j, (a, b, o1, o2) in enumerate(_merge(shared)):
+        left = _left(a, b, o1, o2)
+        if (left.storeys, left.name == "main") < max((o.storeys, o.name == "main") for o in (o1, o2)):
+            a, b = b, a     # framed from the taller block's side (the main block's, if as tall): it owns the wall
         house.walls.append(Wall(f"{k}j{j}", a, b, height(o1, o2), base, role="interior"))
     for b in here:
         if b.y1 - b.y0 > SPAN:
@@ -222,6 +278,14 @@ def _merge(shared):
         else:
             out.append((a, b, o1, o2))
     return out
+
+
+def _left(a, b, o1: Block, o2: Block) -> Block:
+    """Which of two blocks lies to the left of a to b, where a wall from a to b frames."""
+    mx, my = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
+    nx, ny = -(b[1] - a[1]), b[0] - a[0]
+    d = (nx * nx + ny * ny) ** 0.5
+    return o1 if o1.holds(mx + nx / d, my + ny / d) else o2
 
 
 def cross(rng, house: House, k: int, main: Block, base: float, height: float) -> None:
@@ -248,8 +312,8 @@ def stairs(rng, house: House, main: Block) -> None:
         y = main.y0 + 24
         if all(not (x - 30 < wx < x + 66) for wx in walls_x) and y + 120 <= spine - 12:
             for f in house.floors:
-                cx, cy = f.corner
-                f.openings.append(Opening(f"{f.id}o0", "stair", x - cx, x + 36 - cx, y - cy, y + 120 - cy))
+                (u0, v0, _), (u1, v1, _) = f.local((x, y, f.z)), f.local((x + 36, y + 120, f.z))
+                f.openings.append(Opening(f"{f.id}o0", "stair", min(u0, u1), max(u0, u1), min(v0, v1), max(v0, v1)))
             return
 
 
@@ -278,6 +342,6 @@ def toy() -> House:
     add_opening(house.wall("1w0"), "window", 24, 36, 48)
     add_opening(house.wall("1w0"), "door", 70, 38, HEAD)
     add_opening(house.wall("2w0"), "window", 60, 48, 48)
-    gable(None, house, blocks[0], 97.125, pitch=8)
+    roofs(None, house, blocks, 97.125, pitch=8)
     house.link()
     return house

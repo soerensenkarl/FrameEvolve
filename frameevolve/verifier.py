@@ -14,7 +14,7 @@ from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, field
 
 from frameevolve import surface
-from frameevolve.geometry import EPS, Vec, cross, dot
+from frameevolve.geometry import EPS, Vec
 from frameevolve.graph import GROUND, Graph, build_graph
 from frameevolve.model import SECTIONS, STOCK, Floor, Frame, House, Member, Roof, Wall
 from frameevolve.units import ftin, inches
@@ -173,7 +173,8 @@ def supported(g, by_id: dict[str, Member]) -> set[str]:
                     todo.append(a)
 
 
-def rafter(m: Member, g: Graph, by_id: dict[str, Member], held: set[str], at_wall) -> list[Fault]:
+def rafter(m: Member, roof: Roof, g: Graph, by_id: dict[str, Member], held: set[str], framing: set[str],
+           roofs: set[str], at_wall) -> list[Fault]:
     """A sloped member of a roof. Its span is measured level between what it rests on, and what it butts against
     at its top (a ridge board). Unless it also rests on something in the top third of its rise (a gable wall,
     a beam), it needs a tie against thrust: something level nailed to its side in the lower third."""
@@ -201,12 +202,20 @@ def rafter(m: Member, g: Graph, by_id: dict[str, Member], held: set[str], at_wal
                                f"{ftin(limit) if limit else 'none for a ' + m.section + ' rafter'}"))
     lo, hi = m.box.lo[2], m.box.hi[2]
     if any(point(t)[2] >= lo + 2 * (hi - lo) / 3 for t in rests):
-        return out
-    level = lambda o: abs(o.end[2] - o.start[2]) < 0.05 * o.length
-    across = cross(tuple(a), m.up)                       # a tie is nailed to the rafter's side face
-    on_side = lambda n: abs(dot(g.facing[(m.id, n)], across)) > 0.9
-    if not any(n in held and level(by_id[n]) and on_side(n) and point(where(n))[2] <= lo + (hi - lo) / 3
-               for n in g.side[m.id]):
+        return out           # it rests on something high up (a gable wall, a beam)
+    ev = roof.ev
+    if abs(a[0] * ev[0] + a[1] * ev[1]) < 0.99 * run * math.hypot(ev[0], ev[1]):
+        return out           # a hip or valley rafter, across the slope: its thrust is not checked yet
+    low = 0.0 if a[2] > 0 else m.length
+    contacts = [(abs(where(n) - low), n in g.side[m.id] and by_id[n].surface in roofs)
+                for n in [*g.bears[m.id], *g.side[m.id]] if n in held]
+    if contacts and min(contacts)[1] and min(contacts)[0] < 3 * m.depth:
+        return out           # its foot hangs on a valley or hip (a jack): that carries it
+    def tie(n: str) -> bool:   # level ceiling or roof framing nailed to its side or under it, low down
+        o = by_id[n]
+        return (n in held and abs(o.end[2] - o.start[2]) < 0.05 * o.length and o.surface in framing
+                and point(where(n))[2] <= lo + (hi - lo) / 3)
+    if not any(map(tie, [*g.side[m.id], *g.bears[m.id]])):
         out.append(at_wall(m, point(m.length / 4), "thrust", True,
                            f"{_name(m)} has no tie nailed to it in the lower third of its rise (a ceiling joist or "
                            f"rafter tie), so it pushes its wall out"))
@@ -316,7 +325,8 @@ def verify(house: House, frame: Frame) -> Report:
     # rafters: span, measured level between supports, and a tie against thrust
     for m in frame.members:
         if isinstance(surfs.get(m.surface), Roof) and m.id in grounded and not _vertical(m):
-            faults += rafter(m, g, by_id, grounded, at_wall)
+            faults += rafter(m, surfs[m.surface], g, by_id, grounded, {x.id for x in house.floors + house.roofs},
+                             {x.id for x in house.roofs}, at_wall)
 
     # faces of every surface: sheathing and drywall on walls, subfloor and ceiling on floors, roof sheathing
     boards = {("roof", "outer"): "roof sheathing", ("ceiling", "outer"): "ceiling", ("floor", "outer"): "subfloor",

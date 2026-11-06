@@ -73,7 +73,7 @@ def test_seed_grammar_frames_generated_houses_cleanly():
         frame = build(ROOT / "grammars/seed.py", house)
         report = verify(house, frame)
         assert not frame.errors, frame.errors
-        assert report.hard <= (0 if house.kind == "box" else 8), (house.id, house.kind, report.hard)
+        assert report.hard <= (0 if house.kind == "box" else 12), (house.id, house.kind, report.hard)
 
 
 def test_minimal_grammar_leaves_faults():

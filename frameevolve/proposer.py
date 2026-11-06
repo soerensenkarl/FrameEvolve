@@ -53,7 +53,7 @@ def api_reference() -> str:
              + f". s.STOCK: stock lengths {', '.join(map(str, STOCK))} (8 to 20 ft).",
              "A member has id, section, rule, surface (its surface id), role (a free label), length, width, depth, "
              "start, end, up, box (lo, hi world corners), points, cuts and notches.", ""]
-    for name in ["place", "put", "cut", "trim", "notch", "remove", "members", "local", "overlapping", "bears_on",
+    for name in ["place", "put", "cut", "trim", "under", "notch", "fit", "remove", "members", "local", "overlapping", "bears_on",
                  "carries", "beside", "gaps", "below", "above", "free"]:
         fn = getattr(builder.State, name)
         doc = " ".join((inspect.getdoc(fn) or "").split())

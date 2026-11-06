@@ -154,9 +154,10 @@ class Floor(Surface):
     with role "ceiling", the ceiling under a roof: z is the underside of its framing (the drywall), on the walls'
     top, and w runs up into the attic framing; only its underside gets boards.
 
-    outline: its plan shape, counter-clockwise. Local coordinates: u along x and v along y from the corner of
-    its bounding box, w into the framing (down for a floor). bearers are the walls under it, loads the walls
-    standing on it; both are worked out from the geometry. Openings (stairs) are rectangles in u, v.
+    outline: its plan shape, counter-clockwise. Local coordinates: u along `axis` (x unless turned) and v square
+    to it, from the corner of its bounding box in u, v; w into the framing (down for a floor). bearers are the
+    walls under it, loads the walls standing on it; both are worked out from the geometry. Openings (stairs)
+    are rectangles in u, v.
     """
     id: str
     outline: list[tuple[float, float]]
@@ -165,20 +166,28 @@ class Floor(Surface):
     openings: list[Opening] = field(default_factory=list)
     bearers: list[Bearer] = field(default_factory=list)
     loads: list[Bearer] = field(default_factory=list)
+    axis: tuple[float, float] = (1.0, 0.0)
+
+    def _plan(self, x: float, y: float) -> tuple[float, float]:
+        a, b = self.axis
+        return (x * a + y * b, -x * b + y * a)
 
     @property
-    def corner(self) -> tuple[float, float]:
-        return (min(p[0] for p in self.outline), min(p[1] for p in self.outline))
+    def _box(self) -> tuple[float, float, float, float]:
+        us, vs = zip(*(self._plan(*p) for p in self.outline))
+        return min(us), min(vs), max(us), max(vs)
 
     @property
     def length(self) -> float:
-        """Bounding box extent along x."""
-        return max(p[0] for p in self.outline) - self.corner[0]
+        """Bounding box extent along u."""
+        u0, _, u1, _ = self._box
+        return u1 - u0
 
     @property
     def width(self) -> float:
-        """Bounding box extent along y."""
-        return max(p[1] for p in self.outline) - self.corner[1]
+        """Bounding box extent along v."""
+        _, v0, _, v1 = self._box
+        return v1 - v0
 
     @property
     def size(self) -> tuple[float, float]:
@@ -186,15 +195,17 @@ class Floor(Surface):
 
     @property
     def outline_uv(self) -> list[tuple[float, float]]:
-        cx, cy = self.corner
-        return [(x - cx, y - cy) for x, y in self.outline]
+        u0, v0, _, _ = self._box
+        return [(u - u0, v - v0) for u, v in (self._plan(*p) for p in self.outline)]
 
     @property
     def origin(self) -> Vec:
-        return (self.corner[0], self.corner[1], self.z)
+        u0, v0, _, _ = self._box
+        a, b = self.axis
+        return (u0 * a - v0 * b, u0 * b + v0 * a, self.z)
 
-    eu = property(lambda self: (1.0, 0.0, 0.0))
-    ev = property(lambda self: (0.0, 1.0, 0.0))
+    eu = property(lambda self: (self.axis[0], self.axis[1], 0.0))
+    ev = property(lambda self: (-self.axis[1], self.axis[0], 0.0))
     ew = property(lambda self: (0.0, 0.0, 1.0 if self.role == "ceiling" else -1.0))
     faces = property(lambda self: ("outer",) if self.role == "ceiling" else ("outer", "inner"))
 
@@ -269,6 +280,36 @@ class Roof(Surface):
         return self.z + run * self.slope
 
 
+def _shared(r: "Roof", a, b, q: "Roof", c, d) -> "Seam | None":
+    """The stretch where edge a-b of roof plane r lies along edge c-d of roof plane q, as a seam on r: a ridge if
+    level, a hip where the planes fall away from it, a valley where they rise from it."""
+    pa, pb = r.world(*a, 0), r.world(*b, 0)
+    if math.dist(pa, pb) < EPS:
+        return None
+    e = unit(sub(pb, pa))
+    off = lambda p: math.dist(p, add(pa, mul(e, dot(sub(p, pa), e))))
+    pc, pd = q.world(*c, 0), q.world(*d, 0)
+    if off(pc) > EPS or off(pd) > EPS:
+        return None
+    L = math.dist(pa, pb)
+    t0, t1 = sorted((dot(sub(pc, pa), e), dot(sub(pd, pa), e)))
+    t0, t1 = max(t0, 0.0), min(t1, L)
+    if t1 - t0 <= EPS:
+        return None
+    ends = [tuple(a[k] + (b[k] - a[k]) * t / L for k in range(2)) for t in (t0, t1)]
+    if abs(e[2]) < 1e-6:
+        kind = "ridge"
+    else:                     # a step into r, square to the edge: is q's plane above r there?
+        mid = tuple((ends[0][k] + ends[1][k]) / 2 for k in range(2))
+        n = (-(b[1] - a[1]), b[0] - a[0])
+        n = tuple(x / math.hypot(*n) for x in n)
+        step = [(mid[0] + s * n[0], mid[1] + s * n[1]) for s in (1.0, -1.0)]
+        inner = next(p for p in step if inside(p, r.outline_uv))
+        x, y, z = r.world(*inner, 0)
+        kind = "hip" if q.height(x, y) > z else "valley"
+    return Seam(q.id, ends[0], ends[1], kind)
+
+
 WALL_DERIVED = ("start_meets", "end_meets", "tees", "above", "below")
 FLOOR_DERIVED = ("bearers", "loads")
 ROOF_DERIVED = ("seams",)
@@ -322,8 +363,8 @@ class House:
             for w in self.walls:
                 if not (f.contains(w.start) and f.contains(w.end)):
                     continue
-                line = Bearer(w.id, w.role, (w.start[0] - f.corner[0], w.start[1] - f.corner[1]),
-                              (w.end[0] - f.corner[0], w.end[1] - f.corner[1]), (w.normal[0], w.normal[1]))
+                line = Bearer(w.id, w.role, f.local((*w.start, f.z))[:2], f.local((*w.end, f.z))[:2],
+                              f.local_dir(w.normal)[:2])
                 if abs(w.base + w.height - f.z) <= EPS:
                     w.above = f.id
                     f.bearers.append(line)
@@ -335,14 +376,11 @@ class House:
         for r in self.roofs:
             r.seams = []
         for r, q in ((r, q) for r in self.roofs for q in self.roofs if r.id < q.id):
-            ours = [(r.world(*a, 0), r.world(*b, 0), a, b) for a, b in zip(r.outline_uv, r.outline_uv[1:] + r.outline_uv[:1])]
-            theirs = [(q.world(*a, 0), q.world(*b, 0)) for a, b in zip(q.outline_uv, q.outline_uv[1:] + q.outline_uv[:1])]
-            for pa, pb, a, b in ours:
-                if any(math.dist(pa, x) <= EPS and math.dist(pb, y) <= EPS or math.dist(pa, y) <= EPS and math.dist(pb, x) <= EPS
-                       for x, y in theirs):
-                    level = abs(pa[2] - pb[2]) <= EPS
-                    r.seams.append(Seam(q.id, a, b, "ridge" if level else "hip"))
-
+            for a, b in zip(r.outline_uv, r.outline_uv[1:] + r.outline_uv[:1]):
+                for c, d in zip(q.outline_uv, q.outline_uv[1:] + q.outline_uv[:1]):
+                    seam = _shared(r, a, b, q, c, d)
+                    if seam:
+                        r.seams.append(seam)
     def to_dict(self) -> dict:
         return {"id": self.id, "kind": self.kind,
                 "walls": [{k: v for k, v in asdict(w).items() if k not in WALL_DERIVED} for w in self.walls],
@@ -357,7 +395,8 @@ class House:
                          "end": tuple(w["end"]), "openings": openings(w),
                          "outline": [tuple(p) for p in w["outline"]] if w.get("outline") else None}) for w in d["walls"]]
         floors = [Floor(**{**{k: v for k, v in f.items() if k not in FLOOR_DERIVED},
-                           "outline": [tuple(p) for p in f["outline"]], "openings": openings(f)})
+                           "outline": [tuple(p) for p in f["outline"]], "openings": openings(f),
+                           "axis": tuple(f.get("axis", (1.0, 0.0)))})
                   for f in d.get("floors", [])]
         roofs = [Roof(**{**{k: v for k, v in r.items() if k not in ROOF_DERIVED}, "start": tuple(r["start"]),
                          "end": tuple(r["end"]), "outline": [tuple(p) for p in r["outline"]], "openings": openings(r)})
