@@ -155,11 +155,45 @@ class Draft:
                     + " ".join(big))
         path = self.out / "check.py"
         path.write_text(self.src)
-        res = evaluate(path, [Path(h) for h in self.context["house_paths"]])
+        cache = self.context.get("cache")
+        res = evaluate(path, [Path(h) for h in self.context["house_paths"]], cache=Path(cache) if cache else None)
         total = [sum(r["score"][j] for r in res.values()) for j in range(3)]
         return (f"Check {self.checks} of {self.limit}. Total over these houses: {total[0]} hard, {total[1]} soft, "
                 f"cost {total[2]:.1f} (parent: {self.context['parent_batch']}).\n\n"
                 + "\n\n".join(r["text"] for r in res.values()))
+
+
+def _score(s) -> str:
+    return f"{s[0]} hard, {s[1]} soft, cost {s[2]:.1f}"
+
+
+def rejected_text(rejected: list[dict]) -> str:
+    """Earlier children of this parent that were not kept, so the proposer tries something else."""
+    if not rejected:
+        return ""
+    lines = ["Earlier edits to this parent that were not kept (try something different, or fix what went wrong):"]
+    for r in rejected:
+        why = r["error"] or (f"not better on its houses: {_score(r['child_batch'])} against the parent's "
+                             f"{_score(r['parent_batch'])}" if r.get("child_batch") else "not better")
+        note = " ".join((r.get("note") or "").split())
+        lines.append(f"- iteration {r['iteration']}: {why}." + (f" Its note: {note}" if note else ""))
+    return "\n".join(lines) + "\n\n"
+
+
+def inspirations_text(insp: list[dict]) -> str:
+    """Other grammars from the Pareto set that do better than the parent somewhere: ideas to borrow."""
+    if not insp:
+        return ""
+    parts = ["Other grammars from the search do better than the parent on some houses. Their code is below for "
+             "ideas; borrow what fits into the parent's rules, do not paste a whole grammar."]
+    for i in insp:
+        where = (f"better than the parent on training houses {', '.join(i['better_on'])}" if i["better_on"]
+                 else "better than the parent on houses you do not see")
+        note = " ".join((i.get("note") or "").split())
+        parts.append(f"## {i['id']}: {where}; total on training houses {_score(i['total'])}."
+                     + (f"\nIts author's note: {note}" if note else "")
+                     + f"\n```python\n{i['source'].rstrip()}\n```")
+    return "\n\n".join(parts) + "\n\n"
 
 
 def prompt(context: dict, images: bool, out: Path) -> tuple[str, list[dict]]:
@@ -170,8 +204,11 @@ def prompt(context: dict, images: bool, out: Path) -> tuple[str, list[dict]]:
     text = (f"The parent grammar is {context['parent']}. Its scores on every training house:\n{scores}\n\n"
             f"These houses are this round's test: {', '.join(context['houses'])}. The parent's total on them is "
             f"{pb[0]} hard, {pb[1]} soft, cost {pb[2]:.1f}. Their reports:\n\n{reports}\n\n"
-            + ("The pictures show each wall from outside, coloured by rule; red crosses mark hard faults and red "
-               "hatching marks sheathing with nothing behind it.\n\n" if images else "")
+            + ("For each house, in the order above, two pictures, members coloured by rule and red crosses marking hard "
+               "faults: first the whole frame in 3D from two opposite corners, then each wall from outside and each "
+               "roof plane from above, where red hatching marks boards with nothing behind them.\n\n" if images else "")
+            + rejected_text(context.get("rejected", []))
+            + inspirations_text(context.get("inspirations", []))
             + "Read the grammar with view_grammar, then improve it.")
     content = [{"type": "text", "text": text}]
     if images:

@@ -114,18 +114,30 @@ Pareto search keeps the grammars that do well across many houses.
 
 ## Search
 
-- optimize_anything / GEPA style. A pool of grammars, each scored on every training house. The Pareto
-  set is every grammar that is best on at least one house. A parent is drawn from it, weighted by the
-  number of houses it wins.
+- optimize_anything / GEPA style. Houses come in three sets: train (the proposer reads reports on these;
+  minibatches come from them), val (decides the Pareto set, the parents and the final grammar; its reports
+  are never shown) and test (scored only for the final grammar, into `test.json`). Default: h000-h009
+  train, h010-h019 val, no test. Reason: with one set, a result cannot be told from overfitting (GEPA
+  keeps its feedback and Pareto sets apart). A run without val uses train for both, as the first runs did.
+- A pool of grammars, each scored on every training and validation house. The Pareto set is every grammar
+  that is best on at least one validation house, less those dominated by another such grammar (GEPA,
+  Algorithm 2), so near-copies do not crowd the draw. A parent is drawn from it, weighted by the number of
+  houses it wins. The final grammar is the best total over validation.
 - Each iteration takes a minibatch of training houses (default 3). The proposer sees the parent on
   those houses and returns a child. The child is kept only if its summed score on the minibatch beats
-  the parent's; then it is scored on every training house and joins the pool.
+  the parent's; then it is scored on every training and validation house and joins the pool.
+- Cheap checks first (AlphaEvolve's evaluation cascade): a child must compile and pass the size limit, then
+  a smoke test on the smallest minibatch house refuses it if it crashes or raises more rule errors than the
+  parent there. That build is cached, so a child that passes costs nothing extra.
 - A size limit keeps rules atomic: no function in a grammar may exceed the run's `max_lines` code lines
   (default 12; docstrings, blanks and comments do not count). An oversized proposal is refused before it
   is evaluated, and the proposer's check tool reports it. Reason: the first real run merged jobs into
   32-line rules; small rules read better, give finer credit, and step more clearly.
-- Grammars are evaluated in a separate process with a timeout, since a proposed grammar is code no
-  person has read. A crash or timeout scores as failed.
+- Grammars are evaluated in separate processes with a timeout, since a proposed grammar is code no
+  person has read. A crash or timeout scores as failed. Houses are split over one process per core
+  (20 houses: 14 s to 3 s). Results and elevations are cached in `runs/<name>/cache/` by a hash of the
+  grammar, the house and the framework's code (optimize_anything), so a parent is never built twice and a
+  change to the builder or verifier never reuses old results. Failures are not cached.
 - Everything goes to `runs/<name>/`: config, candidates, grammars, one line per iteration, and per
   iteration what the proposer saw and did. The run folder is the truth; the workbench reads it.
 - `uv run python -m frameevolve evolve runs/<name> --iterations N` creates or continues a run.
@@ -137,7 +149,13 @@ Pareto search keeps the grammars that do well across many houses.
   through the Claude Agent SDK, signed in with a Claude subscription (the default, `--via subscription`),
   or the Anthropic API's tool runner (`--via api`).
 - It sees: the parent grammar, the parent's scores on every training house, the verifier's text reports
-  on the minibatch, and one elevation picture per minibatch house with hard faults marked.
+  on the minibatch, and two pictures per minibatch house with hard faults marked: the whole frame in 3D
+  from two opposite corners (roofs and floors are hard to judge from elevations), then the wall and roof
+  elevations. A picture that fails to draw is left out; it never fails the evaluation.
+- It also sees the last three children of this parent that were not kept, with why and their notes, so it
+  does not repeat them; and up to two inspirations (AlphaEvolve): other grammars in the Pareto set that beat
+  the parent on the most validation houses, with their code, notes and training scores. `--inspirations 0`
+  turns them off, for an ablation.
 - Its tools: view the draft, replace one exact piece of text, replace the whole file, and check the
   draft on the minibatch (a limited number of times, default 3). It ends with a note saying what it
   changed and why; the note is kept with the candidate.

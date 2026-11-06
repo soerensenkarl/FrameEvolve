@@ -1,6 +1,8 @@
 """Pictures of a frame: one elevation per wall, and an axonometric view. Members are coloured by rule."""
 from __future__ import annotations
 
+import math
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -62,23 +64,38 @@ def elevations(house: House, frame: Frame, path, marks: list[tuple[str, float, f
     plt.close(fig)
 
 
-def axonometric(house: House, frame: Frame, path, elev: float = 28, azim: float = -58) -> None:
+def axonometric(house: House, frame: Frame, path, elev: float = 28, azim: float = -58,
+                marks: list[tuple[float, float, float, str]] = (), views: list[tuple[float, float]] = ()) -> None:
+    """The whole frame in 3D, coloured by rule. marks: (x, y, z, label) world points drawn as red crosses, for
+    faults. views: (elevation, azimuth) pairs drawn side by side; one view from (elev, azim) if none given."""
     col = colours(frame)
-    fig = plt.figure(figsize=(10, 8))
-    ax = fig.add_subplot(projection="3d")
+    views = list(views) or [(elev, azim)]
+    fig = plt.figure(figsize=(10 * len(views), 8))
     faces, colors = [], []
     for m in frame.members:
         for piece in m.pieces:
             for _, _, pts in piece:
-                faces.append(pts)
-                colors.append(col[m.rule])
-    ax.add_collection3d(Poly3DCollection(faces, facecolors=colors, edgecolors="k", linewidths=0.1))
-    lo = [min(m.box.lo[k] for m in frame.members) for k in range(3)] if frame.members else [0, 0, 0]
-    hi = [max(m.box.hi[k] for m in frame.members) for k in range(3)] if frame.members else [1, 1, 1]
-    ax.set_xlim(lo[0], hi[0]); ax.set_ylim(lo[1], hi[1]); ax.set_zlim(lo[2], hi[2])
-    ax.set_box_aspect([max(hi[k] - lo[k], 1) for k in range(3)])
-    ax.view_init(elev, azim)
-    ax.set_axis_off()
-    ax.legend(handles=[Patch(fc=c, ec="k", label=r) for r, c in col.items()], fontsize=8, loc="upper left")
-    fig.savefig(path, dpi=110, bbox_inches="tight")
+                if all(math.isfinite(c) for p in pts for c in p):
+                    faces.append(pts)
+                    colors.append(col[m.rule])
+    ok = [m for m in frame.members if all(math.isfinite(c) for c in (*m.box.lo, *m.box.hi))]
+    lo = [min(m.box.lo[k] for m in ok) for k in range(3)] if ok else [0, 0, 0]
+    hi = [max(m.box.hi[k] for m in ok) for k in range(3)] if ok else [1, 1, 1]
+    for i, (e, a) in enumerate(views):
+        ax = fig.add_subplot(1, len(views), i + 1, projection="3d")
+        ax.computed_zorder = False           # fault crosses stay on top of the framing that hides them
+        ax.add_collection3d(Poly3DCollection(faces, facecolors=colors, edgecolors="k", linewidths=0.1), autolim=False)
+        if marks:
+            xs, ys, zs, _ = zip(*marks)
+            ax.scatter(xs, ys, zs, marker="x", s=160, linewidths=3, c="red", depthshade=False, zorder=10)
+        ax.set_xlim(lo[0], hi[0]); ax.set_ylim(lo[1], hi[1]); ax.set_zlim(lo[2], hi[2])
+        ax.set_box_aspect([max(hi[k] - lo[k], 1) for k in range(3)])
+        ax.view_init(e, a)
+        ax.set_axis_off()
+    handles = [Patch(fc=c, ec="k", label=r) for r, c in col.items()]
+    if len(views) == 1:
+        fig.axes[0].legend(handles=handles, fontsize=8, loc="upper left")
+    else:
+        fig.legend(handles=handles, fontsize=9, loc="lower center", ncol=min(len(handles), 7), frameon=False)
+    fig.savefig(path, dpi=110 if len(views) == 1 else 80, bbox_inches="tight")
     plt.close(fig)
