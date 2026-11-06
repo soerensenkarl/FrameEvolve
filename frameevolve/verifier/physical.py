@@ -207,7 +207,8 @@ def tie_lines(s: Site, framing: set[str]) -> dict[str, str]:
 def rafters(s: Site) -> list[Fault]:
     """Every rafter: its span measured level between what it rests on and the ridge it butts, by the table for
     its spacing; and unless it rests on something high up (a gable wall, a beam), a tie in the lower third of
-    its rise whose tie line also ties a rafter on the slope across the ridge. Hips, valleys and the jacks
+    its rise whose tie line reaches across the ridge: it also ties a rafter on the other slope, or runs across
+    the house in plan as far as the other eave. Hips, valleys and the jacks
     hanging on them are not checked for thrust yet. Ridges, hips and valleys must be as deep as the rafters'
     plumb cuts into them (code.ridges)."""
     from frameevolve.verifier.code import ridges
@@ -226,12 +227,31 @@ def rafters(s: Site) -> list[Fault]:
             if x.kind == "ridge":
                 opposite.setdefault(r.id, set()).add(x.other)
                 opposite.setdefault(x.other, set()).add(r.id)
+    members_of: dict[str, list] = {}
+    for k, line in lines.items():
+        members_of.setdefault(line, []).append(s.by_id[k])
     out, cut_ends = [], {}
     for m in rs:
         other = set().union(*(reach.get(q, set()) for q in opposite.get(m.surface, ())))
-        across = None if m.surface not in opposite else any(lines.get(n, n) in other for n in tied[m.id])
+        across = None if m.surface not in opposite else any(
+            lines.get(n, n) in other or spans_house(s, m, members_of.get(lines.get(n, n), [])) for n in tied[m.id])
         out += rafter(s, m, tied[m.id], across, roofs, cut_ends)
     return out + ridges(s, cut_ends)
+
+
+def spans_house(s: Site, m: Member, line: list[Member]) -> bool:
+    """Whether a tie line reaches from where rafter m bears across the house in plan, as far as the mirror of
+    its bearing beyond the ridge, less a foot: where the opposite eave wall is on a gable, even where a valley
+    takes the opposite rafters."""
+    a = axis(m)
+    run = math.hypot(a[0], a[1])
+    d = (a[0] / run, a[1] / run, 0.0) if a[2] > 0 else (-a[0] / run, -a[1] / run, 0.0)
+    rests = [dot(s.g.at[(m.id, n)], d) for n in s.g.bears[m.id]]
+    if not rests:
+        return False
+    foot, top = min(rests), max(dot(p, d) for p in m.points)
+    far = max((dot(p, d) for o in line for p in o.points), default=foot)
+    return far - foot >= 2 * (top - foot) - 12.0
 
 
 def rafter(s: Site, m: Member, tied: list[str], across: bool | None, roofs: set[str], cut_ends: dict) -> list[Fault]:
