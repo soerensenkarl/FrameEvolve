@@ -93,6 +93,13 @@ def main(argv=None) -> None:
     k.add_argument("--view", choices=["3d", "surface"], default="3d")
     k.add_argument("--surface", nargs="*", default=[], help="surfaces to show square on; default: most faults")
     k.add_argument("--colour", choices=["rule", "panel", "faults"], default="rule")
+    d = sub.add_parser("describe", help="a frame in exact words (the proposer's frame and trace tools)")
+    d.add_argument("grammar")
+    d.add_argument("house")
+    d.add_argument("--surface", default="", help="every member on this surface; default: an overview of all")
+    d.add_argument("--rule", default="", help="only this rule's members, or (with --trace) its firings")
+    d.add_argument("--trace", action="store_true", help="what the rule did, firing by firing")
+    d.add_argument("--raw", action="store_true", help="the surface's members as the frame stores them (JSON lines)")
     w = sub.add_parser("serve", help="open the workbench in a browser")
     w.add_argument("--port", type=int, default=8765)
     a = p.parse_args(argv)
@@ -152,6 +159,18 @@ def main(argv=None) -> None:
                               by=a.colour, faults=faults)
         print(json.dumps({"image": a.out, "score": list(report.score), "errors": frame.errors[:3],
                           "surfaces": [x.id for x in house.surfaces]}))
+    elif a.cmd == "describe":
+        from frameevolve import describe
+        house = House.load(a.house)
+        frame = build(a.grammar, house)
+        if a.trace:
+            print(describe.trace(house, frame, a.rule))
+        elif a.raw:
+            print(describe.raw(frame, a.surface))
+        else:
+            report = verify(house, frame)
+            print(describe.members(house, frame, report, a.surface, a.rule) if a.surface
+                  else describe.overview(house, frame, report))
     elif a.cmd == "serve":
         from frameevolve.server import serve
         serve(a.port)

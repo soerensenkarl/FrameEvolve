@@ -83,7 +83,7 @@ def house_id(path: Path) -> str:
     return House.load(path).id
 
 
-NOT_EVALUATION = {"server.py", "jobs.py", "proposer.py", "search.py"}   # code that does not change a result
+NOT_EVALUATION = {"server.py", "jobs.py", "proposer.py", "search.py", "describe.py"}   # code that does not change a result
 
 
 @lru_cache(maxsize=1)
@@ -195,6 +195,17 @@ def better(a: list, b: list) -> bool:
 
 def batch_total(res: dict, ids: list[str]) -> list:
     return [round(sum(res[h]["score"][j] for h in ids), 2) for j in range(3)]
+
+
+def overview(grammar: Path, house: Path) -> str:
+    """The frame a grammar builds on a house, surface by surface, in words (describe.overview), built in its own
+    process like every evaluation; empty if it fails."""
+    try:
+        p = subprocess.run([sys.executable, "-m", "frameevolve", "describe", str(grammar), str(house)], cwd=ROOT,
+                           capture_output=True, text=True, timeout=180)
+        return p.stdout.strip() if p.returncode == 0 else ""
+    except subprocess.TimeoutExpired:
+        return ""
 
 
 def compiles(src: str) -> str | None:
@@ -367,6 +378,7 @@ class Run:
             "pareto": dict(wins),
             "rejected": self.rejected(parent.id),
             "notebook": self.notebook(),
+            "overviews": {h: overview(self.grammar(parent.id), p) for h, p in zip(batch_ids, batch)},
             "inspirations": self.inspirations(parent, wins, self.config.get("inspirations", INSPIRATIONS)),
         }
         return context, parent_res

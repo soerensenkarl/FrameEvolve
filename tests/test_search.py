@@ -92,6 +92,8 @@ def test_claude_proposer_edits_through_its_tools(tmp_path, monkeypatch):
         house = kw["messages"][0]["content"][0]["text"].split("this round's test: ")[1].split(",")[0]
         seen["try"] = tools["try_on"].call({"house": house, "old": "SPACING = 24", "new": "SPACING = 19.2"})
         seen["look"] = tools["look"].call({"house": house, "view": "surface", "colour": "panel"})
+        seen["frame"] = tools["frame"].call({"house": house, "surface": "1w0"})
+        seen["trace"] = tools["trace"].call({"house": house, "rule": "studs"})
         seen["check"] = tools["check_grammar"].call({})
         seen["lesson"] = tools["record_lesson"].call({"lesson": "24 in. studs need 2x6 under a floor."})
         yield FakeMessage("", "tool_use")
@@ -107,6 +109,8 @@ def test_claude_proposer_edits_through_its_tools(tmp_path, monkeypatch):
     assert "SPACING = 24" in (run.path / "proposals" / "0001" / "proposed.py").read_text()
     assert "(a variation; the draft is unchanged)" in seen["try"]
     assert [b["type"] for b in seen["look"]] == ["text", "image"]
+    assert "1w0:" in seen["frame"] and "rule studs" in seen["frame"] and "; on " in seen["frame"]
+    assert seen["trace"].startswith("Rule studs on ") and "placed" in seen["trace"]
     assert seen["lesson"].startswith("Recorded") and e["lessons"] == ["24 in. studs need 2x6 under a floor."]
     from frameevolve.proposer import notebook_text
     book = run.notebook()

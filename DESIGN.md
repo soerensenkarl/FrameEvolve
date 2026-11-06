@@ -183,7 +183,12 @@ Pareto search keeps the grammars that do well across many houses.
   the draft, or a variation of it with one replacement, on one house in seconds, against the parent's score
   there; 16 per proposal); look (a picture of the draft or a variation on one house: the whole frame in 3D, or
   chosen walls, floors and roofs square on, coloured by rule or by panel, hard faults marked; 8 per proposal);
-  and check the draft on the whole minibatch (a limited number of times, default 3). Reason: a designer at a
+  frame (the house as built in exact words: every surface, or every member of one surface with where it is,
+  what it rests on, carries and touches, and its faults: the contact graph as text); trace (what one rule did,
+  firing by firing: GEPA's execution trace); raw (the house file, or a surface's members as stored, untranslated);
+  and check the draft on the whole minibatch (a limited number of times, default 3). The opening message gives
+  the parent's frame on each house surface by surface; members come on demand, since a whole house is 1,000 to
+  2,000 of them. Reason: a designer at a
   CAD station tries variations and looks at them before committing; a frame can score well and look wrong. It ends with a note saying what it
   changed and why; the note is kept with the candidate.
 - The rules API it is told about is generated from the builder's own signatures and docstrings, so it

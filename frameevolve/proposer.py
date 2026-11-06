@@ -101,8 +101,11 @@ Tools: view_grammar shows the current draft with line numbers. edit_grammar repl
 write_grammar replaces the whole file. Work like a designer at a CAD station: try_on builds and verifies the draft
 on one house in seconds, or a variation of it (the draft with one replacement) without changing the draft, so you
 can compare ideas before committing to one; look shows you a picture of the draft or a variation on a house, the
-whole frame in 3D or chosen walls, floors and roofs square on, coloured by rule or by panel. Look at what you
-built: a frame can score well and still be wrong to the eye. check_grammar builds and verifies the draft on all
+whole frame in 3D or chosen walls, floors and roofs square on, coloured by rule, panel or faults. Look at what
+you built: a frame can score well and still be wrong to the eye. To know the frame exactly, read it: frame gives
+the whole house as built, or every member of one surface with where it is, what it rests on and touches, and its
+faults; trace shows what one rule did, firing by firing; raw gives the house file, or a surface's members, as they
+are stored. check_grammar builds and verifies the draft on all
 the houses shown and returns the full reports; it can be used a limited number of times. When you are done, reply with one or two
 sentences saying what you changed and why."""
 
@@ -136,6 +139,20 @@ class Draft:
                  "hard faults red, soft amber, the rest a faint ghost: where the problems are).",
                  {"house": (str, None), "view": (str, "3d"), "surface": (str, ""), "colour": (str, "rule"),
                   "old": (str, ""), "new": (str, "")}),
+        "frame": ("The frame the draft builds on one house, in exact words. With no surface: every wall, floor, ceiling "
+                  "and roof (kind, size, what it rests on and carries, its panels, members by rule, faults by check). With a "
+                  "surface id: every member on it, one per line along it: id, role, section, rule, panel, where it is "
+                  "(inches in the surface's u, v, w), what it rests on, carries and touches, and the faults it is in "
+                  "(capitals: hard); rule: only that rule's members. With old and new, of a variation.",
+                  {"house": (str, None), "surface": (str, ""), "rule": (str, ""), "old": (str, ""), "new": (str, "")}),
+        "trace": ("What one rule of the draft did on one house, firing by firing: what it matched, and what it placed "
+                  "(and where), cut, notched or removed. With old and new, of a variation.",
+                  {"house": (str, None), "rule": (str, None), "old": (str, ""), "new": (str, "")}),
+        "raw": ("The files as they are, untranslated. part 'house': the house file (the input the builder hands your "
+                "rules: walls, floors, roofs, openings, junctions). part 'frame' with a surface id: the members the draft "
+                "builds on it as the frame stores them, one JSON per line (world coordinates in inches, cuts and notches "
+                "as planes, panel). With old and new, of a variation.",
+                {"house": (str, None), "part": (str, "house"), "surface": (str, ""), "old": (str, ""), "new": (str, "")}),
         "record_lesson": ("Write down one short lesson for the proposers after you in this search: something you "
                           "tried and what it did, or something you learned about the verifier or the builder. One "
                           "sentence, specific enough to act on. Up to three per proposal.", {"lesson": (str, None)}),
@@ -143,11 +160,13 @@ class Draft:
     TRIES = 16   # try_on per proposal: one house, seconds each
     LOOKS = 8    # pictures per proposal
     LESSONS = 3  # lessons per proposal
+    READS = 30   # frame and trace answers per proposal
 
     def __init__(self, source: str, context: dict, out: Path, checks: int):
         self.src, self.context, self.out, self.limit, self.checks = source, context, out, checks, 0
         self.tries = self.looks = 0
         self.lessons: list[str] = []
+        self.reads, self.answers = 0, {}
         (out / "draft.py").write_text(source)
 
     def event(self, kind: str, **data) -> None:
@@ -193,6 +212,53 @@ class Draft:
         f = self.out / f"{kind}{self.tries + self.looks + 1}.py"
         f.write_text(src)
         return path, f
+
+    def describe(self, house: str, old: str, new: str, args: list[str]) -> str:
+        """Run `frameevolve describe` on the draft (or a variation) in its own process; answers are kept, so asking
+        again about the same draft costs nothing."""
+        import hashlib
+        import subprocess
+        import sys
+        from frameevolve.search import ROOT
+        src = self.variant(old, new)
+        if src is None:
+            return "Not read: old must occur exactly once in the draft."
+        key = (hashlib.sha256(src.encode()).hexdigest(), house, *args)
+        if key in self.answers:
+            return self.answers[key]
+        if self.reads >= self.READS:
+            return f"No reads left ({self.READS} used)."
+        path = self.house_path(house)
+        if path is None:
+            return f"Not read: {house} is not one of this round's houses ({', '.join(self.context['houses'])})."
+        self.reads += 1
+        f = self.out / f"read{self.reads}.py"
+        f.write_text(src)
+        try:
+            p = subprocess.run([sys.executable, "-m", "frameevolve", "describe", str(f), str(path), *args], cwd=ROOT,
+                               capture_output=True, text=True, timeout=180)
+        except subprocess.TimeoutExpired:
+            return "Not read: building it took over 3 minutes."
+        text = p.stdout.strip() if p.returncode == 0 else "Not read: " + ((p.stderr.strip().splitlines() or ["no output"])[-1])
+        self.answers[key] = text
+        return text
+
+    def frame(self, house: str, surface: str = "", rule: str = "", old: str = "", new: str = "") -> str:
+        args = (["--surface", surface] if surface else []) + (["--rule", rule] if rule else [])
+        return self.describe(house, old, new, args)
+
+    def trace(self, house: str, rule: str, old: str = "", new: str = "") -> str:
+        return self.describe(house, old, new, ["--trace", "--rule", rule])
+
+    def raw(self, house: str, part: str = "house", surface: str = "", old: str = "", new: str = "") -> str:
+        path = self.house_path(house)
+        if path is None:
+            return f"Not read: {house} is not one of this round's houses ({', '.join(self.context['houses'])})."
+        if part == "house":
+            return path.read_text()
+        if part != "frame" or not surface:
+            return "Not read: part is 'house', or 'frame' with a surface id."
+        return self.describe(house, old, new, ["--raw", "--surface", surface])
 
     def record_lesson(self, lesson: str) -> str:
         lesson = " ".join(lesson.split())[:300]
@@ -296,6 +362,15 @@ def _score(s) -> str:
     return f"{s[0]} hard, {s[1]} soft, cost {s[2]:.1f}"
 
 
+def overviews_text(overviews: dict[str, str]) -> str:
+    """The parent's frame on each of this round's houses, surface by surface: the whole house in view. Each
+    surface's members in full, and what each rule did, come from the frame and trace tools."""
+    if not any(overviews.values()):
+        return ""
+    return ("The parent's frame on each of these houses, surface by surface (capital faults are hard; read any "
+            "surface member by member with the frame tool):\n\n" + "\n\n".join(t for t in overviews.values() if t) + "\n\n")
+
+
 def notebook_text(notebook: list[dict]) -> str:
     """The run's notebook: what earlier proposers in this search learned, newest last, with how each came out."""
     if not notebook:
@@ -355,6 +430,7 @@ def prompt(context: dict, images: bool, out: Path) -> tuple[str, list[dict]]:
                "frame in 3D from two opposite corners, showing only the members in faults (hard red, soft amber; the "
                "rest a faint ghost), then the surfaces with the most faults square on, members coloured by rule and "
                "prefab panels outlined, where red hatching marks boards with nothing behind them.\n\n" if images else "")
+            + overviews_text(context.get("overviews", {}))
             + notebook_text(context.get("notebook", []))
             + rejected_text(context.get("rejected", []))
             + inspirations_text(context.get("inspirations", []))
