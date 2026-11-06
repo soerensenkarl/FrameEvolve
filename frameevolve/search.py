@@ -38,6 +38,7 @@ import hashlib
 import json
 import os
 import random
+import re
 import shutil
 import subprocess
 import sys
@@ -57,6 +58,25 @@ INSPIRATIONS = 2                # other Pareto grammars shown to the proposer
 REJECTED = 3                    # earlier children of the parent that were not kept, shown to the proposer
 NOTEBOOK = 24                   # lessons from earlier iterations of the run, newest, shown to the proposer
 PICTURES = {"image": ".png", "image3d": ".3d.png"}   # elevations, and the whole frame in 3D from two sides
+
+
+class UsageLimit(Exception):
+    """The proposer's account hit a usage limit: the search waits for it to reset instead of counting a failure."""
+
+
+def limit_reset(message: str) -> float | None:
+    """When a usage limit resets, read from the message ("resets 1:30am"): seconds from now, or None."""
+    import datetime as dt
+    import re
+    m = re.search(r"resets\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)", message, re.I)
+    if not m:
+        return None
+    h, mi = int(m[1]) % 12 + (12 if m[3].lower() == "pm" else 0), int(m[2] or 0)
+    now = dt.datetime.now()
+    at = now.replace(hour=h, minute=mi, second=0, microsecond=0)
+    if at <= now:
+        at += dt.timedelta(days=1)
+    return (at - now).total_seconds()
 
 
 @dataclass
@@ -428,6 +448,9 @@ class Run:
         try:
             proposal = proposer.propose(parent_src, context, out)
         except Exception as e:
+            if re.search(r"usage limit|hit your .*limit|rate limit", str(e), re.I):
+                self.iteration -= 1            # not an iteration: the search waits and tries it again
+                raise UsageLimit(str(e)) from e
             entry["error"] = f"proposer failed: {type(e).__name__}: {e}"
             return done()
         entry["note"], entry["usage"], entry["lessons"] = proposal.note, proposal.usage, proposal.lessons
@@ -456,18 +479,41 @@ class Run:
         return out
 
 
+def pause(run: Run, seconds: float, stop: Path) -> bool:
+    """Wait, a minute at a time; False if a STOP file asks the search to end meanwhile."""
+    end = time.time() + seconds
+    while time.time() < end:
+        if stop.exists():
+            stop.unlink()
+            return False
+        time.sleep(min(60.0, max(0.0, end - time.time())))
+    return True
+
+
 def run_search(run: Run, proposer, iterations: int, seed: int = 0, say=None) -> None:
-    """Run iterations. A file named STOP in the run folder ends the search after the current iteration."""
+    """Run iterations. A file named STOP in the run folder ends the search after the current iteration. A usage
+    limit on the proposer's account pauses the search until it resets; the wait is not an iteration."""
     say = say or (lambda *a, **k: print(*a, **{"flush": True, **k}))
     rng = random.Random(seed + run.iteration)
     stop = run.path / "STOP"
     stop.unlink(missing_ok=True)
-    for _ in range(iterations):
+    done = 0
+    while done < iterations:
         if stop.exists():
             stop.unlink()
             say("stopped on request")
             break
-        e = run.step(proposer, rng)
+        try:
+            e = run.step(proposer, rng)
+        except UsageLimit as limit:
+            wait = limit_reset(str(limit)) or 1800.0
+            say(f"usage limit: {str(limit)[:160]}; waiting {wait / 60:.0f} min for it to reset")
+            run.stage("waiting for the usage limit to reset", until=time.time() + wait)
+            if not pause(run, wait + 120, stop):
+                say("stopped on request")
+                break
+            continue
+        done += 1
         verdict = f"kept as {e['child']}" if e["accepted"] else (e["error"] or "not better")
         say(f"iteration {e['iteration']}: parent {e['parent']} on {', '.join(e['batch'])}: {verdict}"
             f"  ({e['parent_batch']} -> {e['child_batch']}, {e.get('seconds')} s)")
