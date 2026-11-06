@@ -238,3 +238,17 @@ for a site joist (false erection cycle); a rafter's heel against its own plate c
 the Verifier tab listed every module limit under every check.
 Stopped at 1 am: the Claude subscription's 5-hour usage limit. Open: the search treats a usage limit as a failed
 proposal and burns iterations (it should wait for the reset); a-images and p3 were stopped mid-run.
+
+## 2026-11-06: the proposer at a CAD station; design objectives; panel and assembly views
+
+- Proposer tools try_on (one house in seconds, or a variation of the draft without changing it) and look (a
+  picture of the draft or a variation: 3D, or chosen surfaces square on, coloured by rule, panel or faults). In
+  the first iteration with them it made 13 tries and 5 pictures before its single full check, and was kept. The
+  extra tool rounds hit the 24-turn cap and lost a whole draft: now 60 turns, and running out proposes the draft.
+- The proposer's 3D picture shows only the members in faults (hard red, soft amber, the rest a ghost).
+- Design objectives (verifier/design.py), as soft faults ranked above cost: fewest panels a truck and a crane allow.
+- Saw: an end cut to two planes meeting in an edge (a stud peaked under a valley) is not a saw cut.
+- Workbench: a full-width Verifier tab; one view switch in 3D: build, panels (pick one, see it alone with its
+  size, weight and faults), assembly (step through the erection order), faults; Rhino mouse; a runs list that
+  says what each run is; a timeline that scales to 2,000 steps.
+- Open: the search treats a usage limit as a failed proposal; no long run yet on the newest verifier.
