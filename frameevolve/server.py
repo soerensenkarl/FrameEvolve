@@ -326,24 +326,18 @@ def storeys(house: House) -> dict[str, int]:
     return out
 
 
-# which limits each check uses: the constants are read from the source with their comments
-CHECK_LIMITS = {"span": ["MAX_CLEAR_FLAT", "HEADER_CLEAR", "JOIST_CLEAR", "CEILING_CLEAR", "RAFTER_RUN"], "overhang": ["MAX_OVERHANG"],
-                "bearing": ["MIN_BEARING"], "backing": ["MAX_CLEAR", "MAX_EDGE"], "insulation": ["MIN_EXTERIOR_DEPTH"],
-                "too long": ["STOCK"]}
-COST_LIMITS = ["STOCK", "KERF", "PIECE_COST"]
-CODE = re.compile(r"IRC (?:Table )?R[\d.]+(?:\(\d\))?|WFCM|energy code")
+CODE = re.compile(r"IRC (?:Table )?R[\d.]+(?:\([\d.]+\))?|WFCM[ \d.]*|NDS[ \d.]*|energy code")
 
 
 def constants() -> dict:
-    """The limits at the top of verifier.py, surface.py and model.py: value, module, and the comment beside or
-    above each, which says what it means and which code it approximates."""
-    wanted = {n for ns in CHECK_LIMITS.values() for n in ns} | set(COST_LIMITS)
+    """The limits at the top of each verifier module (and surface.py, model.py): value, module, and the comment
+    beside or above each, which says what it means and which code it comes from."""
     out = {}
-    for mod in (verifier, surface, model):
+    for mod in (*verifier.MODULES, surface, model):
         lines = inspect.getsource(mod).splitlines()
         for node in ast.parse("\n".join(lines)).body:
             name = node.targets[0].id if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name) else None
-            if name not in wanted:
+            if not name or not name.isupper() or name in ("CHECKS", "ORDER", "MODULES"):
                 continue
             note = lines[node.lineno - 1].split("#", 1)[1].strip() if "#" in lines[node.lineno - 1] else ""
             if not note:   # a block comment above instead
@@ -353,27 +347,35 @@ def constants() -> dict:
                     i -= 1
                 note = " ".join(above)
             value = getattr(mod, name)
-            out[name] = {"value": list(value) if isinstance(value, tuple) else value, "note": note,
-                         "module": mod.__name__.split(".")[-1]}
+            if isinstance(value, (int, float, str, tuple, dict)):
+                out[name] = {"value": list(value) if isinstance(value, tuple) else value, "note": note,
+                             "module": mod.__name__.split(".")[-1]}
     return out
 
 
 def verifier_info() -> dict:
-    """Every check (its meaning, hard or soft, its limits and the code it approximates) and how a frame is scored."""
-    hard = {}   # read from the verifier's own calls: Fault(check, hard, ...) and at(m, p, check, hard, ...)
-    for node in ast.walk(ast.parse(inspect.getsource(verifier))):
-        if isinstance(node, ast.Call) and getattr(node.func, "id", "") in ("Fault", "at"):
-            i = 0 if node.func.id == "Fault" else 2
-            if len(node.args) > i + 1 and all(isinstance(a, ast.Constant) for a in node.args[i:i + 2]):
+    """Every check (its meaning, hard or soft, the module it lives in, the limits that module sets and the codes
+    they cite) and how a frame is scored. Hard or soft is read from the calls that make each fault."""
+    hard, home = {}, {}
+    for mod in verifier.MODULES:
+        for node in ast.walk(ast.parse(inspect.getsource(mod))):
+            if not isinstance(node, ast.Call):
+                continue
+            f = node.func
+            fn = f.id if isinstance(f, ast.Name) else f.attr if isinstance(f, ast.Attribute) else ""
+            i = {"Fault": 0, "flag": 0, "at": 2}.get(fn)
+            if i is not None and len(node.args) > i + 1 and all(isinstance(a, ast.Constant) for a in node.args[i:i + 2]):
                 hard[node.args[i].value] = node.args[i + 1].value
+                home.setdefault(node.args[i].value, mod.__name__.split(".")[-1])
     consts = constants()
     checks = []
     for name, meaning in CHECKS.items():
-        limits = CHECK_LIMITS.get(name, [])
-        text = " ".join([meaning] + [consts[n]["note"] for n in limits if n in consts])
-        checks.append({"name": name, "meaning": meaning, "hard": hard.get(name, True), "limits": limits,
-                       "code": sorted(set(CODE.findall(text)))})
-    return {"checks": checks, "constants": consts, "cost": COST_LIMITS,
+        mod = home.get(name)
+        limits = [k for k, c in consts.items() if c["module"] == mod]
+        text = " ".join([meaning] + [consts[n]["note"] for n in limits])
+        checks.append({"name": name, "meaning": meaning, "hard": hard.get(name, True), "module": mod,
+                       "limits": limits, "code": sorted(set(CODE.findall(text)))})
+    return {"checks": checks, "constants": consts, "cost": [k for k, c in consts.items() if c["module"] == "cost"],
             "sections": {k: v[1] for k, v in SECTIONS.items()}, "about": inspect.getdoc(verifier)}
 
 
