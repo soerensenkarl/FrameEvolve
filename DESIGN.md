@@ -172,8 +172,8 @@ Pareto search keeps the grammars that do well across many houses.
 - Houses: two or three storeys; box, L, T, ell and U plans; partitions, stairs, doors and windows; gable
   roofs on box houses. Twenty training houses, h000 to h019 in `data/houses`.
 - Verifier: a simplified placeholder of the codes (support, clashes, backing, spans, thrust, cost).
-- Search: Pareto set over houses with a Claude proposer. The runs so far (`runs/first`, `runs/atomic`)
-  were on the earlier one-storey houses.
+- Search: Pareto set over houses with a Claude proposer. No run yet on the current houses; the first two
+  runs (one-storey houses) are summarised in the journal and were deleted.
 
 ## Workbench
 

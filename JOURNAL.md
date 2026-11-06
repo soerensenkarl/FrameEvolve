@@ -123,3 +123,9 @@ Minimal grammar, 10 iterations (crashed after 4 on a parent-draw bug, fixed, res
   rafter's heel cut against the plate face looked like a tie, so a tie must be on the rafter's side face;
   locating contacts by bounding-box overlap put a ceiling joist's contact mid-span, so the graph now keeps
   each contact's real centre.
+
+## 2026-11-05 Cleanup
+
+- Deleted the extra houses (only the 20 training houses h000 to h019 remain), old job logs, generated output,
+  and the first two runs (`runs/first`, `runs/atomic`): they were on the one-storey houses and no longer
+  compare with anything. Their results stay in the entries above.
