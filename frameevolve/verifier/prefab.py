@@ -225,8 +225,10 @@ def erection(s: Site) -> list[Fault]:
         need = set()
         for m in ms:
             under = [n for n in s.g.bears[m.id] if n != GROUND]
-            if not bears(m.id):     # held from the side (blocking, a flat head): by what beside it bears
-                under = [n for n in s.g.side[m.id] if bears(n)]
+            if not bears(m.id):     # held from the side (blocking, a flat head): by what beside it bears,
+                mates = [s.g.facing[(m.id, n)] for n in s.g.side[m.id] if of.get(n) == k]
+                held = any(dot(a, b) < -0.5 for i, a in enumerate(mates) for b in mates[i + 1:])
+                under = [] if held else [n for n in s.g.side[m.id] if bears(n)]   # unless its own panel holds it
             need |= {of[n] for n in under if n in of and of[n] != k}
         needs[k] = need
     bottom = {k: min(m.box.lo[2] for m in ms) for k, ms in us.items()}
