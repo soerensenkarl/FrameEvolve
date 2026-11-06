@@ -186,3 +186,35 @@ path per job, files an agent can read whole, and a map (CLAUDE.md).
   core, verifier and roof tests run in 21 s instead of 75.
 - The page is split into ES modules by concern (state, 3D view, elevations, inspect, editor, runs), with
   the duplicated SVG, raycast and member-mesh code shared.
+
+## 2026-11-05 night: a verifier for prefab panels, and the first searches on it
+
+Overnight task: run searches, use them to find framework bugs. Along the way the goal changed: frames are to be
+built as prefab panels (wall panels, floor cassettes, roof panels) that a shop cuts with an automated saw and a
+crane lifts into place bottom up. The verifier grew to judge that, and became a package a person can read.
+
+Verifier (`frameevolve/verifier/`, one module per question, `__init__.py` lists every check in order):
+- physical: as before, plus span tables by measured spacing (SPF No. 2; the old floor joist table was for 16"
+  and was applied at 24") and rafter ties that must reach across to the opposite slope (3" laps, or butts over
+  a bearing). The seed split its ceiling joists over the spine with plain butts.
+- analysis (new): a gravity load takedown through the contact graph (simply supported reactions, 99.8 to 100%
+  of the load reaches the ground), bending, compression with column stability, crushing across the grain with
+  the bearing area factor, deflection; ASCE 7 ASD combinations; NDS values for SPF No. 2. Written by a subagent.
+- code (new): IRC prescriptive rules: stud spacing and height by size and load, studs plate to plate, header
+  plies and jacks, king studs (soft), bearing walls over the floor below, notches (a birdsmouth at most d/4),
+  in-line framing on a single top plate, ridge depth against rafter cut ends, lateral restraint (soft).
+- prefab (new): panels flat, one piece, framed along every edge of their outline, at most 40 ft by 11'-6" and
+  3,000 lb; pieces a standard automated saw cuts (6" or longer, miter 60, bevel 45, no rips, notches of three
+  faces); an erection order bottom up where every unit rests on what is already up and every panel is lowered
+  straight down without passing through anything; a soft fault for a surface mostly framed on site.
+- cost: site pieces three times a shop piece, and a crane lift per panel.
+Builder: guides (`s.guide`, `s.guides`, `s.crossings`; match kinds `house` and `guide`) and panels (`s.assign`).
+The seed lays out a 24" grid over the plan first, joints wall panels on it clear of openings (a stud each side of
+every joint), builds floors as 8 ft cassettes, and leaves roofs and ceilings to the site.
+
+Bugs found by the runs and by looking: the proposer's elevation picture was 1180 x 14251 px, unreadable once
+scaled to send (now the six surfaces with the most faults, two columns, panels outlined); the search's cache key
+hashed only `frameevolve/*.py`, so a change in a subpackage would have reused stale scores; a committed worktree
+`.venv` symlink replaced the real virtualenv on merge (git treats ignored files as expendable); the seed's panel
+joints crashed where no grid line cleared the openings; false positives in rim spans, king studs under floors,
+restraint at rim butts, erection cycles between doubled headers, and gable panels judged by "both ends".

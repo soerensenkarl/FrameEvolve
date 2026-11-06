@@ -266,7 +266,9 @@ export function renderVerifier() {
   const el = $("#faults");
   const d = st.data, vi = st.vinfo;
   if (!d || !vi) { el.innerHTML = `<p class="empty">Loading the verifier...</p>`; return; }
-  const s = d.stats, cost = vi.constants.PIECE_COST?.value ?? 0;
+  const s = d.stats, k = (n) => vi.constants[n]?.value ?? 0;
+  const cost = k("PIECE_COST"), siteCost = k("SITE_PIECE_COST") || cost, lift = k("LIFT_COST");
+  const site = s.site_pieces ?? 0, shop = s.members - site, panels = s.panels ?? 0;
   const rows = Object.entries(s.by_section || {}).map(([sec, x]) => {
     const w = (vi.sections[sec] || 3.5) / 3.5;
     return `<tr><td>${esc(sec)}</td><td>${x.pieces}</td><td>${num(x.bought_ft)} ft</td><td>x ${w.toFixed(2)}</td><td>${num(x.bought_ft * w)} ft</td></tr>`;
@@ -299,9 +301,12 @@ export function renderVerifier() {
         A cheaper frame never beats one with fewer faults.</p>
       <details><summary>How the cost is worked out</summary>
         <p class="hint">Each section's pieces are cut from stock lengths of ${limitText("STOCK")}, longest first, with a ${limitText("KERF")} saw kerf.
-          The lumber bought counts in proportion to its depth, as linear feet of 2x4, and every piece adds ${cost} ft for cutting, handling and nailing.</p>
+          The lumber bought counts in proportion to its depth, as linear feet of 2x4. A piece built into a panel in the shop adds ${cost} ft
+          for cutting, handling and nailing, one cut and nailed on site ${siteCost} ft, and each panel ${lift} ft to truck and lift it in.</p>
         <table class="costs"><tr><th>section</th><th>pieces</th><th>bought</th><th>depth</th><th>as 2x4</th></tr>${rows}
-          <tr><td colspan="4">${s.members} pieces x ${cost} ft</td><td>${num(s.members * cost)} ft</td></tr>
+          <tr><td colspan="4">${shop} pieces in panels x ${cost} ft</td><td>${num(shop * cost)} ft</td></tr>
+          <tr><td colspan="4">${site} pieces built on site x ${siteCost} ft</td><td>${num(site * siteCost)} ft</td></tr>
+          <tr><td colspan="4">${panels} panels lifted x ${lift} ft</td><td>${num(panels * lift)} ft</td></tr>
           <tr class="tot"><td colspan="4">cost</td><td>${num(s.cost)} ft</td></tr></table></details>
     </div>
     <h4>Checks <small>click one to list its faults; click a fault to see its evidence</small></h4>
