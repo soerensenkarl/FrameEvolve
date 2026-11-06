@@ -437,8 +437,9 @@ def rafters(s, r):
     a, b = rising(s, r, 0), L - rising(s, r, L)
     g0 = sum(r.origin[k] * r.eu[k] for k in range(2))   # the grid runs from the house's corner
     us = [c + T / 2 - g0 for c in range(SPACING * math.floor(g0 / SPACING), int(g0 + L) + 1, SPACING)]
-    us = sorted([a, b - T] + [u for u in us if a + T + 0.01 < u < b - 2 * T - 0.01])
-    us += [x + T for x, y in zip(us, us[1:]) if y - x - T > SPACING - T]
+    grid = [u for u in us if a + T + 0.01 < u < b - 2 * T - 0.01]
+    us = sorted([a, b - T] + grid)    # too wide a gap: one more, on the far side of the next joist if it can
+    us += [y - 2 * T if y in grid and y - 2 * T > x + T else x + T for x, y in zip(us, us[1:]) if y - x - T > SPACING - T]
     for u in us:
         for v0, v1 in spans(r, u, u + T):
             s.place(sec, u, u + T, v0, v1, role="rafter")
