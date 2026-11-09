@@ -1,5 +1,6 @@
-// The Verifier tab: what the verifier asks of a frame and what it found. The score on top, then one section
-// per verifier module, titled by the question it asks, with its checks; a chosen check shows its limits, the
+// The Verifier tab: what the verifier asks of a frame and what it found. The score on top, then every check in
+// one table, under the question its module asks, filtered to all, faulted, hard or soft checks; a chosen
+// question shows its module's description, a chosen check its limits, the
 // code it cites and its faults by surface, and a chosen fault its evidence, which the 3D view and the
 // surfaces draw too. Also here: `evidence(f)`, what to draw and say for one fault, and `limitText`.
 import { $, esc, ftin, inch, num, st, finished, chosenFault, shown3d, listed, faceName, kindName } from "./state.js";
@@ -143,7 +144,7 @@ export function chooseFault(i) {
 
 // ---------------------------------------------------------------- the tab
 
-const WIDE = 940;   // from this width a chosen check opens in a column beside the modules, else under its row
+const WIDE = 1100;  // from this width a chosen check opens in a column beside the modules, else under its row
 const PAGE = 80;    // faults listed at first, and how many more "show more" adds
 
 const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : "");
@@ -218,13 +219,8 @@ function costHtml() {
       <tr class="tot"><td colspan="4">cost</td><td>${num(s.cost)} ft</td></tr></table></details>`;
 }
 
-function headHtml(mods) {
-  const s = st.data.stats, by = byCheck();
-  const jump = mods.map((m) => {
-    const t = tally(m.checks.flatMap((c) => by[c.name] || []));
-    const n = t.n ? `<span class="${t.hard ? "bad" : "warn"}">${t.n}</span>` : `<span class="good">clear</span>`;
-    return `<a href="#" data-jump="${esc(m.name)}">${esc(m.question)} ${n}</a>`;
-  }).join("");
+function headHtml() {
+  const s = st.data.stats;
   return `<div class="vf-head">
     <div class="vf-score">
       <div class="${s.hard ? "bad" : "good"}"><b>${s.hard}</b><span>hard ${s.hard === 1 ? "fault" : "faults"}</span></div>
@@ -234,38 +230,82 @@ function headHtml(mods) {
     <p class="vf-p muted">Frames are compared by hard faults first (unbuildable or unsafe), then soft faults (details a good grammar
       also gets right), then cost: a cheaper frame never beats one with fewer faults.</p>
     ${costHtml()}
-    <nav class="vf-jump">${jump}</nav>
     ${st.only ? `<p class="vf-only">The 3D faults view and the surfaces show only <b>${esc(st.only)}</b> faults. <a href="#" data-only="${esc(st.only)}">Show all</a></p>` : ""}
   </div>`;
 }
 
-function rowHtml(c, wide) {
-  const t = tally(byCheck()[c.name] || []), sel = st.check === c.name;
-  return `<div class="vf-check ${sel ? "sel" : ""} ${t.n ? "has" : ""}" data-check="${esc(c.name)}">
-      <span class="tag ${c.hard ? "" : "soft"}">${c.hard ? "hard" : "soft"}</span>
-      <span class="vf-cname">${esc(c.name)}${st.only === c.name ? ` <span class="vf-onlytag" title="the 3D faults view and the surfaces show only these">only</span>` : ""}</span>
-      <span class="vf-count ${t.n ? (t.hard ? "bad" : "warn") : "good"}">${t.n || "none"}</span>
-      <span class="vf-meaning">${esc(cap(c.meaning))}</span>
-    </div>${sel && !wide ? `<div class="vf-inline">${detailHtml(c)}</div>` : ""}`;
+// which checks the table lists
+const SHOW = { all: ["All", () => true], faults: ["With faults", (c, n) => n > 0], hard: ["Hard", (c) => c.hard], soft: ["Soft", (c) => !c.hard] };
+
+function citesHtml(c) {
+  // the code sections a check cites, the first in full and the rest on hover
+  const refs = c.code.map((x) => x.trim());
+  if (!refs.length) return `<span class="muted">-</span>`;
+  return `<span title="${esc(refs.join("\n"))}">${esc(refs[0])}${refs.length > 1 ? ` <span class="muted">+${refs.length - 1}</span>` : ""}</span>`;
 }
 
-function moduleHtml(m, wide) {
+function limitHtml(c) {
+  // one limit's value in full; several as a count, read in the check's detail
+  if (!c.limits.length) return `<span class="muted">-</span>`;
+  if (c.limits.length === 1) {
+    const t = limitText(c.limits[0]);
+    return `<span title="${esc(c.limits[0])}: ${esc(t)}">${esc(t.length > 26 ? t.slice(0, 25) + "..." : t)}</span>`;
+  }
+  return `<span class="muted" title="${esc(c.limits.join(", "))}">${c.limits.length} limits</span>`;
+}
+
+function rowHtml(c, wide, most) {
+  const t = tally(byCheck()[c.name] || []), sel = st.check === c.name;
+  const w = t.n ? Math.max(2, Math.round(100 * t.n / most)) : 0;
+  return `<tr class="vf-row ${sel ? "sel" : ""} ${t.n ? "has" : ""}" data-check="${esc(c.name)}">
+      <td><span class="tag ${c.hard ? "" : "soft"}">${c.hard ? "hard" : "soft"}</span></td>
+      <td class="vf-cname">${esc(c.name)}${st.only === c.name ? ` <span class="vf-onlytag" title="the 3D faults view and the surfaces show only these">only</span>` : ""}</td>
+      <td class="vf-meaning">${esc(cap(c.meaning))}</td>
+      <td class="vf-limit">${limitHtml(c)}</td>
+      <td class="vf-cites">${citesHtml(c)}</td>
+      <td class="vf-n"><span class="vf-bar"><i class="${t.hard ? "bad" : "warn"}" style="width:${w}%"></i></span>
+        <span class="vf-count ${t.n ? (t.hard ? "bad" : "warn") : "good"}">${t.n || "none"}</span></td>
+    </tr>${sel && !wide ? `<tr class="vf-inrow"><td colspan="6"><div class="vf-inline">${detailHtml(c)}</div></td></tr>` : ""}`;
+}
+
+function tableHtml(mods, wide) {
+  // every check in one table, under the question its module asks
+  const by = byCheck(), all = mods.flatMap((m) => m.checks);
+  const most = Math.max(1, ...all.map((c) => (by[c.name] || []).length));
+  const keep = (c) => SHOW[st.vShow][1](c, (by[c.name] || []).length);
+  const filter = Object.entries(SHOW).map(([k, [label, f]]) => {
+    const n = all.filter((c) => f(c, (by[c.name] || []).length)).length;
+    return `<button class="vf-by-b ${st.vShow === k ? "on" : ""}" data-show="${k}">${label} <span>${n}</span></button>`;
+  }).join("");
+  const groups = mods.map((m) => {
+    const cs = m.checks.filter(keep);
+    if (!cs.length) return "";
+    const t = tally(m.checks.flatMap((c) => by[c.name] || []));
+    const sum = t.n ? [t.hard && `<span class="bad">${t.hard} hard</span>`, t.soft && `<span class="warn">${t.soft} soft</span>`].filter(Boolean).join(", ")
+      : `<span class="good">all clear</span>`;
+    return `<tbody><tr class="vf-group ${st.vMod === m.name ? "sel" : ""}" data-mod="${esc(m.name)}" title="What this module asks and how">
+        <th colspan="5"><span class="vf-q">${esc(m.question)}</span> <span class="vf-file">${m.name === "other" ? "" : `${esc(m.name)}.py`}</span>
+          <span class="muted">${plural(m.checks.length, "check")}</span></th><th class="vf-msum">${sum}</th></tr>
+      ${cs.map((c) => rowHtml(c, wide, most)).join("")}</tbody>`;
+  }).join("");
+  return `<div class="vf-tools"><span class="lab">Checks</span>${filter}</div>
+    <table class="vf-table"><colgroup><col class="c-kind"><col class="c-name"><col><col class="c-limit"><col class="c-cites"><col class="c-n"></colgroup>
+      <thead><tr><th></th><th>check</th><th>what it finds</th><th>limit</th><th>cites</th><th>on this frame</th></tr></thead>
+      ${groups || `<tbody><tr><td colspan="6" class="muted">No checks of this kind.</td></tr></tbody>`}</table>`;
+}
+
+function moduleDetailHtml(m) {
+  // one module: the question it asks, its description in full, and its checks
   const by = byCheck();
-  const t = tally(m.checks.flatMap((c) => by[c.name] || []));
-  const open = st.vOpen.has("mod:" + m.name) !== !!t.n;   // open when it has faults, unless the user folded it
-  const [lead, ...rest] = paragraphs(m.doc);
-  const sum = t.n ? [t.hard && `<span class="bad">${t.hard} hard</span>`, t.soft && `<span class="warn">${t.soft} soft</span>`].filter(Boolean).join(", ")
-    : `<span class="good">all clear</span><span class="muted">, ${plural(m.checks.length, "check")}</span>`;
-  return `<section class="vf-mod ${open ? "open" : ""}" id="vf-mod-${esc(m.name)}">
-    <div class="vf-mhead" data-mod="${esc(m.name)}" title="${open ? "fold" : "open"} this module">
-      <span class="caret">${open ? "&#x25BE;" : "&#x25B8;"}</span><h2>${esc(m.question)}</h2>
-      <span class="vf-file">${m.name === "other" ? "" : `${esc(m.name)}.py`}</span><span class="vf-msum">${sum}</span>
-    </div>
-    ${open ? `${lead ? `<div class="vf-lead">${docHtml([lead])}</div>` : ""}
-      ${rest.length ? `<details class="vf-more" data-key="d:doc:${esc(m.name)}" ${st.vOpen.has("d:doc:" + m.name) ? "open" : ""}><summary>More on how it checks</summary>
-        <div class="vf-doc">${docHtml(rest)}</div></details>` : ""}
-      <div class="vf-checks">${m.checks.map((c) => rowHtml(c, wide)).join("")}</div>` : ""}
-  </section>`;
+  return `<div class="vf-detail">
+    <div class="vf-dhead"><h3>${esc(m.question)}</h3><span class="vf-file">${esc(m.name)}.py</span><span class="spacer"></span>
+      <button class="vf-close" data-close title="Close">&#x2715;</button></div>
+    <div class="vf-doc">${docHtml(paragraphs(m.doc))}</div>
+    ${m.checks.length ? `<h4>Its checks</h4>${m.checks.map((c) => `<div class="vf-check ${by[c.name] ? "has" : ""}" data-check="${esc(c.name)}">
+      <span class="tag ${c.hard ? "" : "soft"}">${c.hard ? "hard" : "soft"}</span><span class="vf-cname">${esc(c.name)}</span>
+      <span class="vf-count ${by[c.name] ? (c.hard ? "bad" : "warn") : "good"}">${by[c.name]?.length || "none"}</span>
+      <span class="vf-meaning">${esc(cap(c.meaning))}</span></div>`).join("")}` : ""}
+  </div>`;
 }
 
 function faultHtml(c, i) {
@@ -349,18 +389,12 @@ function detailHtml(c) {
   </div>`;
 }
 
-function asideHtml(mods) {
-  // the side column with no check chosen: the checks with the most faults, as a place to start
-  const by = byCheck();
-  const worst = mods.flatMap((m) => m.checks).filter((c) => by[c.name])
-    .sort((a, b) => (b.hard - a.hard) || by[b.name].length - by[a.name].length).slice(0, 6);
+function asideHtml() {
+  // the side column with nothing chosen: what the verifier is, in its own words
   return `<div class="vf-detail vf-none">
-    <p class="vf-p muted">Choose a check to see what it asks, its limits and the code it cites, and its faults on this frame
-      by surface and rule. A fault explains itself and can be shown in 3D.</p>
-    ${worst.length ? `<h4>Start with</h4>${worst.map((c) => `<div class="vf-check has" data-check="${esc(c.name)}">
-      <span class="tag ${c.hard ? "" : "soft"}">${c.hard ? "hard" : "soft"}</span><span class="vf-cname">${esc(c.name)}</span>
-      <span class="vf-count ${c.hard ? "bad" : "warn"}">${by[c.name].length}</span><span class="vf-meaning">${esc(cap(c.meaning))}</span></div>`).join("")}`
-      : `<p class="good">No faults on this frame.</p>`}
+    <p class="vf-p muted">Choose a check for its limits, the code it cites and its faults on this frame, or a question for what
+      its module asks and how.</p>
+    <h4>The verifier</h4><div class="vf-doc">${docHtml(paragraphs(st.vinfo.about).filter((p) => !/\.py\s{2,}|:$/.test(p)))}</div>
   </div>`;
 }
 
@@ -370,14 +404,17 @@ export function renderVerifier() {
   const mods = modules();
   const c = st.check && mods.flatMap((m) => m.checks).find((x) => x.name === st.check);
   if (!c) st.check = null;
+  const mod = !c && st.vMod && mods.find((m) => m.name === st.vMod);
+  if (!mod) st.vMod = null;
   const wide = el.clientWidth >= WIDE;
   // keep where the reader is: each column's scroll, except a newly chosen check's column starts at its top
   const tops = [...el.querySelectorAll(".vf-col")].map((x) => x.scrollTop), top = el.scrollTop;
-  const sameCheck = el.dataset.shown === (st.check || "") && el.classList.contains("wide") === wide;
+  const shown = st.check || (st.vMod ? "mod:" + st.vMod : "");
+  const sameCheck = el.dataset.shown === shown && el.classList.contains("wide") === wide;
   el.classList.toggle("wide", wide);
-  el.dataset.shown = st.check || "";
-  const main = headHtml(mods) + mods.map((m) => moduleHtml(m, wide)).join("");
-  el.innerHTML = wide ? `<div class="vf-col vf-main">${main}</div><div class="vf-col vf-side">${c ? detailHtml(c) : asideHtml(mods)}</div>`
+  el.dataset.shown = shown;
+  const main = headHtml() + (!wide && mod ? `<div class="vf-inline">${moduleDetailHtml(mod)}</div>` : "") + tableHtml(mods, wide);
+  el.innerHTML = wide ? `<div class="vf-col vf-main">${main}</div><div class="vf-col vf-side">${c ? detailHtml(c) : mod ? moduleDetailHtml(mod) : asideHtml()}</div>`
     : `<div class="vf-main">${main}</div>`;
   const cols = el.querySelectorAll(".vf-col");
   if (wide && tops.length === 2) { cols[0].scrollTop = tops[0]; if (sameCheck) cols[1].scrollTop = tops[1]; }
@@ -386,6 +423,7 @@ export function renderVerifier() {
 
 function chooseCheck(n) {
   st.check = st.check === n ? null : n;
+  st.vMod = null;
   st.vFilter = { rule: null, surface: null };
   st.vCap = PAGE;
   renderVerifier();
@@ -423,7 +461,9 @@ $("#verifier").addEventListener("click", (e) => {
   if (only) { e.preventDefault(); return setOnly(only.dataset.only); }
   const act = t.closest("button[data-act]");
   if (act) return showIn(act.dataset.act);
-  if (t.closest("[data-close]")) return chooseCheck(st.check);
+  if (t.closest("[data-close]")) { if (st.check) return chooseCheck(st.check); st.vMod = null; return renderVerifier(); }
+  const show = t.closest("[data-show]");
+  if (show) { st.vShow = show.dataset.show; return renderVerifier(); }
   if (t.closest("[data-more]")) { st.vCap += 2 * PAGE; return renderVerifier(); }
   if (t.closest("[data-unfilter]")) { e.preventDefault(); st.vFilter = { rule: null, surface: null }; st.vCap = PAGE; return renderVerifier(); }
   const fr = t.closest("[data-frule]"), fs = t.closest("[data-fsurf]");
@@ -437,22 +477,15 @@ $("#verifier").addEventListener("click", (e) => {
   if (c && st.byId[c.dataset.id]) return select({ kind: "member", id: c.dataset.id });
   const r = t.closest(".chip[data-rule]");
   if (r) return select({ kind: "rule", id: r.dataset.rule });
-  const jump = t.closest("[data-jump]");
-  if (jump) {
-    e.preventDefault();
-    const m = jump.dataset.jump, sec = document.getElementById(`vf-mod-${m}`);
-    if (sec && !sec.classList.contains("open")) { st.vOpen.has("mod:" + m) ? st.vOpen.delete("mod:" + m) : st.vOpen.add("mod:" + m); renderVerifier(); }
-    return document.getElementById(`vf-mod-${m}`)?.scrollIntoView({ block: "start", behavior: "smooth" });
-  }
-  if (t.closest("a, button, summary, details.vf-more > div, .vf-explain")) return;
+  if (t.closest("a, button, summary, .vf-explain")) return;
   const fi = t.closest("[data-fault]");
   if (fi) return chooseFault(+fi.dataset.fault);
   const ch = t.closest("[data-check]");
   if (ch) return chooseCheck(ch.dataset.check);
   const mh = t.closest("[data-mod]");
   if (mh) {
-    const k = "mod:" + mh.dataset.mod;
-    st.vOpen.has(k) ? st.vOpen.delete(k) : st.vOpen.add(k);
+    st.vMod = st.vMod === mh.dataset.mod ? null : mh.dataset.mod;
+    st.check = null;
     renderVerifier();
   }
 });

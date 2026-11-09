@@ -71,9 +71,11 @@ export const st = {
   only: null,           // show only this check's faults
   fault: null,          // the fault chosen in the Verifier tab, an index into data.faults
   check: null,          // the check open in the Verifier tab
+  vMod: null,           // the module whose description is open beside the checks
+  vShow: "all",         // which checks the table lists: "all", "faults", "hard", "soft"
   vFilter: { rule: null, surface: null },   // its faults narrowed to one rule or surface
   vCap: 80,             // how many of its faults are listed
-  vOpen: new Set(),     // Verifier sections opened ("d:...") or modules folded and unfolded ("mod:...")
+  vOpen: new Set(),     // Verifier details opened ("d:...")
   view: "build",        // what the 3D view shows: "build" (by rule, stepping the build), "panels", "assembly", "faults"
   asm: 0,               // the assembly view's step: the unit going up, or the length of the order when all are up
   hoverPanel: null,     // the panel under the pointer in the panels list

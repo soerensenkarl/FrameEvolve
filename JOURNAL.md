@@ -278,3 +278,11 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
   1150, span 790, assembly 720 hard faults.
 - The old seed (advanced platform framing as panels) stays as grammars/advanced.py: the verifier tests run on
   its frames, and it is the hand-written baseline the search's grammar is compared against.
+
+## 2026-11-09: the verifier's checks in one table
+
+- The Verifier tab lists every check in one table, grouped under the question its module asks: kind, what it
+  finds, its limit (or how many), the code it cites, and its faults on this frame with a bar to compare them.
+  A filter shows all, faulted, hard or soft checks. Clicking a question opens its module's description beside
+  the table; clicking a check its limits and faults, as before. The project is on GitHub (private,
+  soerensenkarl/FrameEvolve) for the group.
