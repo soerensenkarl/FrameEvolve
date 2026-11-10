@@ -45,9 +45,9 @@ def test_a_beam_on_no_wall_loses_its_load():
 
 
 GRAMMAR = '''
-from frameevolve.builder import layout, rule
+from frameevolve.builder import rule
 
-@layout(10, match="seam", when=lambda s, x: x.kind == "ridge")
+@rule(10, match="seam", when=lambda s, x: x.kind == "ridge")
 def ridge_beam(s, x):
     """A ridge beam, so the rafters hang from it and the gable walls carry half the roof."""
     s.guide("beam", x.a, x.b)
@@ -65,31 +65,21 @@ def header(s, o):
 '''
 
 
-def test_layout_rules_set_the_load_path_and_framing_rules_frame_to_its_forces(tmp_path):
+def test_a_rule_lays_out_the_load_path_and_later_rules_frame_to_its_forces(tmp_path):
     g = tmp_path / "g.py"
     g.write_text(GRAMMAR)
     frame = build(g, houses.generate(1))
     assert not frame.errors
-    assert [x.kind for x in frame.guides] == ["beam"] and frame.steps[0]["phase"] == "layout"
+    assert [x.kind for x in frame.guides] == ["beam"]
     posts = [m for m in frame.members if m.role == "post"]
     assert len(posts) == 4 and {m.surface for m in posts} == {"2w1", "2w3"}       # 10,000 lb each end: doubled
     assert {m.section for m in frame.members if m.role == "header"} == {"2x12", "2x6"}
 
 
-def test_a_layout_rule_places_no_timber_and_a_framing_rule_lays_no_beam(tmp_path):
-    g = tmp_path / "g.py"
-    g.write_text("""
-from frameevolve.builder import layout, rule
-
-@layout(10, match="wall")
-def studs(s, w):
-    s.place("2x4", 0, 1.5, 0, 90)
-
-@rule(20, match="floor")
-def girder(s, f):
-    s.guide("beam", (0, 60), (f.length, 60))
-""")
-    frame = build(g, houses.generate(1))
-    assert any("lays out guides only" in e for e in frame.errors)
-    assert any("lay it out in a layout rule" in e for e in frame.errors)
-    assert not frame.members and not frame.guides
+def test_a_rule_that_reads_a_force_before_the_beam_is_laid_gets_the_old_load_path(tmp_path):
+    """Order is the grammar's: the same two rules, the reader before or after the beam."""
+    def posts(reader, beam):
+        g = tmp_path / f"g{reader}.py"
+        g.write_text(GRAMMAR.replace("@rule(20,", f"@rule({reader},").replace("@rule(10,", f"@rule({beam},"))
+        return [m for m in build(g, houses.generate(1), max_passes=1).members if m.role == "post"]
+    assert len(posts(20, 10)) == 4 and not posts(5, 10)

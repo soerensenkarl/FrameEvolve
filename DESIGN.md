@@ -60,22 +60,21 @@ Pareto search keeps the grammars that do well across many houses.
   house (once), guide, wall, floor (and ceiling), roof, seam (where two roof planes meet), opening, corner,
   tee, bearer, load, point (a concentrated load landing on a wall or floor), gap (a stretch of face with no
   backing), member.
-- Two phases, layout then framing, as an engineer and then a detailer work. Layout rules (`@layout`) run
-  first and place no timber: they decide the load path with structural guides, a "beam" (a bearing line on a
-  floor, ceiling or roof plane: a girder, a ridge beam) and a "span" (which way a floor spans). Framing rules
-  (`@rule`) then place members against it and may not change it. Reason: the main force flows are decided
-  before detailing, so framing never has to loop back.
+- Structural guides: a "beam" (a bearing line on a floor, ceiling or roof plane: a girder, a ridge beam) and a
+  "span" (which way a floor spans) change the load path. Any rule may lay one, at any priority. Laying out
+  the load path before framing, and framing from the roof down, is how an engineer and a detailer work and
+  what the proposer is advised to start from, but the builder does not enforce it: the order of rules is
+  learned. Reason: the less the rule system is told, the more the loop has to show it can find.
 - Forces in the grammar (loads.py). Loads come from the house, not the frame, and gravity only goes down, so
   a takedown on the bare surfaces gives every rule its forces before anything is framed: roofs to the walls
   under them, floors along their span to walls and beams, walls down to the floor they stand on, top down,
   in 6" strips as simply supported spans. `s.load(u0, u1)` is what lands on a wall (dead, live, snow in lb),
   `s.pressure()` a floor's or roof's psf, and the "point" match every concentrated load (a beam's end, the
   sides of an opening above) where it lands on a wall or a floor. A structural guide redoes the takedown
-  (10 to 100 ms). Loads nothing carries are listed (`s.loads.lost`), and everything else reaches the ground.
+  (10 to 100 ms), so a rule reads the load path as laid out so far. Loads nothing carries are listed (`s.loads.lost`), and everything else reaches the ground.
   The takedown is the grammar's estimate; the verifier's analysis still follows the loads through the members.
-- Planned next: forces as outputs. Frame top down (roof, then each floor and the walls under it) and analyse
-  each surface once, when it is framed, so the rules below see the real reactions of what was built above
-  rather than the estimate; a guide then states an intent the verifier can hold the frame to.
+- Planned next: forces as outputs. A rule may ask for the real reaction of the members placed so far, so a
+  grammar that frames the roof first gets real numbers below it and one that does not gets the estimate.
 - Guides: lines a rule lays out to frame by, not timber (`s.guide`): a grid over the plan, panel joints.
   Later rules read them (`s.guides`, `s.crossings`: where they cross the current surface) or match them.
   Reason: framers lay out from a global grid and mark where panels break before cutting anything; making

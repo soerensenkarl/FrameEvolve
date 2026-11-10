@@ -12,13 +12,13 @@ design state (the house plus every member placed so far), and calls the rule onc
 rule whose condition only becomes true after other rules have acted still fires. A rule never fires twice
 on the same match. Every member records the rule that placed it; every step records the match.
 
-A build has two phases, as an engineer and then a detailer work. Layout rules (`@layout`, same arguments) run
-first, to a standstill: they decide the load path and place no timber, only guides. Framing rules (`@rule`)
-then place the members, against that layout. Forces are known throughout, from a load takedown on the house's
-surfaces (loads.py): s.load is what lands on a wall, s.pressure the area load of a floor or roof, and the
-"point" match every concentrated load. A layout rule changes the load path with a structural guide: a "beam"
-on a floor, ceiling or roof plane is a bearing line (a girder, a ridge beam) that takes its load to the walls
-it crosses; a "span" on a floor or ceiling sets which way it spans. The takedown is redone when one is laid.
+Forces are known throughout, from a load takedown on the house's surfaces (loads.py): s.load is what lands on
+a wall, s.pressure the area load of a floor or roof, and the "point" match every concentrated load. A rule
+changes the load path with a structural guide: a "beam" on a floor, ceiling or roof plane is a bearing line
+(a girder, a ridge beam) that takes its load to the walls it crosses; a "span" on a floor or ceiling sets
+which way it spans. The takedown is redone when one is laid, so a rule that reads a force sees the load path
+as laid out so far: the order of rules is the grammar's to get right. (An engineer lays out the load path
+first, then a detailer frames to it, from the roof down.)
 
 Match kinds (what the rule receives as its second argument; `s.surface` is set to the surface it is on,
 a wall, a floor or a roof plane):
@@ -70,21 +70,16 @@ MATCHES = ("house", "guide", "wall", "floor", "roof", "seam", "opening", "corner
            "gap", "member")
 
 
-def rule(priority: int, match: str, when=None, phase: str = "frame"):
-    """Mark a function as a framing rule: fn(s, x) for each x of kind `match` where when(s, x) holds.
+def rule(priority: int, match: str, when=None):
+    """Mark a function as a rule: fn(s, x) for each x of kind `match` where when(s, x) holds.
     Lower priority runs first in every pass."""
     if match not in MATCHES:
         raise ValueError(f"match is one of {', '.join(MATCHES)}, not {match!r}")
 
     def mark(fn):
-        fn.priority, fn.match, fn.when, fn.phase = priority, match, when, phase
+        fn.priority, fn.match, fn.when = priority, match, when
         return fn
     return mark
-
-
-def layout(priority: int, match: str, when=None):
-    """Mark a function as a layout rule: it runs before any framing rule and lays out guides only."""
-    return rule(priority, match, when, "layout")
 
 
 @dataclass(frozen=True)
@@ -192,7 +187,6 @@ class State:
         self._guides: dict[str, Guide] = {}
         self._guided_now: list[str] = []
         self._assigned_now: list[str] = []
-        self._phase = "frame"
         self._loads: Takedown | None = None
 
     # reading ---------------------------------------------------------------------------------------
@@ -327,7 +321,6 @@ class State:
         The rectangle's short side says how the section is turned: equal to the width (1 1/2") means flat or
         upright, with the depth running through the wall; equal to the depth means on edge, 1 1/2" through.
         """
-        self._framing()
         if section not in SECTIONS:
             raise ValueError(f"unknown section {section!r}; use one of {', '.join(SECTIONS)}")
         width, depth = SECTIONS[section]
@@ -357,7 +350,6 @@ class State:
     def put(self, section: str, a, b, up, role: str = "") -> Member:
         """Place a member at any angle: its centreline from point a to point b, its depth facing `up` (square to
         the centreline), all in this surface's u, v, w."""
-        self._framing()
         if section not in SECTIONS:
             raise ValueError(f"unknown section {section!r}; use one of {', '.join(SECTIONS)}")
         w = self.surface
@@ -368,10 +360,6 @@ class State:
         self.changes += 1
         self._graph = None
         return m
-
-    def _framing(self) -> None:
-        if self._phase == "layout":
-            raise ValueError("a layout rule lays out guides only; place members in a framing rule (@rule)")
 
     def cut(self, m: Member, point, normal, surface=None) -> None:
         """Saw m along the plane through `point` square to `normal`, taking off the side the normal points to.
@@ -443,13 +431,11 @@ class State:
     def guide(self, kind: str, a, b, plan: bool = False) -> Guide:
         """Lay out a guide line of a kind ("grid", "panel joint", ...) from a to b in this surface's u, v; with
         plan=True (or in a house rule), a line in plan from (x, y) a to b. Guides are not timber. Two kinds are
-        structural and only a layout rule may lay them: "beam", a bearing line on this floor, ceiling or roof
-        plane that carries what spans onto it to the walls it crosses or ends on, and "span", a line on this
-        floor or ceiling along the way it is to span."""
+        structural, and change the loads rules read from then on: "beam", a bearing line on this floor, ceiling
+        or roof plane that carries what spans onto it to the walls it crosses or ends on, and "span", a line on
+        this floor or ceiling along the way it is to span."""
         on = "" if plan or self.surface is None else self.surface.id
         if kind in STRUCTURAL:
-            if self._phase != "layout":
-                raise ValueError(f"a {kind} guide decides the load path: lay it out in a layout rule (@layout)")
             if not on or isinstance(self.surface, Wall) or (kind == "span" and not isinstance(self.surface, Floor)):
                 raise ValueError(f"a {kind} guide lies on a floor or ceiling" + (" or a roof plane" if kind == "beam" else ""))
             self._loads = None
@@ -503,12 +489,9 @@ def build(grammar, house: House, max_passes: int = 10, max_members: int = 20000,
         if msg not in errors:
             errors.append(msg)
 
-    settled: set[str] = set()
-    for p, phase in ((p, ph) for ph in ("layout", "frame") for p in range(1, max_passes + 1)):
-        if phase in settled:
-            continue
-        s._phase, before = phase, s.changes
-        for r in (r for r in rules if r.phase == phase):
+    for p in range(1, max_passes + 1):
+        before = s.changes
+        for r in rules:
             s._rule = r.__name__
             for surf, x, key in matches(s, r.match):
                 if (r.__name__, key) in fired:
@@ -528,7 +511,7 @@ def build(grammar, house: House, max_passes: int = 10, max_members: int = 20000,
                 except Exception as e:
                     error(r, key, e)
                 if s._placed_now or s._removed_now or s._shaped_now or s._guided_now or s._assigned_now:
-                    steps.append({"phase": phase, "pass": p, "rule": r.__name__, "surface": surf.id if surf else "",
+                    steps.append({"pass": p, "rule": r.__name__, "surface": surf.id if surf else "",
                                   "match": f"{r.match} {' '.join(map(str, key))}", "target": target(r.match, surf, x),
                                   "placed": s._placed_now, "removed": s._removed_now,
                                   "shaped": sorted(set(s._shaped_now)), "assigned": sorted(set(s._assigned_now)),
@@ -539,9 +522,9 @@ def build(grammar, house: House, max_passes: int = 10, max_members: int = 20000,
                     errors.append(f"stopped: more than {max_members} members")
                     return frame()
         if s.changes == before:
-            settled.add(phase)
-    for phase in sorted({"layout", "frame"} - settled):
-        errors.append(f"{phase} did not settle after {max_passes} passes")
+            break
+    else:
+        errors.append(f"did not settle after {max_passes} passes")
     return frame()
 
 

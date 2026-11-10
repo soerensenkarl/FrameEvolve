@@ -69,7 +69,7 @@ def api_reference() -> str:
               "s.loads is the whole takedown: s.loads.on(wall id, u0, u1) for any wall, s.loads.points(surface id), "
               "s.loads.span (floor id: 'u' or 'v', the way it spans), s.loads.lost (loads nothing carries: surface "
               "id, load, why).",
-              "Import with `from frameevolve.builder import layout, rule`."]
+              "Import with `from frameevolve.builder import rule`."]
     return "\n".join(lines)
 
 
@@ -93,9 +93,9 @@ The rules API:
 {api}
 
 Write the grammar so a framer could read it: small rules with one job each, a docstring saying what each
-does, names in framing terms. Work as an engineer and then a detailer: decide the load path in layout rules
-(beams, which way floors span), then frame to the forces it gives (s.load, the point match) rather than to
-fixed sizes. Lay out guides (a grid, panel joints) before framing to them, and assign
+does, names in framing terms. A good way to start, though the order of rules is yours to choose: as an engineer
+and then a detailer, lay out the load path first (beams, which way floors span), then frame from the roof
+down to the forces it gives (s.load, the point match) rather than to fixed sizes. Lay out guides (a grid, panel joints) before framing to them, and assign
 members to panels with s.assign. Before you finish, write down up to three lessons with record_lesson: what you
 tried and what it did, or what you learned about the verifier or the builder, so the proposers after you in this
 search start from it. No function may have more than {max_lines} lines of code (docstrings, blank

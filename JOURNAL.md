@@ -304,3 +304,7 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
 - The case that does need order: a point load a wall gathers must be seen by the floor under it. Next step
   is framing top down with each surface analysed once as it is finished, so real reactions replace the
   estimate (forces as rule outputs). Not built yet.
+- Later the same day: the two phases are no longer enforced. Karl does not want to structure rule priority:
+  it should be learned. @layout is gone; any rule may lay a beam or a span, the takedown follows, and a rule
+  that reads a force too early gets the load path as it then was. Layout first and top down stays as advice
+  in the proposer's instructions and as the seed's order. Whether the search keeps that order is a result.

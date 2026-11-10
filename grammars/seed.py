@@ -4,7 +4,7 @@ Walls: a bottom and a top plate, studs every 24" from the wall's start, a stud a
 stud each side, a header over it and a sill under a window. Floors: a rim around the outline and joists every 24".
 Ceilings: ceiling joists every 24". Roofs: rafters every 24" and a ridge board. Each wall and each floor is one
 prefab panel. Everything else (corners, jacks and cripples, birdsmouths, ties, gables, blocking, panel joints)
-is left for the search to find. Inches.
+is left for the search to find. Rules run from the roof down, the way the loads go. Inches.
 """
 from frameevolve.builder import rule
 from frameevolve.geometry import edges, scan
@@ -38,7 +38,7 @@ def runs(x, u):
     return scan([(v, u_) for u_, v in x.outline_uv], u)
 
 
-@rule(10, match="wall")
+@rule(60, match="wall")
 def plates(s, w):
     """A bottom plate on the floor and a top plate under what the wall carries, in stock lengths."""
     for a, b in pieces(0, w.length):
@@ -46,7 +46,7 @@ def plates(s, w):
         s.place(section(w), a, b, top(s) - T, top(s), role="top plate")
 
 
-@rule(20, match="wall")
+@rule(61, match="wall")
 def studs(s, w):
     """A stud at each end, and every 24" from the wall's start where no opening is."""
     clear = lambda u: not any(o.u0 - T < u < o.u1 + T for o in w.openings)
@@ -55,7 +55,7 @@ def studs(s, w):
             s.place(section(w), u, u + T, T, top(s) - T, role="stud")
 
 
-@rule(30, match="opening", when=lambda s, o: isinstance(s.surface, Wall))
+@rule(62, match="opening", when=lambda s, o: isinstance(s.surface, Wall))
 def opening(s, o):
     """A king stud each side, a header over the opening, and a sill under a window."""
     w = s.surface
@@ -66,7 +66,7 @@ def opening(s, o):
         s.place(section(w), o.u0, o.u1, o.v0 - T, o.v0, role="sill")
 
 
-@rule(40, match="floor", when=lambda s, f: f.role == "floor")
+@rule(30, match="floor", when=lambda s, f: f.role == "floor")
 def rim(s, f):
     """A rim joist along every edge of the floor's outline, in stock lengths."""
     for (u0, v0), (u1, v1) in edges(f.outline_uv):
@@ -75,7 +75,7 @@ def rim(s, f):
             s.place(JOIST, *((a, b, v0, v0 + T) if along_u else (u0, u0 + T, a, b)), role="rim")
 
 
-@rule(41, match="floor", when=lambda s, f: f.role == "floor")
+@rule(31, match="floor", when=lambda s, f: f.role == "floor")
 def joists(s, f):
     """Joists every 24" across the floor, the length of the floor, in stock lengths."""
     for c in range(SPACING, int(f.length), SPACING):
@@ -84,7 +84,7 @@ def joists(s, f):
                 s.place(JOIST, c - T / 2, c + T / 2, a, b, role="joist")
 
 
-@rule(42, match="floor", when=lambda s, f: f.role == "ceiling")
+@rule(20, match="floor", when=lambda s, f: f.role == "ceiling")
 def ceiling_joists(s, f):
     """Ceiling joists every 24" across the ceiling, in stock lengths."""
     for c in range(SPACING, int(f.length), SPACING):
@@ -93,7 +93,7 @@ def ceiling_joists(s, f):
                 s.place(CEILING_JOIST, c - T / 2, c + T / 2, a, b, role="ceiling joist")
 
 
-@rule(50, match="roof")
+@rule(10, match="roof")
 def rafters(s, r):
     """Rafters every 24" along the eave, from the eave up the slope."""
     for c in range(SPACING, int(r.size[0]), SPACING):
@@ -101,7 +101,7 @@ def rafters(s, r):
             s.place(RAFTER, c - T / 2, c + T / 2, v0, v1, role="rafter")
 
 
-@rule(51, match="seam", when=lambda s, x: x.kind == "ridge")
+@rule(11, match="seam", when=lambda s, x: x.kind == "ridge")
 def ridge(s, x):
     """A ridge board along the ridge, set down by half its depth."""
     up = s.surface.local_dir((0.0, 0.0, 1.0))

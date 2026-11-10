@@ -10,7 +10,7 @@ Loads come from the house, not the frame, and gravity only goes down, so the tak
   walls      what lands on a wall's top, and the wall's own weight, goes down to the floor it stands on, or
              out of the house at the ground; what lands over an opening goes to the opening's two sides
 
-Surfaces are taken from the top down, each after everything that lands on it. A grammar's layout rules change
+Surfaces are taken from the top down, each after everything that lands on it. A grammar's rules change
 the load path with structural guides (s.guide): a "beam" on a floor, ceiling or roof plane is a bearing line
 that takes its load to the walls it crosses or ends on; a "span" on a floor or ceiling sets which way it spans
 (by default the way that gives the shortest spans). The takedown is the same code whether or not there are
@@ -36,7 +36,7 @@ STEP = 6.0                 # the width of a strip, inches
 NEAR = 3.0                 # a load this close to a bearing line in plan goes straight into it
 REACH = 24.0               # a wall holds a roof plane up where the plane passes no more than this over its top
 WALL_DEAD = 8.0            # a framed wall with its boards, psf of wall (ASCE 7 Table C3.1-1: 2x6 at 16", finished)
-STRUCTURAL = ("beam", "span")   # the guide kinds that change the load path: laid out before framing
+STRUCTURAL = ("beam", "span")   # the guide kinds that change the load path
 
 Pt = tuple[float, float]
 
