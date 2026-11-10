@@ -286,3 +286,21 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
   A filter shows all, faulted, hard or soft checks. Clicking a question opens its module's description beside
   the table; clicking a check its limits and faults, as before. The project is on GitHub (private,
   soerensenkarl/FrameEvolve) for the group.
+
+## 2026-11-10: forces in the grammar; layout before framing
+
+- Worry: forces are only known once the frame exists, so rules that size by force would have to iterate. They
+  do not: loads come from the house and only go down. frameevolve/loads.py takes them down on the bare
+  surfaces (roof strips to eave walls, floor strips along the span to bearing lines, walls to the floor they
+  stand on, openings gather what is over them to their two sides). On h000-h019 every pound reaches the
+  ground, in 15 to 100 ms a house.
+- The build has two phases, as Karl put it: an engineer fixes the main force flows (beams, reinforcement),
+  then a detailer frames with a notion of the forces. `@layout` rules lay structural guides ("beam", "span")
+  and no timber; `@rule` rules frame and may not lay them. A ridge beam laid as a guide on h001 moves half
+  the roof from the eave walls to two 10,000 lb points on the gable walls, which then show up as "point"
+  matches on those walls, on the floor under them and on the walls below.
+- Rules read forces with s.load(u0, u1) on a wall and s.pressure() on a floor or roof; the proposer sees each
+  wall's load and points in the frame overview. The seed does not use them yet: finding that is the search's.
+- The case that does need order: a point load a wall gathers must be seen by the floor under it. Next step
+  is framing top down with each surface analysed once as it is finished, so real reactions replace the
+  estimate (forces as rule outputs). Not built yet.

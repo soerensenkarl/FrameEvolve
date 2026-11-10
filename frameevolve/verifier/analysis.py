@@ -116,6 +116,11 @@ class Load(NamedTuple):
     def under(self, weights) -> float:
         return self.dead * weights[0] + self.live * weights[1] + self.snow * weights[2]
 
+    @property
+    def sum(self) -> float:
+        """Dead, live and snow together, unfactored."""
+        return self.dead + self.live + self.snow
+
 
 NONE = Load()
 

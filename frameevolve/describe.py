@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 
+from frameevolve.loads import Takedown
 from frameevolve.model import Floor, Frame, House, Member, Roof, Wall
 from frameevolve.verifier import Report
 
@@ -45,6 +46,11 @@ def overview(house: House, frame: Frame, report: Report) -> str:
     s = report.site
     lines = [f"House {house.id}: {len(frame.members)} members, {report.hard} hard faults, {report.soft} soft. "
              f"{report.metrics.get('panels', 0)} panels, {report.metrics.get('site_pieces', 0)} pieces built on site."]
+    td = Takedown(house, frame.guides)
+    lb = lambda L: f"{L.sum:,.0f} lb (dead {L.dead:,.0f}, live {L.live:,.0f}, snow {L.snow:,.0f})"
+    if td.lost:
+        lines.append("Loads the layout leaves with nothing under them: "
+                     + "; ".join(f"{sid}: {lb(L)}, {why}" for sid, L, why in td.lost[:6]))
     surface_faults: dict[str, Counter] = defaultdict(Counter)
     for f in report.faults:
         if f.surface:
@@ -58,6 +64,14 @@ def overview(house: House, frame: Frame, report: Report) -> str:
         panels = Counter(m.panel or "site" for m in ms)
         lines.append(f"\n{x.id}: {kind(x)}, {U:.1f} x {V:.1f} in., {len(ms)} members"
                      + (f", {len(x.openings)} openings ({', '.join(f'{o.id} {o.kind} u {o.u0:g}-{o.u1:g} v {o.v0:g}-{o.v1:g}' for o in x.openings)})" if x.openings else ""))
+        if isinstance(x, Wall):
+            pts = td.points(x.id)
+            lines.append(f"  load on its top, by the takedown on the surfaces: {lb(td.on(x.id))}"
+                         + (f"; points: {', '.join(f'{p.load.sum:,.0f} lb at u {p.u:g} ({p.source})' for p in pts)}" if pts else ""))
+        else:
+            A = td.area[x.id]
+            lines.append(f"  area load {A.dead:g} dead, {A.live:g} live, {A.snow:g} snow psf"
+                         + (f", spans along {td.span[x.id]}" if x.id in td.span else ""))
         if rests:
             lines.append(f"  rests on {', '.join(f'{k} ({n})' for k, n in rests.most_common())}")
         if carried:

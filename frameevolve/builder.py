@@ -12,6 +12,14 @@ design state (the house plus every member placed so far), and calls the rule onc
 rule whose condition only becomes true after other rules have acted still fires. A rule never fires twice
 on the same match. Every member records the rule that placed it; every step records the match.
 
+A build has two phases, as an engineer and then a detailer work. Layout rules (`@layout`, same arguments) run
+first, to a standstill: they decide the load path and place no timber, only guides. Framing rules (`@rule`)
+then place the members, against that layout. Forces are known throughout, from a load takedown on the house's
+surfaces (loads.py): s.load is what lands on a wall, s.pressure the area load of a floor or roof, and the
+"point" match every concentrated load. A layout rule changes the load path with a structural guide: a "beam"
+on a floor, ceiling or roof plane is a bearing line (a girder, a ridge beam) that takes its load to the walls
+it crosses; a "span" on a floor or ceiling sets which way it spans. The takedown is redone when one is laid.
+
 Match kinds (what the rule receives as its second argument; `s.surface` is set to the surface it is on,
 a wall, a floor or a roof plane):
   house    the house, once (s.surface is None): for laying out guides over the whole plan
@@ -27,6 +35,8 @@ a wall, a floor or a roof plane):
   bearer   every wall under a floor (s.surface is the floor): .wall, .role, .a, .b (its line in the floor's
            u, v), .side (the direction its framing lies), .along_u
   load     every wall standing on a floor (s.surface is the floor), with the same fields
+  point    every concentrated load landing on a wall's top or on a floor, gathered there by a beam or by an
+           opening in the wall above: .u, .v (on a wall, its top), .load (dead, live, snow in lb; .sum), .source
   gap      every stretch of a face with no backing: .face ('outer' or 'inner'), .kind, .u0, .u1, .v0, .v1
   member   every member placed so far
 
@@ -51,23 +61,30 @@ from pathlib import Path
 from frameevolve import solid, surface
 from frameevolve.geometry import EPS, Box, dot, mul, overlaps, unit
 from frameevolve.graph import Graph, build_graph
-from frameevolve.model import SECTIONS, STOCK, THICK, Frame, Guide, House, Member
+from frameevolve.loads import STRUCTURAL, Takedown
+from frameevolve.model import SECTIONS, STOCK, THICK, Floor, Frame, Guide, House, Member, Wall
+from frameevolve.verifier.analysis import Load
 
 
-MATCHES = ("house", "guide", "wall", "floor", "roof", "seam", "opening", "corner", "tee", "bearer", "load", "gap",
-           "member")
+MATCHES = ("house", "guide", "wall", "floor", "roof", "seam", "opening", "corner", "tee", "bearer", "load", "point",
+           "gap", "member")
 
 
-def rule(priority: int, match: str, when=None):
-    """Mark a function as a rule: fn(s, x) for each x of kind `match` where when(s, x) holds.
+def rule(priority: int, match: str, when=None, phase: str = "frame"):
+    """Mark a function as a framing rule: fn(s, x) for each x of kind `match` where when(s, x) holds.
     Lower priority runs first in every pass."""
     if match not in MATCHES:
         raise ValueError(f"match is one of {', '.join(MATCHES)}, not {match!r}")
 
     def mark(fn):
-        fn.priority, fn.match, fn.when = priority, match, when
+        fn.priority, fn.match, fn.when, fn.phase = priority, match, when, phase
         return fn
     return mark
+
+
+def layout(priority: int, match: str, when=None):
+    """Mark a function as a layout rule: it runs before any framing rule and lays out guides only."""
+    return rule(priority, match, when, "layout")
 
 
 @dataclass(frozen=True)
@@ -89,6 +106,8 @@ def target(kind: str, surf, x) -> dict:
         return {"kind": kind, "surface": surf.id, "u0": x.a[0], "u1": x.b[0], "v0": x.a[1], "v1": x.b[1], "other": x.other}
     if kind in ("bearer", "load"):
         return {"kind": kind, "surface": surf.id, "u0": x.a[0], "u1": x.b[0], "v0": x.a[1], "v1": x.b[1], "other": x.wall}
+    if kind == "point":
+        return {"kind": kind, "surface": surf.id, "u0": x.u, "u1": x.u, "v0": 0.0 if isinstance(surf, Wall) else x.v, "v1": x.v}
     if kind == "opening":
         return {"kind": kind, "surface": surf.id, "u0": x.u0, "u1": x.u1, "v0": x.v0, "v1": x.v1}
     if kind == "corner":
@@ -121,6 +140,8 @@ def matches(s: "State", kind: str) -> list[tuple[object, object, tuple]]:
         return [(r, x, (r.id, x.other)) for r in s.house.roofs for x in r.seams]
     if kind in ("bearer", "load"):
         return [(f, b, (f.id, b.wall)) for f in s.house.floors for b in (f.bearers if kind == "bearer" else f.loads)]
+    if kind == "point":
+        return [(x, p, (x.id, p.u, p.v, p.source)) for x in (*walls, *s.house.floors) for p in s.loads.points(x.id)]
     if kind == "opening":
         return [(w, o, (o.id,)) for w in surfaces for o in w.openings]
     if kind == "corner":
@@ -171,6 +192,8 @@ class State:
         self._guides: dict[str, Guide] = {}
         self._guided_now: list[str] = []
         self._assigned_now: list[str] = []
+        self._phase = "frame"
+        self._loads: Takedown | None = None
 
     # reading ---------------------------------------------------------------------------------------
 
@@ -203,6 +226,23 @@ class State:
                 if abs(den) > 1e-9:
                     out.append(((g.a[0] - o[0]) * d[1] - (g.a[1] - o[1]) * d[0]) / den)
         return sorted(round(u, 6) for u in out if -EPS <= u <= x.size[0] + EPS)
+
+    @property
+    def loads(self) -> Takedown:
+        """The load takedown on the house's surfaces, with the beams and spans laid out so far (loads.py)."""
+        if self._loads is None:
+            self._loads = Takedown(self.house, list(self._guides.values()))
+        return self._loads
+
+    def load(self, u0: float | None = None, u1: float | None = None) -> Load:
+        """What lands on this wall's top between u0 and u1 along it (all of it by default), from the roofs,
+        floors and walls above: a Load of .dead, .live and .snow in lb, .sum for all three. Over an opening, half
+        goes to each side. An estimate from the house's surfaces, known before anything is framed."""
+        return self.loads.on(self.surface.id, u0, u1)
+
+    def pressure(self) -> Load:
+        """The area load on this floor, ceiling or roof plane, psf: a Load of .dead, .live and .snow."""
+        return self.loads.area.get(self.surface.id, Load())
 
     def local(self, m: Member) -> Box:
         """A member's bounding box in this surface's coordinates: lo = (u0, v0, w0), hi = (u1, v1, w1)."""
@@ -287,6 +327,7 @@ class State:
         The rectangle's short side says how the section is turned: equal to the width (1 1/2") means flat or
         upright, with the depth running through the wall; equal to the depth means on edge, 1 1/2" through.
         """
+        self._framing()
         if section not in SECTIONS:
             raise ValueError(f"unknown section {section!r}; use one of {', '.join(SECTIONS)}")
         width, depth = SECTIONS[section]
@@ -316,6 +357,7 @@ class State:
     def put(self, section: str, a, b, up, role: str = "") -> Member:
         """Place a member at any angle: its centreline from point a to point b, its depth facing `up` (square to
         the centreline), all in this surface's u, v, w."""
+        self._framing()
         if section not in SECTIONS:
             raise ValueError(f"unknown section {section!r}; use one of {', '.join(SECTIONS)}")
         w = self.surface
@@ -326,6 +368,10 @@ class State:
         self.changes += 1
         self._graph = None
         return m
+
+    def _framing(self) -> None:
+        if self._phase == "layout":
+            raise ValueError("a layout rule lays out guides only; place members in a framing rule (@rule)")
 
     def cut(self, m: Member, point, normal, surface=None) -> None:
         """Saw m along the plane through `point` square to `normal`, taking off the side the normal points to.
@@ -396,8 +442,17 @@ class State:
 
     def guide(self, kind: str, a, b, plan: bool = False) -> Guide:
         """Lay out a guide line of a kind ("grid", "panel joint", ...) from a to b in this surface's u, v; with
-        plan=True (or in a house rule), a line in plan from (x, y) a to b. Guides are not timber."""
+        plan=True (or in a house rule), a line in plan from (x, y) a to b. Guides are not timber. Two kinds are
+        structural and only a layout rule may lay them: "beam", a bearing line on this floor, ceiling or roof
+        plane that carries what spans onto it to the walls it crosses or ends on, and "span", a line on this
+        floor or ceiling along the way it is to span."""
         on = "" if plan or self.surface is None else self.surface.id
+        if kind in STRUCTURAL:
+            if self._phase != "layout":
+                raise ValueError(f"a {kind} guide decides the load path: lay it out in a layout rule (@layout)")
+            if not on or isinstance(self.surface, Wall) or (kind == "span" and not isinstance(self.surface, Floor)):
+                raise ValueError(f"a {kind} guide lies on a floor or ceiling" + (" or a roof plane" if kind == "beam" else ""))
+            self._loads = None
         g = Guide(f"g{len(self._guides) + 1}", kind, on, tuple(map(float, a)), tuple(map(float, b)), self._rule)
         self._guides[g.id] = g
         self._guided_now.append(g.id)
@@ -448,9 +503,12 @@ def build(grammar, house: House, max_passes: int = 10, max_members: int = 20000,
         if msg not in errors:
             errors.append(msg)
 
-    for p in range(1, max_passes + 1):
-        before = s.changes
-        for r in rules:
+    settled: set[str] = set()
+    for p, phase in ((p, ph) for ph in ("layout", "frame") for p in range(1, max_passes + 1)):
+        if phase in settled:
+            continue
+        s._phase, before = phase, s.changes
+        for r in (r for r in rules if r.phase == phase):
             s._rule = r.__name__
             for surf, x, key in matches(s, r.match):
                 if (r.__name__, key) in fired:
@@ -470,7 +528,7 @@ def build(grammar, house: House, max_passes: int = 10, max_members: int = 20000,
                 except Exception as e:
                     error(r, key, e)
                 if s._placed_now or s._removed_now or s._shaped_now or s._guided_now or s._assigned_now:
-                    steps.append({"pass": p, "rule": r.__name__, "surface": surf.id if surf else "",
+                    steps.append({"phase": phase, "pass": p, "rule": r.__name__, "surface": surf.id if surf else "",
                                   "match": f"{r.match} {' '.join(map(str, key))}", "target": target(r.match, surf, x),
                                   "placed": s._placed_now, "removed": s._removed_now,
                                   "shaped": sorted(set(s._shaped_now)), "assigned": sorted(set(s._assigned_now)),
@@ -481,9 +539,9 @@ def build(grammar, house: House, max_passes: int = 10, max_members: int = 20000,
                     errors.append(f"stopped: more than {max_members} members")
                     return frame()
         if s.changes == before:
-            break
-    else:
-        errors.append(f"did not settle after {max_passes} passes")
+            settled.add(phase)
+    for phase in sorted({"layout", "frame"} - settled):
+        errors.append(f"{phase} did not settle after {max_passes} passes")
     return frame()
 
 

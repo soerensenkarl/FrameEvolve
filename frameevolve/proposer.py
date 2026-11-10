@@ -60,13 +60,16 @@ def api_reference() -> str:
              "start, end, up, box (lo, hi world corners), points, cuts, notches and panel (the prefab panel it is "
              "built into, or '' for built on site).", ""]
     for name in ["place", "put", "cut", "trim", "under", "notch", "fit", "remove", "assign", "guide", "guides",
-                 "crossings", "members", "local", "overlapping", "bears_on",
+                 "crossings", "load", "pressure", "members", "local", "overlapping", "bears_on",
                  "carries", "beside", "gaps", "below", "above", "free"]:
         fn = getattr(builder.State, name)
         doc = " ".join((inspect.getdoc(fn) or "").split())
         lines.append(f"s.{name}{inspect.signature(fn)}".replace("self, ", "").replace("(self)", "()") + f": {doc}")
     lines += ["", "A gap from s.gaps() has u0, u1, v0, v1, face and kind 'edge' or 'field'.",
-              "Import with `from frameevolve.builder import rule`."]
+              "s.loads is the whole takedown: s.loads.on(wall id, u0, u1) for any wall, s.loads.points(surface id), "
+              "s.loads.span (floor id: 'u' or 'v', the way it spans), s.loads.lost (loads nothing carries: surface "
+              "id, load, why).",
+              "Import with `from frameevolve.builder import layout, rule`."]
     return "\n".join(lines)
 
 
@@ -90,7 +93,9 @@ The rules API:
 {api}
 
 Write the grammar so a framer could read it: small rules with one job each, a docstring saying what each
-does, names in framing terms. Lay out guides (a grid, panel joints) before framing to them, and assign
+does, names in framing terms. Work as an engineer and then a detailer: decide the load path in layout rules
+(beams, which way floors span), then frame to the forces it gives (s.load, the point match) rather than to
+fixed sizes. Lay out guides (a grid, panel joints) before framing to them, and assign
 members to panels with s.assign. Before you finish, write down up to three lessons with record_lesson: what you
 tried and what it did, or what you learned about the verifier or the builder, so the proposers after you in this
 search start from it. No function may have more than {max_lines} lines of code (docstrings, blank
