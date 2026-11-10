@@ -51,6 +51,7 @@ def overview(house: House, frame: Frame, report: Report) -> str:
     if td.lost:
         lines.append("Loads the layout leaves with nothing under them: "
                      + "; ".join(f"{sid}: {lb(L)}, {why}" for sid, L, why in td.lost[:6]))
+    lines += [f"Wind: {x}; each of these walls is asked for all it could hold." for x in td.short]
     surface_faults: dict[str, Counter] = defaultdict(Counter)
     for f in report.faults:
         if f.surface:
@@ -66,7 +67,8 @@ def overview(house: House, frame: Frame, report: Report) -> str:
                      + (f", {len(x.openings)} openings ({', '.join(f'{o.id} {o.kind} u {o.u0:g}-{o.u1:g} v {o.v0:g}-{o.v1:g}' for o in x.openings)})" if x.openings else ""))
         if isinstance(x, Wall):
             pts = td.points(x.id)
-            lines.append(f"  load on its top, by the takedown on the surfaces: {lb(td.on(x.id))}"
+            lines.append(f"  wind racks it with {td.shear.get(x.id, 0):,.0f} lb; load on its top, by the takedown "
+                         f"on the surfaces: {lb(td.on(x.id))}"
                          + (f"; points: {', '.join(f'{p.load.sum:,.0f} lb at u {p.u:g} ({p.source})' for p in pts)}" if pts else ""))
         else:
             A = td.area[x.id]

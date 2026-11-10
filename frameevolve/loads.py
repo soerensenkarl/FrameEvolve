@@ -16,6 +16,11 @@ that takes its load to the walls it crosses or ends on; a "span" on a floor or c
 (by default the way that gives the shortest spans). The takedown is the same code whether or not there are
 guides, and cheap, so it is redone whenever a structural guide is laid.
 
+Wind is kept to one number a wall: its shear, the racking force along it. The wind (one pressure, on the
+house's projected area, in each plan direction) above the middle of a storey racks that storey, and the
+storey's walls along the wind share it by what each could hold if every stretch between its openings were
+braced: a long solid wall draws more than a short one full of doors.
+
 Loads are (dead, live, snow) in pounds. A load that finds nothing to carry it is listed in `lost`; everything
 else reaches the ground: applied = ground + lost. Estimates for framing by, not the verifier's analysis:
 that one follows the loads through the members as built (verifier/analysis.py).
@@ -30,7 +35,8 @@ from typing import NamedTuple
 
 from frameevolve.geometry import EPS, scan
 from frameevolve.model import Floor, Guide, House, Roof, Wall
-from frameevolve.verifier.analysis import CEILING_LOAD, FLOOR_LOAD, NONE, PSF, ROOF_LOAD, Load, total
+from frameevolve.verifier.analysis import (CEILING_LOAD, FLOOR_LOAD, NONE, PSF, ROOF_LOAD, WIND, Load, clear, holds,
+                                           total)
 
 STEP = 6.0                 # the width of a strip, inches
 NEAR = 3.0                 # a load this close to a bearing line in plan goes straight into it
@@ -126,6 +132,10 @@ def spread(a: float, b: float, w: Load, points: list[tuple[float, Load, str]], s
     return out
 
 
+def area(poly: list[Pt]) -> float:
+    return abs(sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(poly, poly[1:] + poly[:1]))) / 2
+
+
 def wall_top(w: Wall, u: float) -> float:
     """The height of a wall's top at u along it: under its gable's slope where it has one."""
     if not w.outline:
@@ -143,6 +153,9 @@ class Takedown:
     base[wall id]      what the wall passes down: the same gathered to the sides of its openings, and its weight
     onto[floor id]     what the walls standing on a floor bring: items at (u, v)
     beams[guide id]    what a beam carries: items at (distance along it,)
+    shear[wall id]     the wind's racking force along a wall, lb
+    short              storeys whose walls could not hold the wind however they were framed (the house's
+                       openings leave too little wall): their walls are asked for all they could hold
     applied, ground    all the load on the house, and what reaches the ground
     lost               loads nothing carries: (surface id, load, why)
     """
@@ -159,6 +172,8 @@ class Takedown:
         self.applied, self.ground = NONE, NONE
         self.lost: list[tuple[str, Load, str]] = []
         self._walls = {w.id: w for w in house.walls}
+        self.short: list[str] = []
+        self.shear = self._wind()
         for r in house.roofs:
             self._roof(r)
         for r in house.roofs:      # after every plane: a ridge beam gathers from the planes on both its sides
@@ -188,6 +203,34 @@ class Takedown:
         return [Point(float(u), float(v), load, src) for (u, v, src), load in sorted(by.items())]
 
     # the takedown ------------------------------------------------------------------------------------
+
+    def _wind(self) -> dict[str, float]:
+        """Each wall's share of the wind: what blows on the house above the middle of its storey, in the plan
+        direction the wall runs, shared among the storey's walls by what each could hold along it."""
+        faces = []                # (bottom, top, area facing x, area facing y): exterior walls and roof planes
+        for w in self.house.walls:
+            if w.role == "exterior":
+                A = area(w.outline_uv)
+                faces.append((w.base, w.base + max(v for _, v in w.outline_uv), A * abs(w.normal[0]), A * abs(w.normal[1])))
+        for r in self.house.roofs:
+            sin = r.slope / math.sqrt(1 + r.slope ** 2)
+            A, up = area(r.outline) * sin, math.hypot(r.ev[0], r.ev[1])
+            faces.append((r.z, r.z + r.size[1] * sin, A * abs(r.ev[0]) / up, A * abs(r.ev[1]) / up))
+        out = {}
+        for base in {round(w.base, 3) for w in self.house.walls}:
+            storey = [w for w in self.house.walls if round(w.base, 3) == base]
+            mid = base + min(w.height for w in storey) / 2
+            above = lambda z0, z1: min(1.0, max(0.0, (z1 - mid) / (z1 - z0)))
+            for k in (0, 1):      # a windward and a leeward face are both in `faces`: half
+                force = WIND * PSF * sum(f[2 + k] * above(f[0], f[1]) for f in faces) / 2
+                along = {w.id: holds(w, clear(w)) * abs(w.dir[k]) for w in storey}
+                for wid, share in along.items():
+                    if share > EPS:      # never more than the wall could hold: the rest is the house's, below
+                        out[wid] = max(out.get(wid, 0.0), min(1.0, force / sum(along.values())) * share)
+                if force > sum(along.values()):
+                    self.short.append(f"the walls along {'xy'[k]} standing at {base:g} in. cannot hold the wind even "
+                                      f"fully braced: {force:,.0f} lb against {sum(along.values()):,.0f} lb")
+        return out
 
     def _lines(self, x, walls: list[Wall], own: bool = False) -> list[Line]:
         """The bearing lines under a surface: these walls, and the beams laid out on it (for a roof plane, on

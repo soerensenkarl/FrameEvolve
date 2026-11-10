@@ -73,6 +73,14 @@ Pareto search keeps the grammars that do well across many houses.
   sides of an opening above) where it lands on a wall or a floor. A structural guide redoes the takedown
   (10 to 100 ms), so a rule reads the load path as laid out so far. Loads nothing carries are listed (`s.loads.lost`), and everything else reaches the ground.
   The takedown is the grammar's estimate; the verifier's analysis still follows the loads through the members.
+- Wind, kept simple: one pressure on the house's projected area, in the two plan directions. What blows above
+  the middle of a storey racks it, and its walls along the wind share that by what each could hold if every
+  stretch between its openings were braced. `s.shear()` is a wall's share; the verifier's "bracing" check asks
+  that the wall's braced stretches (full height, clear of openings, studs no more than 24" apart, at most 3.5
+  times taller than wide) hold it at what the sheathing's nailing allows. Where a storey's openings leave too
+  little wall for any framing to hold the wind, its walls are asked for all they could hold and the takedown
+  says so (`short`): that is the house's to fix, not the grammar's. Left out: wind bending studs, uplift,
+  seismic loads, hold-downs and other connectors.
 - Planned next: forces as outputs. A rule may ask for the real reaction of the members placed so far, so a
   grammar that frames the roof first gets real numbers below it and one that does not gets the estimate.
 - Guides: lines a rule lays out to frame by, not timber (`s.guide`): a grid over the plan, panel joints.

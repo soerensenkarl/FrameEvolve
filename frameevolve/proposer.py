@@ -60,14 +60,14 @@ def api_reference() -> str:
              "start, end, up, box (lo, hi world corners), points, cuts, notches and panel (the prefab panel it is "
              "built into, or '' for built on site).", ""]
     for name in ["place", "put", "cut", "trim", "under", "notch", "fit", "remove", "assign", "guide", "guides",
-                 "crossings", "load", "pressure", "members", "local", "overlapping", "bears_on",
+                 "crossings", "load", "shear", "pressure", "members", "local", "overlapping", "bears_on",
                  "carries", "beside", "gaps", "below", "above", "free"]:
         fn = getattr(builder.State, name)
         doc = " ".join((inspect.getdoc(fn) or "").split())
         lines.append(f"s.{name}{inspect.signature(fn)}".replace("self, ", "").replace("(self)", "()") + f": {doc}")
     lines += ["", "A gap from s.gaps() has u0, u1, v0, v1, face and kind 'edge' or 'field'.",
               "s.loads is the whole takedown: s.loads.on(wall id, u0, u1) for any wall, s.loads.points(surface id), "
-              "s.loads.span (floor id: 'u' or 'v', the way it spans), s.loads.lost (loads nothing carries: surface "
+              "s.loads.span (floor id: 'u' or 'v', the way it spans), s.loads.shear (wall id: lb), s.loads.lost (loads nothing carries: surface "
               "id, load, why).",
               "Import with `from frameevolve.builder import rule`."]
     return "\n".join(lines)

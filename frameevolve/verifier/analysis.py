@@ -39,7 +39,14 @@
      moment (exact for a uniform load, 25% high for one load at mid-span): live load for floors, ceilings and
      roofs, the whole load for beams in walls.
 
-Not modelled: wind and uplift, lateral loads, bending in studs, shear, connections, the foundation.
+4. Wind, kept simple: bracing. The wind on the house's projected area above the middle of each storey racks
+   that storey; its walls along the wind share it by what each could hold if every stretch between its
+   openings were braced (loads.py), as stiffer walls draw more load. A wall holds its share with its
+   braced stretches: full height, clear of openings, a stud at each end and studs no more than 24" apart
+   between, not too slender; each foot holds what its sheathing's nailing allows.
+
+Not modelled: wind on the wall's face (bending in studs), uplift, seismic loads, shear in members, connections
+and hold-downs, the foundation.
 """
 from __future__ import annotations
 
@@ -53,7 +60,7 @@ from frameevolve.graph import GROUND
 from frameevolve.model import Floor, Member, Roof, Wall
 from frameevolve.units import ftin, inches
 from frameevolve.verifier.report import Fault
-from frameevolve.verifier.site import Site, along, axis, level, name, nominal, vertical
+from frameevolve.verifier.site import Site, along, axis, full_height, level, name, nominal, vertical
 
 PSF = 1 / 144            # pounds per square foot to pounds per square inch
 
@@ -63,6 +70,16 @@ PSF = 1 / 144            # pounds per square foot to pounds per square inch
 FLOOR_LOAD = (10.0, 40.0, 0.0)
 CEILING_LOAD = (5.0, 10.0, 0.0)
 ROOF_LOAD = (15.0, 0.0, 30.0)
+# Wind, ASD: ASCE 7 ch. 28 (envelope procedure, simplified), about 115 mph, exposure B, on the house's projected
+# vertical area, times 0.6 for allowable stress design; 16 psf x 0.6 is the code's floor (28.3.4).
+WIND = 10.0
+# Racking, SDPWS Table 4.3A and 4.3C, ASD (nominal / 2), wind: 7/16" wood structural panels, 8d nails at 6" on
+# the edges, on Spruce-Pine-Fir (x 0.92), for an exterior wall; 1/2" gypsum board on both faces of a partition.
+SHEAR_WALL = 308.0       # lb per ft of braced exterior wall
+SHEAR_PARTITION = 100.0  # lb per ft of braced partition
+BRACE_ASPECT = 3.5       # SDPWS 4.3.3: a braced stretch may be this many times taller than wide...
+BRACE_FULL = 2.0         # ... and counts in full up to this; between, by 2 x width / height
+BRACE_STUDS = 24.0       # studs in a braced stretch, on centre: where the panel edges and field are nailed
 DENSITY = 26 / 1728      # Spruce-Pine-Fir, about 26 lb per cubic foot, in lb per cubic inch
 STRIP = 24.0             # no member carries more than half this past each side: the widest table spacing, inches
 
@@ -636,6 +653,59 @@ def deflection(s: Site, b: Beam) -> Fault | None:
     _, sag, l, p = worst
     return s.at(m, b.world((p.x0 + p.x1) / 2), "deflection", False,
                 f"{name(m)} sags {inches(sag)} under {what} over a {ftin(l)} span, allowed L/{k} = {inches(l / k)}")
+
+
+def braced(s: Site, w) -> list[tuple[float, float]]:
+    """A wall's braced stretches (u0, u1): runs of full-height studs no more than BRACE_STUDS apart with no
+    opening between them."""
+    us = sorted((w.local_box(m).lo[0], w.local_box(m).hi[0]) for m in full_height(s, w))
+    runs: list[list[float]] = []
+    for lo, hi in us:
+        joined = runs and lo - runs[-1][1] <= BRACE_STUDS and not any(
+            o.u0 < hi - EPS and o.u1 > runs[-1][1] - 1.5 + EPS for o in w.openings)
+        if joined:
+            runs[-1][1] = max(runs[-1][1], hi)
+        else:
+            runs.append([lo, hi])
+    return [(a, b) for a, b in runs if b - a > 3.0]
+
+
+def clear(w) -> list[tuple[float, float]]:
+    """The stretches of a wall between its openings: the most that could be braced."""
+    out, a = [], 0.0
+    for o in sorted(w.openings, key=lambda o: o.u0):
+        out.append((a, o.u0))
+        a = max(a, o.u1)
+    return [(a, b) for a, b in [*out, (a, w.length)] if b - a > 3.0]
+
+
+def holds(w, stretches) -> float:
+    """What a wall's braced stretches hold against racking, lb."""
+    plf = SHEAR_WALL if w.role == "exterior" else SHEAR_PARTITION
+    out = 0.0
+    for a, b in stretches:
+        slender = w.height / (b - a)
+        if slender <= BRACE_ASPECT:
+            out += (b - a) / 12 * plf * min(1.0, BRACE_FULL / slender)
+    return out
+
+
+def bracing(s: Site) -> list[Fault]:
+    """Each wall holds its share of the wind with its braced stretches."""
+    from frameevolve.loads import Takedown
+    shear = Takedown(s.house, s.frame.guides).shear
+    out = []
+    for w in s.house.walls:
+        ms = s.on.get(w.id, [])
+        stretches = braced(s, w)
+        V, cap = shear.get(w.id, 0.0), holds(w, stretches)
+        if ms and V > cap + 1.0:
+            out.append(s.flag("bracing", True, f"{w.id}: the wind racks this wall with {lb(V)}; its braced stretches "
+                              f"(full-height studs no more than {inches(BRACE_STUDS)} apart, clear of openings, no "
+                              f"more than {BRACE_ASPECT:g} times taller than wide) are "
+                              f"{', '.join(ftin(b - a) for a, b in stretches) or 'none'} and hold {lb(cap)}",
+                              w.id, w.length / 2, w.height / 2, [], sorted({m.rule for m in ms if vertical(m)})))
+    return out
 
 
 def loads(s: Site) -> list[Fault]:

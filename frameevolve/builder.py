@@ -234,6 +234,12 @@ class State:
         goes to each side. An estimate from the house's surfaces, known before anything is framed."""
         return self.loads.on(self.surface.id, u0, u1)
 
+    def shear(self) -> float:
+        """The wind's racking force along this wall, lb: its share of the wind on the house above the middle of
+        its storey. A wall holds it with braced stretches: full height, clear of openings, a stud at each end
+        and studs no more than 24" apart between, at most 3.5 times taller than wide."""
+        return self.loads.shear.get(self.surface.id, 0.0)
+
     def pressure(self) -> Load:
         """The area load on this floor, ceiling or roof plane, psf: a Load of .dead, .live and .snow."""
         return self.loads.area.get(self.surface.id, Load())

@@ -308,3 +308,14 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
   it should be learned. @layout is gone; any rule may lay a beam or a span, the takedown follows, and a rule
   that reads a force too early gets the load path as it then was. Layout first and top down stays as advice
   in the proposer's instructions and as the seed's order. Whether the search keeps that order is a result.
+
+## 2026-11-10: wind, as one number a wall
+
+- Lateral loads kept simple: 10 psf (ASD) on the projected area, storey shear to the walls along the wind,
+  one hard check ("bracing"): a wall's braced stretches must hold its share. Rules read s.shear().
+- Sharing the storey shear by wall length made 51 of about 400 walls fail whatever the framing: short
+  partitions full of doors got the same lb per ft as solid exterior walls. Sharing by what each wall could
+  hold fully braced fixes that; four houses (h000, h003, h014, h017) still have a storey whose openings leave
+  too little wall, so there the walls are asked for all they could hold and the shortfall is reported apart.
+- The racking values (308 plf sheathed exterior, 100 plf gypsum partition) are from memory of SDPWS tables
+  4.3A and 4.3C and need checking against the reference.

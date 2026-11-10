@@ -83,3 +83,22 @@ def test_a_rule_that_reads_a_force_before_the_beam_is_laid_gets_the_old_load_pat
         g.write_text(GRAMMAR.replace("@rule(20,", f"@rule({reader},").replace("@rule(10,", f"@rule({beam},"))
         return [m for m in build(g, houses.generate(1), max_passes=1).members if m.role == "post"]
     assert len(posts(20, 10)) == 4 and not posts(5, 10)
+
+
+def test_the_wind_racks_the_walls_along_it_and_lower_storeys_more():
+    """h001, a two-storey box: each storey's shear is shared among its walls; the ground storey gets more."""
+    td = Takedown(houses.generate(1))
+    assert all(td.shear[w] > 0 for w in ("1w0", "1w1", "2w0", "2w1")) and not td.short
+    assert td.shear["1w0"] > td.shear["2w0"] and td.shear["1w1"] > td.shear["2w1"]
+
+
+def test_a_wall_with_studs_too_far_apart_is_not_braced(tmp_path):
+    from frameevolve.verifier import analysis
+    from frameevolve.verifier.site import Site
+    house = houses.generate(1)
+    src = open("grammars/seed.py").read()
+    assert not analysis.bracing(Site(house, build("grammars/seed.py", house)))
+    g = tmp_path / "wide.py"
+    g.write_text(src.replace("SPACING = 24", "SPACING = 48"))
+    faults = analysis.bracing(Site(house, build(g, house)))
+    assert faults and all(f.check == "bracing" and f.hard for f in faults)

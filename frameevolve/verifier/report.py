@@ -31,6 +31,7 @@ CHECKS = {
     # analysis.py: a simple structural analysis of the loads
     "strength": "the loads on a member stress it past what the wood allows (bending, compression, buckling)",
     "crushing": "a member presses into the one under it harder than the wood across the grain allows",
+    "bracing": "a wall with too little braced length (full height, studded, clear of openings) for its share of the wind",
     "deflection": "a joist, rafter or beam sags more than the code allows under its loads",
     # boards.py: the skins
     "backing": "sheathing, subfloor, drywall or ceiling with nothing behind it",
