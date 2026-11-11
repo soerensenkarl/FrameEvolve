@@ -241,13 +241,23 @@ $("#rules").addEventListener("click", (e) => {
 
 // ---------------------------------------------------------------- tabs, header, keys
 
+// the pages in the top bar; the workbench's views of the frame (3D, Surfaces, Verifier) are in the toolbar under it
+const PAGES = { runs: "runs", explain: "explain" };
+let lastView = "view3d";
+
 export function showTab(id) {
   const pane = document.getElementById(id);
   const host = pane.closest("#center, #right");
-  host.querySelectorAll("nav.tabs button[data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === id));
+  const buttons = host.id === "center" ? document.querySelectorAll("#views button[data-tab]") : host.querySelectorAll("nav.tabs button[data-tab]");
+  buttons.forEach((b) => b.classList.toggle("on", b.dataset.tab === id));
   host.querySelectorAll(".pane").forEach((p) => p.classList.toggle("on", p === pane));
   remember("tab." + host.id, id);
   if (host.id === "center") {
+    const page = PAGES[id] || "work";
+    if (page === "work") lastView = id;
+    document.querySelectorAll("#appNav button").forEach((b) => b.classList.toggle("on", b.dataset.page === page));
+    document.body.dataset.tab = id;
+    document.body.classList.toggle("page-other", page !== "work");
     document.body.classList.toggle("runs-mode", id === "runs");
     document.body.classList.toggle("verifier-mode", id === "verifier" || id === "explain");
     if (id === "explain") renderExplain();
@@ -259,10 +269,14 @@ export function showTab(id) {
   }
 }
 
-document.querySelectorAll("nav.tabs").forEach((nav) => nav.addEventListener("click", (e) => {
+document.querySelectorAll("nav.tabs, #views").forEach((nav) => nav.addEventListener("click", (e) => {
   const b = e.target.closest("button[data-tab]");
   if (b) showTab(b.dataset.tab);
 }));
+$("#appNav").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-page]");
+  if (b) showTab(b.dataset.page === "work" ? lastView : b.dataset.page);
+});
 
 $("#showFaults").addEventListener("change", () => { look3d(); renderElev(); });
 document.addEventListener("click", (e) => {        // the show menu closes when you click elsewhere

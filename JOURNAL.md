@@ -325,3 +325,8 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
 - The workbench has an About tab: the loop as one diagram (house, builder, frame, verifier, search, proposer,
   grammar). Click a stage for what it is, with the numbers of the house and grammar open now and a button to
   the tab that shows it; Play walks one iteration. For the group members new to the project.
+- The top bar was confusing: the house and grammar sat above tabs that mixed views of the frame (3D, Surfaces,
+  Verifier) with other pages (Runs, About). Now three layers, each one kind of thing: a dark top bar with the
+  app's pages (Workbench, Search runs, About); on the workbench a toolbar with what is framed (house, grammar,
+  Regenerate) and how to look at it (3D, Surfaces, Verifier); and over the canvas what it shows (build, panels,
+  assembly, faults), the storey, the show menu, and in 3D Center and Measure.
