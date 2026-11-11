@@ -330,3 +330,7 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
   app's pages (Workbench, Search runs, About); on the workbench a toolbar with what is framed (house, grammar,
   Regenerate) and how to look at it (3D, Surfaces, Verifier); and over the canvas what it shows (build, panels,
   assembly, faults), the storey, the show menu, and in 3D Center and Measure.
+- The About tab redrawn as a paper figure (inputs, the loop, output), after the RL-framework figures Karl
+  pointed to: each box carries a picture drawn from what is open now (the house, the grammar's rules, a framed
+  wall, faults by module, the latest run's curve, the proposer's tools), and clicking one shows the real thing
+  below: rule source, the first build steps, the wall large, example faults, a proposer's lesson.
