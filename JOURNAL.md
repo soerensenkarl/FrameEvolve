@@ -319,3 +319,9 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
   too little wall, so there the walls are asked for all they could hold and the shortfall is reported apart.
 - The racking values (308 plf sheathed exterior, 100 plf gypsum partition) are from memory of SDPWS tables
   4.3A and 4.3C and need checking against the reference.
+
+## 2026-11-11: an About tab
+
+- The workbench has an About tab: the loop as one diagram (house, builder, frame, verifier, search, proposer,
+  grammar). Click a stage for what it is, with the numbers of the house and grammar open now and a button to
+  the tab that shows it; Play walks one iteration. For the group members new to the project.
