@@ -146,6 +146,7 @@ function renderAll() {
   renderStoreys();
   renderInspect();
   renderVerifier();
+  if (document.body.dataset.tab === "explain") renderExplain();   // opened before the first build came in
   renderReport();
   renderTimeline();
   renderCaption();
