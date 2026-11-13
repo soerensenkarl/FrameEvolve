@@ -16,8 +16,17 @@ export const meshes = new Map();   // member id -> its mesh in `group`
 export let surfs = [];   // per surface: {surface, mesh, line, label, opLabels}
 
 export function setup3d() {
+  // without WebGL (a browser with hardware acceleration off, or its GPU process down) the rest of the workbench
+  // still works: the 3D view says why it is empty, and every drawing call below does nothing
   const el = $("#view3d");
-  renderer = new THREE.WebGLRenderer({ antialias: true });
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+  } catch {
+    el.insertAdjacentHTML("beforeend", `<div class="no3d"><b>No 3D in this browser right now.</b> WebGL is off or unavailable.
+      In Chrome, turn on "Use graphics acceleration when available" (Settings, System) and restart Chrome, or check
+      chrome://gpu. Surfaces, Verifier and everything else work without it.</div>`);
+    return false;
+  }
   renderer.setPixelRatio(window.devicePixelRatio);
   el.appendChild(renderer.domElement);
   labeler = new CSS2DRenderer();
@@ -153,6 +162,7 @@ const measure = { on: false, first: null, group: null, marker: null };
 export const measuring = () => measure.on;
 
 export function setMeasure(on) {
+  if (!renderer) return;
   measure.on = on;
   measure.first = null;
   $("#measureBtn").classList.toggle("on", on);
@@ -265,6 +275,7 @@ function zoomAt(factor, e) {
 }
 
 export function zoomTo(p) {
+  if (!renderer) return;
   // keep the viewing direction, come within about ten feet of a point
   showTab("view3d");
   const t = new THREE.Vector3(...p.map((x) => x * S));
@@ -274,6 +285,7 @@ export function zoomTo(p) {
 }
 
 export function frameMembers(ids) {
+  if (!renderer) return;
   // keep the viewing direction, and come close enough to see these members whole
   const box = new THREE.Box3();
   for (const id of ids) { const m = meshes.get(id); if (m) box.expandByObject(m); }
@@ -286,6 +298,7 @@ export function frameMembers(ids) {
 }
 
 export function fit() {
+  if (!renderer) return;
   // frame the whole house, allowing for a narrow or wide view
   const box = new THREE.Box3();
   for (const s of surfs) box.expandByObject(s.mesh);
@@ -304,6 +317,7 @@ export function fit() {
 }
 
 export function resize() {
+  if (!renderer) return;
   const el = $("#view3d");
   if (!el.clientWidth || !el.clientHeight) return;
   renderer.setSize(el.clientWidth, el.clientHeight);
@@ -352,6 +366,7 @@ export function label(text, cls, pos, groupTo = surfGroup) {
 const v2 = (u, v) => new THREE.Vector2(u * S, v * S);
 
 export function renderSurfaces(list = surfaceList()) {
+  if (!renderer) return;
   clear(surfGroup);
   surfs = [];
   for (const s of list) {
@@ -383,6 +398,7 @@ export function renderSurfaces(list = surfaceList()) {
 }
 
 export function renderMarks() {
+  if (!renderer) return;
   // fault markers, and backing gaps, for every check or only the one chosen in the Verifier tab
   clear(gapGroup);
   clear(markGroup);
@@ -432,6 +448,7 @@ function memberMesh(m, mat, edgeMat) {
 export const edgeMaterial = () => new THREE.LineBasicMaterial({ color: 0x1d1d1b, transparent: true, opacity: 0.35 });
 
 export function addMember(m, mat, edgeMat) {
+  if (!renderer) return;
   // a member's mesh in the scene; a member already there (one a later rule cut or notched) is replaced
   removeMember(m.id);
   const mesh = memberMesh(m, mat, edgeMat);
@@ -440,6 +457,7 @@ export function addMember(m, mat, edgeMat) {
 }
 
 export function removeMember(id) {
+  if (!renderer) return;
   const x = meshes.get(id);
   if (!x) return;
   group.remove(x);
@@ -448,6 +466,7 @@ export function removeMember(id) {
 }
 
 export function startLiveDraw() {
+  if (!renderer) return;
   // the view while a build streams in: no members, no marks, no guides; the surfaces come with the stream's first line
   clear(group);
   clear(guideGroup);
@@ -456,6 +475,7 @@ export function startLiveDraw() {
 }
 
 export function render3d() {
+  if (!renderer) return;
   clear(group);
   meshes.clear();
   const edgeMat = edgeMaterial();
@@ -495,6 +515,7 @@ export function related() {
 }
 
 export function look3d() {
+  if (!renderer) return;
   if (!st.data) return;
   const rel = related();
   const done = finished();

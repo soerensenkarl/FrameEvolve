@@ -324,7 +324,7 @@ document.addEventListener("keydown", (e) => {
   if (recall("surfaces") === "0") $("#showSurfaces").checked = false;
   if (recall("guides") === "1") $("#showGuides").checked = true;
   setView(recall("view"));
-  setup3d();
+  if (setup3d() === false && recall("tab.center") !== "elev") showTab("elev");
   for (const host of ["center", "right"]) {
     const t = recall("tab." + host);
     if (t && document.getElementById(t)) showTab(t);
