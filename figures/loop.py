@@ -19,8 +19,8 @@ from frameevolve.builder import build, load_rules  # noqa: E402
 from frameevolve.model import House  # noqa: E402
 from frameevolve.verifier import verify  # noqa: E402
 
-HOUSE, RUN, EARLY = "h008", "seed1", "c001"   # the house; the run; its grammar shown mid-loop
-W, H = 1140, 460
+HOUSE, RUN, EARLY = "h008", "seed1", "c001"   # the house; the run; its grammar shown in the loop
+W, H = 1140, 436
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 INK, GREY, LINE, RED = "#1d1d1b", "#6b6b6b", "#a8a8a8", "#d8342c"
 CSS = f"""
@@ -189,7 +189,7 @@ def rule_list(x, y, rules, n):
 def figure():
     house = House.load(ROOT / "data" / "houses" / f"{HOUSE}.json")
     run = ROOT / "runs" / RUN
-    seed, early, best = ROOT / "grammars" / "seed.py", run / "grammars" / f"{EARLY}.py", best_grammar(run)
+    early, best = run / "grammars" / f"{EARLY}.py", best_grammar(run)
     framed = build(early, house)
     report = verify(house, framed)
     faulty = {mid for f in report.faults for mid in f.members}
@@ -203,16 +203,14 @@ def figure():
          f'<marker id="load" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" '
          f'orient="auto"><path d="M0 0L10 5L0 10z" fill="{RED}"/></marker></defs>',
          f'<rect width="{W}" height="{H}" fill="#fff"/>',
-         '<text class="col" x="20" y="18">INPUTS</text>', '<text class="col" x="236" y="18">LOOP</text>',
+         '<text class="col" x="20" y="18">INPUT</text>', '<text class="col" x="236" y="18">LOOP</text>',
          '<text class="col" x="960" y="18">OUTPUT</text>']
 
-    # inputs: the seed grammar above, the house below
-    seed_rules = load_rules(seed)
-    o += [box(20, 28, 186, 180, "Seed grammar", f"{len(seed_rules)} rules"), rule_list(32, 48, seed_rules, 8)]
-    o += [box(20, 226, 186, 210, "House", "surfaces and loads"), drawing(surfaces(house), 34, 236, 158, 122, loads(house))]
+    # input: the house, as surfaces with their loads
+    o += [box(20, 136, 186, 290, "House", "surfaces and loads"), drawing(surfaces(house), 30, 160, 166, 190, loads(house))]
 
     # the loop: proposer and search above, the deterministic part below
-    o += ['<rect class="env" x="236" y="226" width="704" height="224"/>',
+    o += ['<rect class="env" x="236" y="226" width="704" height="200"/>',
           '<text class="envlabel" x="930" y="242" text-anchor="end">Deterministic</text>']
     o.append(box(320, 28, 336, 160, "Proposer", "LLM"))
     diff = [(" @rule(62, match=\"opening\")", INK), (" def header(s, o):", INK), ("-   s.place(\"2x8\", ...)", RED),
@@ -242,17 +240,17 @@ def figure():
                   736, gy + 8, 176, 104)]
 
     # arrows: none cross
-    o += [arrow(f"M206 118H290V{gy}"),
+    o += [arrow(f"M206 {gy + 60}H250"),
           arrow(f"M440 {gy + 60}H482", "build", 461, gy + 52),
           arrow(f"M682 {gy + 60}H724"),
           arrow(f"M824 {gy}V188", "score", 830, 216, "start"),
           arrow("M710 100H656", "parent", 683, 92),
                     arrow(f"M400 188V{gy}", "edit", 406, 216, "start"),
-          arrow(f"M206 400H222V{gy + gh + 22}H582V{gy + gh}", "surfaces", 452, gy + gh + 17, "start")]
+          ]
 
     # output
     o += [arrow(f"M940 {gy + 60}H955"),
-          box(955, 28, 170, 422, "Evolved grammar", "unseen houses"),
+          box(955, 28, 170, 398, "Evolved grammar", "unseen houses"),
           f'<text class="sub" x="967" y="48">{len(load_rules(best))} rules</text>',
           drawing(members(house, evolved, lambda m: ("#fff", "#4a4a47", 0.25)), 965, 90, 150, 200),
                     f'<text class="sub" x="967" y="320">{len(evolved.panels())} panels</text>',
