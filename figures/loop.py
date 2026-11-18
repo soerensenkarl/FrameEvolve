@@ -435,7 +435,7 @@ def figure():
     # above, as search.py runs it: the verifier scores every frame and writes its faults in words; the search keeps
     # a child only if it beats its parent, holds the best grammar for each house (the Pareto set) and picks a
     # parent from it; the parent's report goes to the proposer, which writes the child
-    o.append(box(gx, top, gw, TOP, "Proposer", "the only LLM in the loop"))
+    o.append(box(gx, top, gw, TOP, "LLM proposer", "the only LLM in the loop"))
     o.append(network(gx + gw - 46, top + TOP - 50, 34, 26))               # the model: where the LLM sits
     diff = [(" def header(s, o):", INK), ("-  s.place(\"2x8\", ...)", RED), ("+  n = plies(s.load(o))", "#2f8a4a"),
             ("+  for i in range(n):", "#2f8a4a"), ("+    s.place(\"2x10\", ...)", "#2f8a4a")]
