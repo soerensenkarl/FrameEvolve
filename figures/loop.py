@@ -278,26 +278,26 @@ def arrow(d, label="", lx=0, ly=0, anchor="middle"):
             + (f'<text class="label" x="{lx}" y="{ly}" text-anchor="{anchor}">{label}</text>' if label else ""))
 
 
-CARDS = ("studs", "header", "joists", "rafters")   # the rules shown as cards: one for each part of a house
-
-
 def rule_cards(x, y, w, rules):
-    """A few of the grammar's rules as cards, as in the report's rule figure: a number, the rule's name and what it
-    matches; the rest as a stack behind the last card."""
-    shown = [r for r in rules if r.__name__ in CARDS]
-    ch, gap, out = 28, 5, []
-    last = y + (len(shown) - 1) * (ch + gap)
-    for k in (2, 1):           # the cards not shown, stacked behind the last
-        out.append(f'<rect x="{x + 3 * k}" y="{last + 3 * k}" width="{w}" height="{ch}" rx="3" fill="#fff" stroke="{LINE}"/>')
-    for i, r in enumerate(shown):
-        cy = y + i * (ch + gap)
-        n = rules.index(r) + 1
+    """The grammar as cards, as in the report's rule figure: rules 1, 2, 3, then the dots, then the last, each
+    with its number, its name and what it matches."""
+    ch, gap, out = 26, 4, []
+    shown = [(i + 1, r) for i, r in enumerate(rules[:3])] + [None, (len(rules), rules[-1])]
+    cy = y
+    for item in shown:
+        if item is None:       # the rules between
+            out += [f'<circle cx="{x + 14}" cy="{cy + 3 + k * 6}" r="1.4" fill="{GREY}"/>' for k in range(3)]
+            cy += 16
+            continue
+        n, r = item
+        what = "the house" if r.match == "house" else f"every {r.match}"
         out.append(f'<rect x="{x}" y="{cy}" width="{w}" height="{ch}" rx="3" fill="#fff" stroke="{LINE}"/>'
                    f'<circle cx="{x + 14}" cy="{cy + ch / 2}" r="8" fill="{INK}"/>'
                    f'<text x="{x + 14}" y="{cy + ch / 2 + 3.5}" text-anchor="middle" style="font-size:9.5px;font-weight:700;fill:#fff">{n}</text>'
-                   f'<text x="{x + 28}" y="{cy + 13}" style="font-size:11.5px;font-weight:700">{r.__name__}</text>'
-                   f'<text x="{x + 28}" y="{cy + 25}" style="font-size:9.5px"><tspan fill="{RED}">match</tspan>'
-                   f'<tspan fill="{GREY}"> every {r.match}</tspan></text>')
+                   f'<text x="{x + 28}" y="{cy + 12}" style="font-size:11.5px;font-weight:700">{r.__name__}</text>'
+                   f'<text x="{x + 28}" y="{cy + 23}" style="font-size:9.5px"><tspan fill="{RED}">match</tspan>'
+                   f'<tspan fill="{GREY}"> {what}</tspan></text>')
+        cy += ch + gap
     return "".join(out)
 
 
@@ -416,14 +416,14 @@ def figure():
     o.append(pareto(ROOT / "runs" / RUN, vx + 12, top + 12, vw - 24, 80))
 
     rh = bottom - row
-    o += [box(gx, row, gw, rh, "Grammar", f"{len(rules)} rules: match → action"), rule_cards(gx + 12, row + 12, gw - 30, rules),
+    o += [box(gx, row, gw, rh, "Grammar", "rules: match → action"), rule_cards(gx + 12, row + 10, gw - 24, rules),
           box(fx, row, fw, rh, "Frame", f"{len(framed.members):,} members"),
           render(members(house, framed, lambda m: ("#fff", "#4a4a47", 0.25)), fx + 10, row + 10, fw - 20, 118),
           box(vx, row, vw, rh, "Verifier", " "),
           f'<rect x="{vx + 12}" y="{row + rh - 19}" width="9" height="9" fill="{RED}"/>'
-          f'<text class="sub" x="{vx + 25}" y="{row + rh - 10}">{report.hard} hard</text>'
+          f'<text class="sub" x="{vx + 25}" y="{row + rh - 10}">hard faults</text>'
           f'<rect x="{vx + 82}" y="{row + rh - 19}" width="9" height="9" fill="{AMBER}"/>'
-          f'<text class="sub" x="{vx + 95}" y="{row + rh - 10}">{report.soft} soft</text>',
+          f'<text class="sub" x="{vx + 95}" y="{row + rh - 10}">soft</text>',
           render(members(house, framed, lambda m: (RED, "#7a1a15", 0.5) if m.id in hard else
                           (AMBER, "#8a5506", 0.5) if m.id in soft else ("#f4f4f2", "#b8b8b5", 0.3)),
                   vx + 10, row + 10, vw - 20, 118)]
