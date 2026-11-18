@@ -122,7 +122,7 @@ def pieces(s, u0, u1):
 
 
 @rule(1, match="house")
-def grid(s, h):
+def layout_grid(s, h):
     """A 24" grid over the plan from the house's corner, both ways: studs, joists and panel joints follow it."""
     xs = [p[0] for w in h.walls for p in (w.start, w.end)]
     ys = [p[1] for w in h.walls for p in (w.start, w.end)]
@@ -144,7 +144,7 @@ def next_joint(s, a):
 
 
 @rule(5, match="wall")
-def wall_joints(s, w):
+def wall_panel_joints(s, w):
     """Panel joints on the grid, as far apart as a panel may be long, clear of openings where it can."""
     a, b = extent(s)
     while b - a > PANEL:
@@ -153,7 +153,7 @@ def wall_joints(s, w):
 
 
 @rule(5, match="floor", when=lambda s, f: f.role == "floor")
-def floor_joints(s, f):
+def floor_panel_joints(s, f):
     """Cassette joints across the floor every 8 ft, just past a grid joist."""
     for c in range(CASSETTE, int(f.length) - SPACING, CASSETTE):
         s.guide("panel joint", (c + T / 2, 0), (c + T / 2, f.width))
@@ -167,7 +167,7 @@ def panel_of(s, m):
 
 
 @rule(96, match="member", when=lambda s, m: in_wall(s) or s.surface.role == "floor")
-def panels(s, m):
+def build_into_panels(s, m):
     """Walls and floors are built in the shop: every member into the panel it falls in."""
     s.assign(m, panel_of(s, m))
 
@@ -562,6 +562,41 @@ def above_underside(m, roof, d):
     pts = [(w, inside((u, v), roof.outline_uv) and not on_boundary((u, v), roof.outline_uv))
            for u, v, w in map(roof.local, m.points)]
     return any(w < d - 0.01 and hit for w, hit in pts) and any(w > d + 0.01 for w, _ in pts)
+
+
+@rule(85, match="wall", when=lambda s, w: is_gable(w))
+def rake_plates(s, w):
+    """A top plate along each sloped edge of a gable wall, laid flat under the rafters, so the gable studs stop
+    under a plate as the others do; in a piece a panel, and one too long for stock in two. After the wall is framed: its own
+    framing is cut back under the plate, and the plate stops at what other surfaces put in its way."""
+    d = max([m.depth for m in s.members(surface="*", role="rafter")] or [0])
+    if not d:
+        return
+    depth = s.SECTIONS[section(w)][1]
+    for (u0, v0), (u1, v1) in edges(w.outline_uv):
+        if abs(u1 - u0) < 1 or abs(v1 - v0) < 1:
+            continue                      # not a sloped edge
+        cos = abs(u1 - u0) / math.hypot(u1 - u0, v1 - v0)
+        drop = (d + T / 2) / cos          # under the rafters' underside, measured plumb
+        (ua, va), (ub, vb) = sorted([(u0, v0 - drop), (u1, v1 - drop)])
+        at = lambda u: (u, va + (vb - va) * (u - ua) / (ub - ua), depth / 2)
+        breaks = [ua, *[u for u in s.crossings("panel joint") if ua + 1 < u < ub - 1], ub]   # one piece a panel
+        spans = []
+        for p, q in zip(breaks, breaks[1:]):
+            n = 2 if (q - p) / cos > MAX_PIECE else 1
+            spans += [(p + (q - p) * i / n, p + (q - p) * (i + 1) / n) for i in range(n)]
+        for p, q in spans:
+            a, b = at(p), at(q)
+            m = s.put(section(w), a, b, (0, 0, 1), role="rake plate")
+            s.cut(m, (a[0], a[1], 0), (-1, 0, 0))         # plumb at both ends: where the wall ends, at the peak
+            s.cut(m, (b[0], b[1], 0), (1, 0, 0))
+            for n in s.overlapping(m):
+                if n.role == "rake plate":
+                    continue
+                if n.surface == w.id:
+                    s.trim(n, m) if n.box.lo[2] < m.box.lo[2] else s.remove(n)
+                else:
+                    s.trim(m, n)
 
 
 @rule(75, match="member", when=lambda s, m: is_gable(s.surface) and s.overlapping(m))

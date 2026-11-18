@@ -289,8 +289,15 @@ def rafter(s: Site, m: Member, tied: list[str], across: bool | None, roofs: set[
         c = g.at[(m.id, n)]
         return min(max(sum((c[k] - m.start[k]) * a[k] for k in range(2)) / run ** 2, 0.0), m.length)
 
+    def along(p) -> float:   # along m to the point nearest p, found in plan
+        return min(max(sum((p[k] - m.start[k]) * a[k] for k in range(2)) / run ** 2, 0.0), m.length)
+
     out = []
-    rests = sorted(where(n) for n in g.bears[m.id] if n in s.held)
+    rests = [where(n) for n in g.bears[m.id] if n in s.held]
+    for n in g.bears[m.id]:   # a member it lies along (a gable wall's rake plate) holds it all the way
+        if n in s.held and abs(dot(axis(s.by_id[n]), a)) > 0.95:
+            rests += [along(s.by_id[n].start), along(s.by_id[n].end)]
+    rests = sorted(rests)
     top = [n for n in g.side[m.id] if n in s.held and where(n) > m.length - 3 * m.depth]
     for n in top:     # a ridge board, hip or valley runs across the rafter in plan; an opposite rafter met
         o = axis(s.by_id[n])   # head on (with a gusset, IRC R802.3) runs the same way and is no ridge

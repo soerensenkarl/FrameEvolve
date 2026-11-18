@@ -334,3 +334,16 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
   pointed to: each box carries a picture drawn from what is open now (the house, the grammar's rules, a framed
   wall, faults by module, the latest run's curve, the proposer's tools), and clicking one shows the real thing
   below: rule source, the first build steps, the wall large, example faults, a proposer's lesson.
+
+## 2026-11-17: the report's overview figure; rake plates
+
+- figures/loop.py draws the report's overview figure from real geometry: the house with its loads, the reference
+  grammar's frame on h001, its faults (hard red, soft amber), the parent's report, the run's Pareto set, and the
+  frame as its prefab panels pulled apart. Frames are drawn with a depth buffer: painting faces back to front got
+  crossing members wrong however it was sorted. The flow is drawn as search.py runs: the verifier's report goes
+  to the proposer for the parent the search picks; the score goes to the search.
+- The reference grammar's gable walls had no top plate (studs cut to the rafters). A rake_plates rule now lays a
+  plate flat along each sloped edge under the rafters, one piece a panel; the wall's framing stops under it.
+  Rules renamed to say what they do: layout_grid, wall_panel_joints, floor_panel_joints, build_into_panels.
+- Verifier: a rafter lying along a member (a rake plate) is held along its length. The thrust check took one
+  contact point, the middle, and so missed that the rafter rests high up on the gable wall.

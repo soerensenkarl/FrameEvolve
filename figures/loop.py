@@ -294,7 +294,7 @@ def rule_cards(x, y, w, rules):
         out.append(f'<rect x="{x}" y="{cy}" width="{w}" height="{ch}" rx="3" fill="#fff" stroke="{LINE}"/>'
                    f'<circle cx="{x + 14}" cy="{cy + ch / 2}" r="8" fill="{INK}"/>'
                    f'<text x="{x + 14}" y="{cy + ch / 2 + 3.5}" text-anchor="middle" style="font-size:9.5px;font-weight:700;fill:#fff">{n}</text>'
-                   f'<text x="{x + 28}" y="{cy + 12}" style="font-size:11.5px;font-weight:700">{r.__name__}</text>'
+                   f'<text x="{x + 28}" y="{cy + 12}" style="font-size:11.5px;font-weight:700">{r.__name__.replace("_", " ")}</text>'
                    f'<text x="{x + 28}" y="{cy + 23}" style="font-size:9.5px"><tspan fill="{RED}">match</tspan>'
                    f'<tspan fill="{GREY}"> {what}</tspan></text>')
         cy += ch + gap
@@ -412,14 +412,16 @@ def figure():
     # the loop
     o += [f'<rect class="env" x="{gx - 16}" y="{row - 16}" width="{vx + vw - gx + 32}" height="{bottom - row + 32}"/>',
           f'<text class="envlabel" x="{vx + vw + 10}" y="{bottom + 11}" text-anchor="end">Deterministic</text>']
-    # above: the proposer edits, the report says what is wrong, the search keeps the best grammar for each house
+    # above, as search.py runs it: the verifier scores every frame and writes its faults in words; the search keeps
+    # a child only if it beats its parent, holds the best grammar for each house (the Pareto set) and picks a
+    # parent from it; the parent's report goes to the proposer, which writes the child
     o.append(box(gx, top, gw, TOP, "Proposer", "LLM edits a rule"))
     diff = [(" def header(s, o):", INK), ("-  s.place(\"2x8\", ...)", RED), ("+  n = plies(s.load(o))", "#2f8a4a"),
             ("+  for i in range(n):", "#2f8a4a"), ("+    s.place(\"2x10\", ...)", "#2f8a4a")]
     o += [f'<text class="mono" x="{gx + 12}" y="{top + 26 + i * 16}" xml:space="preserve" style="fill:{c};white-space:pre">{t}</text>'
           for i, (t, c) in enumerate(diff)]
 
-    o.append(box(fx, top, fw, TOP, "Report", "faults in words"))
+    o.append(box(fx, top, fw, TOP, "Report", "the parent's faults, in words"))
     for i, f in enumerate(example_faults(report)):
         y = top + 22 + i * 32
         o.append(f'<rect x="{fx + 12}" y="{y - 8}" width="8" height="8" fill="{RED if f.hard else AMBER}"/>'
@@ -458,7 +460,8 @@ def figure():
           arrow(f"M{gx + gw} {mid}H{fx}", "build", (gx + gw + fx) / 2, mid - 8),
           arrow(f"M{fx + fw} {mid}H{vx}"),
           arrow(f"M{vx + vw} {mid}H{ox}"),
-          arrow(f"M{vx + vw / 2} {row}V{top + TOP}", "score", vx + vw / 2 + 6, top + TOP + 17, "start"),
+          arrow(f"M{vx + vw * 0.7} {row}V{top + TOP}", "score", vx + vw * 0.7 + 6, top + TOP + 17, "start"),
+          arrow(f"M{vx + vw * 0.25} {row}V{top + TOP + 24}H{fx + fw / 2}V{top + TOP}", "report", fx + fw / 2 + 6, top + TOP + 17, "start"),
           arrow(f"M{vx} {top + TOP / 2}H{fx + fw}", "parent", (vx + fx + fw) / 2, top + TOP / 2 - 8),
           arrow(f"M{fx} {top + TOP / 2}H{gx + gw}"),
           arrow(f"M{gx + gw / 2} {top + TOP}V{row}", "edit", gx + gw / 2 + 6, top + TOP + 17, "start"),
