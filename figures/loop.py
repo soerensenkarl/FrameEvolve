@@ -70,12 +70,14 @@ def hull(pts):
     return lo[:-1] + hi[:-1]
 
 
-def drawing(shapes, x, y, w, h):
-    """Shapes [(world points, fill, stroke, stroke width, as hull)] drawn far to near, fitted in w x h at x, y."""
+def drawing(shapes, x, y, w, h, arrows=()):
+    """Shapes [(world points, fill, stroke, stroke width, as hull)] drawn far to near, fitted in w x h at x, y;
+    then arrows [(world from, world to)] over them, in red: the loads."""
     shapes = sorted(shapes, key=lambda s: depth(s[0]))
     flat = [[proj(p) for p in s[0]] for s in shapes]
-    xs = [p[0] for ps in flat for p in ps]
-    ys = [p[1] for ps in flat for p in ps]
+    lines = [(proj(a), proj(b)) for a, b in arrows]
+    xs = [p[0] for ps in flat for p in ps] + [p[0] for ab in lines for p in ab]
+    ys = [p[1] for ps in flat for p in ps] + [p[1] for ab in lines for p in ab]
     k = min(w / (max(xs) - min(xs)), h / (max(ys) - min(ys)))
     ox = x + (w - (max(xs) - min(xs)) * k) / 2 - min(xs) * k
     oy = y + (h - (max(ys) - min(ys)) * k) / 2 - min(ys) * k
@@ -84,6 +86,9 @@ def drawing(shapes, x, y, w, h):
         ps = hull(ps) if as_hull else ps
         d = "M" + "L".join(f"{ox + px * k:.1f} {oy + py * k:.1f}" for px, py in ps) + "Z"
         out.append(f'<path d="{d}" fill="{fill}" stroke="{stroke}" stroke-width="{sw}" stroke-linejoin="round"/>')
+    for (ax, ay), (bx, by) in lines:
+        out.append(f'<path d="M{ox + ax * k:.1f} {oy + ay * k:.1f}L{ox + bx * k:.1f} {oy + by * k:.1f}" '
+                   f'stroke="{RED}" stroke-width="1.2" marker-end="url(#load)"/>')
     return "".join(out)
 
 
@@ -100,8 +105,48 @@ def surfaces(house):
     return out
 
 
-def members(frame, colour):
-    return [(m.points, *colour(m), True) for m in frame.members]
+def loads(house):
+    """Arrows for the loads: gravity down onto each roof plane, the wind against the front walls."""
+    out = []
+    for r in house.roofs:
+        if -r.ew[0] * E[0] - r.ew[1] * E[1] <= 0:
+            continue          # a plane facing away: its arrows would show through the plane in front
+        U, V = r.size
+        for fu in (0.2, 0.5, 0.8):
+            for fv in (0.3, 0.65):
+                p = r.world(U * fu, V * fv, 0)
+                out.append(((p[0], p[1], p[2] + 60), (p[0], p[1], p[2] + 3)))
+    y0 = min(w.start[1] for w in house.walls)
+    for w in house.walls:
+        if w.role == "exterior" and abs(w.start[1] - y0) < 1 and abs(w.end[1] - y0) < 1:
+            for fu in (0.25, 0.75):
+                x = w.start[0] + (w.end[0] - w.start[0]) * fu
+                z = w.base + w.height * 0.5
+                out.append(((x, y0 - 70, z), (x, y0 - 3, z)))
+    return out
+
+
+def facing(house):
+    """The exterior walls and roof planes that face the viewer."""
+    xs = [p[0] for w in house.walls for p in (w.start, w.end)]
+    ys = [p[1] for w in house.walls for p in (w.start, w.end)]
+    cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+    out = set()
+    for w in house.walls:
+        mx, my = (w.start[0] + w.end[0]) / 2 - cx, (w.start[1] + w.end[1]) / 2 - cy
+        n = w.normal if w.normal[0] * mx + w.normal[1] * my > 0 else (-w.normal[0], -w.normal[1])
+        if w.role == "exterior" and n[0] * E[0] + n[1] * E[1] > 0:
+            out.add(w.id)
+    return out | {r.id for r in house.roofs if -r.ew[0] * E[0] - r.ew[1] * E[1] > 0}
+
+
+def members(house, frame, colour):
+    """The members of the exterior walls and the roof, without the clutter inside: those facing the viewer as
+    colour gives them, the far ones faint."""
+    shell = {w.id for w in house.walls if w.role == "exterior"} | {r.id for r in house.roofs}
+    near = facing(house)
+    return [(m.points, *(colour(m) if m.surface in near or colour(m)[0] == RED else ("#fff", "#d4d4d0", 0.25)), True)
+            for m in frame.members if m.surface in shell]
 
 
 # ---------------------------------------------------------------- pieces
@@ -154,7 +199,9 @@ def figure():
 
     o = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}">', f"<style>{CSS}</style>",
          f'<defs><marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" '
-         f'orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="{INK}"/></marker></defs>',
+         f'orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="{INK}"/></marker>'
+         f'<marker id="load" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" '
+         f'orient="auto"><path d="M0 0L10 5L0 10z" fill="{RED}"/></marker></defs>',
          f'<rect width="{W}" height="{H}" fill="#fff"/>',
          '<text class="col" x="20" y="18">INPUTS</text>', '<text class="col" x="236" y="18">LOOP</text>',
          '<text class="col" x="960" y="18">OUTPUT</text>']
@@ -162,7 +209,7 @@ def figure():
     # inputs: the seed grammar above, the house below
     seed_rules = load_rules(seed)
     o += [box(20, 28, 186, 180, "Seed grammar", f"{len(seed_rules)} rules"), rule_list(32, 48, seed_rules, 8)]
-    o += [box(20, 226, 186, 210, "House", "surface representation"), drawing(surfaces(house), 34, 236, 158, 122)]
+    o += [box(20, 226, 186, 210, "House", "surfaces and loads"), drawing(surfaces(house), 34, 236, 158, 122, loads(house))]
 
     # the loop: proposer and search above, the deterministic part below
     o += ['<rect class="env" x="236" y="226" width="704" height="224"/>',
@@ -189,9 +236,9 @@ def figure():
     rules = load_rules(early)
     o += [box(250, gy, 190, gh, "Grammar", "match → action"), rule_list(262, gy + 18, rules, 7)]
     o += [box(482, gy, 200, gh, "Frame", f"{len(framed.members):,} members"),
-          drawing(members(framed, lambda m: ("#f4f4f2", "#2a2a28", 0.35)), 494, gy + 8, 176, 104),
+          drawing(members(house, framed, lambda m: ("#fff", "#4a4a47", 0.25)), 494, gy + 8, 176, 104),
           box(724, gy, 200, gh, "Verifier", f"{len(report.faults)} faults"),
-          drawing(members(framed, lambda m: (RED, "#7a1a15", 0.5) if m.id in faulty else ("#f4f4f2", "#b8b8b5", 0.3)),
+          drawing(members(house, framed, lambda m: (RED, "#7a1a15", 0.5) if m.id in faulty else ("#f4f4f2", "#b8b8b5", 0.3)),
                   736, gy + 8, 176, 104)]
 
     # arrows: none cross
@@ -207,7 +254,7 @@ def figure():
     o += [arrow(f"M940 {gy + 60}H955"),
           box(955, 28, 170, 422, "Evolved grammar", "unseen houses"),
           f'<text class="sub" x="967" y="48">{len(load_rules(best))} rules</text>',
-          drawing(members(evolved, lambda m: ("#f4f4f2", "#2a2a28", 0.3)), 965, 90, 150, 200),
+          drawing(members(house, evolved, lambda m: ("#fff", "#4a4a47", 0.25)), 965, 90, 150, 200),
                     f'<text class="sub" x="967" y="320">{len(evolved.panels())} panels</text>',
           f'<text class="sub" x="967" y="334">{final.hard} hard faults</text>',
           "</svg>"]
