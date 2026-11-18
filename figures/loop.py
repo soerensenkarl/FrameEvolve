@@ -404,6 +404,7 @@ def figure():
     soft = {mid for f in report.faults if not f.hard for mid in f.members}
     hard = {mid for f in report.faults if f.hard for mid in f.members} - soft
     rules = load_rules(ROOT / "grammars" / GRAMMAR)
+    framed_by_id = {m.id: m for m in framed.members}
     shell = {w.id for w in house.walls if w.role == "exterior"} | {r.id for r in house.roofs}
     near = facing(house)
 
@@ -442,13 +443,20 @@ def figure():
     o += [f'<text class="mono" x="{gx + 12}" y="{top + 26 + i * 16}" xml:space="preserve" style="fill:{c};white-space:pre">{t}</text>'
           for i, (t, c) in enumerate(diff)]
 
-    o.append(box(fx, top, fw, TOP, "Report", "the parent's faults, in words"))
+    # the report: per fault, what is wrong, where, and the rule that placed it, so the proposer knows what to edit
+    o.append(box(fx, top, fw, TOP, "Report", "each fault traced to its rule"))
+    cols = (fx + 12, fx + 84, fx + 128)
+    o += [f'<text class="sub" x="{c}" y="{top + 18}" style="font-size:9px;letter-spacing:.06em">{t}</text>'
+          for c, t in zip(cols, ("FAULT", "MEMBER", "RULE"))]
+    o.append(f'<path d="M{fx + 12} {top + 23}H{fx + fw - 12}" stroke="{LINE}" stroke-width=".8"/>')
     for i, f in enumerate(example_faults(report)):
-        y = top + 22 + i * 32
-        o.append(f'<rect x="{fx + 12}" y="{y - 8}" width="8" height="8" fill="{RED if f.hard else AMBER}"/>'
-                 f'<text x="{fx + 25}" y="{y}" style="font-size:10.5px;font-weight:700">{f.check}</text>')
-        o += [f'<text class="sub" x="{fx + 25}" y="{y + 12 + j * 11}" style="font-size:9.5px">{t}</text>'
-              for j, t in enumerate(wrap(f.message, 31, 1))]
+        y = top + 42 + i * 20
+        m = framed_by_id.get(f.members[0]) if f.members else None
+        where = m.role if m else ""
+        o.append(f'<rect x="{cols[0]}" y="{y - 8}" width="8" height="8" fill="{RED if f.hard else AMBER}"/>'
+                 f'<text x="{cols[0] + 13}" y="{y}" style="font-size:10px;font-weight:700">{f.check}</text>'
+                 f'<text x="{cols[1]}" y="{y}" style="font-size:10px">{where}</text>'
+                 f'<text class="mono" x="{cols[2]}" y="{y}">{f.rules[-1] if f.rules else ""}</text>')
 
     o.append(box(vx, top, vw, TOP, "Search", "Pareto set: best per house"))
     o.append(pareto(ROOT / "runs" / RUN, vx + 12, top + 12, vw - 24, 80))
