@@ -351,27 +351,8 @@ def exploded(frame, keep, gap=0.22):
 TOP = 150    # the top row's height
 
 
-def example_faults(report):
-    """Three faults for the report box: two hard of different checks, one soft."""
-    out, seen = [], set()
-    for want in (True, True, False):
-        f = next((f for f in report.faults if f.hard == want and f.check not in seen), None)
-        if f:
-            out.append(f)
-            seen.add(f.check)
-    return out
-
-
-def wrap(text, width, lines):
-    words, out = text.split(), [""]
-    for w in words:
-        if len(out[-1]) + len(w) + 1 > width:
-            if len(out) == lines:
-                out[-1] = out[-1].rstrip() + "…"
-                return out
-            out.append("")
-        out[-1] += ("" if not out[-1] else " ") + w
-    return out
+FAULTS = [(True, "span", "rafter #12", "rafters"), (True, "bearing", "stud #4", "studs"),
+          (False, "deflection", "header #2", "headers")]   # schematic: a report's rows, the rules from the cards
 
 
 def pareto(x, y, w, h):
@@ -399,7 +380,6 @@ def figure():
     # a member in a soft fault shows amber even when it is in a hard one too, so the soft ones are seen
     soft = {mid for f in report.faults if not f.hard for mid in f.members}
     hard = {mid for f in report.faults if f.hard for mid in f.members} - soft
-    framed_by_id = {m.id: m for m in framed.members}
     shell = {w.id for w in house.walls if w.role == "exterior"} | {r.id for r in house.roofs}
     near = facing(house)
 
@@ -440,18 +420,16 @@ def figure():
 
     # the report: per fault, what is wrong, where, and the rule that placed it, so the proposer knows what to edit
     o.append(box(fx, top, fw, TOP, "Report", "each fault traced to its rule"))
-    cols = (fx + 12, fx + 84, fx + 128)
+    cols = (fx + 12, fx + 78, fx + 132)
     o += [f'<text class="sub" x="{c}" y="{top + 18}" style="font-size:9px;letter-spacing:.06em">{t}</text>'
           for c, t in zip(cols, ("FAULT", "MEMBER", "RULE"))]
     o.append(f'<path d="M{fx + 12} {top + 23}H{fx + fw - 12}" stroke="{LINE}" stroke-width=".8"/>')
-    for i, f in enumerate(example_faults(report)):
+    for i, (is_hard, check, member, rule) in enumerate(FAULTS):
         y = top + 42 + i * 20
-        m = framed_by_id.get(f.members[0]) if f.members else None
-        where = m.role if m else ""
-        o.append(f'<rect x="{cols[0]}" y="{y - 8}" width="8" height="8" fill="{RED if f.hard else AMBER}"/>'
-                 f'<text x="{cols[0] + 13}" y="{y}" style="font-size:10px;font-weight:700">{f.check}</text>'
-                 f'<text x="{cols[1]}" y="{y}" style="font-size:10px">{where}</text>'
-                 f'<text class="mono" x="{cols[2]}" y="{y}">{f.rules[-1] if f.rules else ""}</text>')
+        o.append(f'<rect x="{cols[0]}" y="{y - 8}" width="8" height="8" fill="{RED if is_hard else AMBER}"/>'
+                 f'<text x="{cols[0] + 13}" y="{y}" style="font-size:9.5px;font-weight:700">{check}</text>'
+                 f'<text x="{cols[1]}" y="{y}" style="font-size:9.5px">{member}</text>'
+                 f'<text class="mono" x="{cols[2]}" y="{y}" style="font-size:9.5px">{rule}</text>')
 
     o.append(box(vx, top, vw, TOP, "Search", "keeps grammars best on a house"))
     o.append(pareto(vx + 12, top + 12, vw - 24, 80))
