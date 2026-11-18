@@ -360,15 +360,19 @@ def wrap(text, width, lines):
 
 
 def pareto(run, x, y, w, h):
-    """The run's grammars against its validation houses: a black square where a grammar is the best on that house.
-    Grammars with a square form the Pareto set the search picks parents from."""
+    """The run's last grammars against its validation houses: a black square where a grammar is in the search's
+    Pareto set and best on that house (search.pareto, over every grammar of the run). The search picks parents
+    from the grammars with a square, weighted by how many they have."""
+    from types import SimpleNamespace
+    from frameevolve.search import pareto as front
     val = [Path(v).stem for v in json.loads((run / "config.json").read_text())["val"]]
-    cands = [json.loads(line) for line in (run / "candidates.jsonl").read_text().splitlines()][-7:]
-    best = {v: min(tuple(c["scores"][v]) for c in cands) for v in val}
+    every = [json.loads(line) for line in (run / "candidates.jsonl").read_text().splitlines()]
+    won = front([SimpleNamespace(id=c["id"], scores=c["scores"]) for c in every], val)   # the search's own set
+    cands = every[-7:]                                                                    # the last few, drawn
     cw, rh, lab = (w - 30) / len(val), h / len(cands), 30
     out = []
     for i, c in enumerate(cands):
-        wins = [tuple(c["scores"][v]) == best[v] for v in val]
+        wins = [v in won.get(c["id"], []) for v in val]
         out.append(f'<text class="sub" x="{x}" y="{y + i * rh + rh - 1.5}" style="font-size:8.5px;{"" if any(wins) else "fill:#c0c0bc"}">{c["id"]}</text>')
         for j, win in enumerate(wins):
             cx = x + lab + j * cw
@@ -415,7 +419,7 @@ def figure():
     # above, as search.py runs it: the verifier scores every frame and writes its faults in words; the search keeps
     # a child only if it beats its parent, holds the best grammar for each house (the Pareto set) and picks a
     # parent from it; the parent's report goes to the proposer, which writes the child
-    o.append(box(gx, top, gw, TOP, "Proposer", "LLM edits a rule"))
+    o.append(box(gx, top, gw, TOP, "Proposer", "LLM edits the grammar"))
     diff = [(" def header(s, o):", INK), ("-  s.place(\"2x8\", ...)", RED), ("+  n = plies(s.load(o))", "#2f8a4a"),
             ("+  for i in range(n):", "#2f8a4a"), ("+    s.place(\"2x10\", ...)", "#2f8a4a")]
     o += [f'<text class="mono" x="{gx + 12}" y="{top + 26 + i * 16}" xml:space="preserve" style="fill:{c};white-space:pre">{t}</text>'
