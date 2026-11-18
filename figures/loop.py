@@ -20,7 +20,7 @@ sys.path.insert(0, str(ROOT))
 
 import numpy as np  # noqa: E402
 
-from frameevolve.builder import build, load_rules  # noqa: E402
+from frameevolve.builder import build  # noqa: E402
 from frameevolve.model import House  # noqa: E402
 from frameevolve.verifier import verify  # noqa: E402
 
@@ -292,23 +292,24 @@ def arrow(d, label="", lx=0, ly=0, anchor="middle", loop=True):
             + (f'<text class="label{" loop" if loop else ""}" x="{lx}" y="{ly}" text-anchor="{anchor}">{label}</text>' if label else ""))
 
 
-def rule_cards(x, y, w, rules):
-    """The grammar as cards, as in the report's rule figure: rules 1, 2, 3, then the dots, then the last (n), each
-    with its number, its name and what it matches."""
-    ch, gap, out = 26, 4, []
-    shown = [(i + 1, r) for i, r in enumerate(rules[:3])] + [None, ("n", rules[-1])]
-    cy = y
-    for item in shown:
-        if item is None:       # the rules between
+CARDS = [("1", "studs", "every wall"), ("2", "headers", "every opening"), ("3", "joists", "every floor"),
+         None, ("n", "rafters", "every roof")]   # schematic: what a grammar's rules are like, not a real grammar
+
+
+def rule_cards(x, y, w):
+    """The grammar as cards, as in the report's rule figure: rules 1, 2, 3, the dots, n; each its number, what it
+    builds and what it matches."""
+    ch, gap, out, cy = 26, 4, [], y
+    for card in CARDS:
+        if card is None:       # the rules between
             out += [f'<circle cx="{x + 14}" cy="{cy + 3 + k * 6}" r="1.4" fill="{GREY}"/>' for k in range(3)]
             cy += 16
             continue
-        n, r = item
-        what = "the house" if r.match == "house" else f"every {r.match}"
+        n, name, what = card
         out.append(f'<rect x="{x}" y="{cy}" width="{w}" height="{ch}" rx="3" fill="#fff" stroke="{LINE}"/>'
                    f'<circle cx="{x + 14}" cy="{cy + ch / 2}" r="8" fill="{INK}"/>'
                    f'<text x="{x + 14}" y="{cy + ch / 2 + 3.5}" text-anchor="middle" style="font-size:9.5px;font-weight:700;fill:#fff">{n}</text>'
-                   f'<text x="{x + 28}" y="{cy + 12}" style="font-size:11.5px;font-weight:700">{r.__name__.replace("_", " ")}</text>'
+                   f'<text x="{x + 28}" y="{cy + 12}" style="font-size:11.5px;font-weight:700">{name}</text>'
                    f'<text x="{x + 28}" y="{cy + 23}" style="font-size:9.5px"><tspan fill="{RED}">match</tspan>'
                    f'<tspan fill="{GREY}"> {what}</tspan></text>')
         cy += ch + gap
@@ -398,7 +399,6 @@ def figure():
     # a member in a soft fault shows amber even when it is in a hard one too, so the soft ones are seen
     soft = {mid for f in report.faults if not f.hard for mid in f.members}
     hard = {mid for f in report.faults if f.hard for mid in f.members} - soft
-    rules = load_rules(ROOT / "grammars" / GRAMMAR)
     framed_by_id = {m.id: m for m in framed.members}
     shell = {w.id for w in house.walls if w.role == "exterior"} | {r.id for r in house.roofs}
     near = facing(house)
@@ -457,7 +457,7 @@ def figure():
     o.append(pareto(vx + 12, top + 12, vw - 24, 80))
 
     rh = bottom - row
-    o += [box(gx, row, gw, rh, "Grammar", "rules: match → action"), rule_cards(gx + 12, row + 10, gw - 24, rules),
+    o += [box(gx, row, gw, rh, "Grammar", "rules: match → action"), rule_cards(gx + 12, row + 10, gw - 24),
           box(fx, row, fw, rh, "Frame", f"{len(framed.members):,} members"),
           render(members(house, framed, lambda m: ("#fff", "#4a4a47", 0.25)), fx + 10, row + 10, fw - 20, 118),
           box(vx, row, vw, rh, "Verifier", " "),
