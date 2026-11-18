@@ -71,9 +71,15 @@ def hull(pts):
 
 
 def drawing(shapes, x, y, w, h, arrows=()):
-    """Shapes [(world points, fill, stroke, stroke width, as hull)] drawn far to near, fitted in w x h at x, y;
+    """Shapes [(world points, fill, stroke, stroke width, as hull, group)] drawn far to near, fitted in w x h at x, y;
     then arrows [(world from, world to)] over them, in red: the loads."""
-    shapes = sorted(shapes, key=lambda s: depth(s[0]))
+    # far to near by group (a panel, a wall, a roof plane), then by member within it: a long member's middle
+    # alone says little about what it is in front of
+    groups = {}
+    for sh in shapes:
+        groups.setdefault(sh[5] if len(sh) > 5 else id(sh), []).extend(sh[0])
+    far = {g: depth(pts) for g, pts in groups.items()}
+    shapes = sorted(shapes, key=lambda sh: (far[sh[5] if len(sh) > 5 else id(sh)], depth(sh[0])))
     flat = [[proj(p) for p in s[0]] for s in shapes]
     lines = [(proj(a), proj(b)) for a, b in arrows]
     xs = [p[0] for ps in flat for p in ps] + [p[0] for ab in lines for p in ab]
@@ -82,7 +88,7 @@ def drawing(shapes, x, y, w, h, arrows=()):
     ox = x + (w - (max(xs) - min(xs)) * k) / 2 - min(xs) * k
     oy = y + (h - (max(ys) - min(ys)) * k) / 2 - min(ys) * k
     out = []
-    for (_, fill, stroke, sw, as_hull), ps in zip(shapes, flat):
+    for (_, fill, stroke, sw, as_hull, *_), ps in zip(shapes, flat):
         ps = hull(ps) if as_hull else ps
         d = "M" + "L".join(f"{ox + px * k:.1f} {oy + py * k:.1f}" for px, py in ps) + "Z"
         out.append(f'<path d="{d}" fill="{fill}" stroke="{stroke}" stroke-width="{sw}" stroke-linejoin="round"/>')
@@ -145,8 +151,8 @@ def members(house, frame, colour):
     colour gives them, the far ones faint."""
     shell = {w.id for w in house.walls if w.role == "exterior"} | {r.id for r in house.roofs}
     near = facing(house)
-    return [(m.points, *(colour(m) if m.surface in near or colour(m)[0] == RED else ("#fff", "#d4d4d0", 0.25)), True)
-            for m in frame.members if m.surface in shell]
+    return [(m.points, *(colour(m) if m.surface in near or colour(m)[0] == RED else ("#fff", "#d4d4d0", 0.25)), True,
+             m.panel or m.surface) for m in frame.members if m.surface in shell]
 
 
 # ---------------------------------------------------------------- pieces
@@ -253,7 +259,7 @@ def figure():
                   vx + 10, row + 10, vw - 20, 118)]
 
     # output: the frame as the prefab panels it is built in, pulled apart
-    panel_shapes = [(pts, "#fff", "#4a4a47" if m.surface in near else "#c4c4c0", 0.25, True)
+    panel_shapes = [(pts, "#fff", "#4a4a47" if m.surface in near else "#c4c4c0", 0.25, True, m.panel or m.surface)
                     for m, pts in exploded(framed, lambda m: m.surface in shell)]
     o += [box(ox, top, ow, bottom - top, "Evolved grammar", "frames as prefab panels"),
           drawing(panel_shapes, ox + 10, top + 60, ow - 20, 220)]
