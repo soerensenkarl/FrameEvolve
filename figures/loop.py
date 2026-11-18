@@ -146,13 +146,45 @@ def facing(house):
     return out | {r.id for r in house.roofs if -r.ew[0] * E[0] - r.ew[1] * E[1] > 0}
 
 
+def faces(m, pts=None):
+    """A member as the faces of its box that look towards the viewer: the box round its points (moved, if given)
+    in its own axes, so a cut member keeps about its cut length."""
+    pts = pts or m.points
+    a = [m.end[k] - m.start[k] for k in range(3)]
+    n = math.sqrt(sum(c * c for c in a))
+    a = [c / n for c in a]
+    u = list(m.up)
+    v = [a[1] * u[2] - a[2] * u[1], a[2] * u[0] - a[0] * u[2], a[0] * u[1] - a[1] * u[0]]
+    axes = (a, u, v)
+    dot = lambda p, d: sum(p[k] * d[k] for k in range(3))
+    lo = [min(dot(p, d) for p in pts) for d in axes]
+    hi = [max(dot(p, d) for p in pts) for d in axes]
+    corner = lambda i, j, k: tuple((lo[0], hi[0])[i] * a[c] + (lo[1], hi[1])[j] * u[c] + (lo[2], hi[2])[k] * v[c] for c in range(3))
+    out = []
+    for axis, d in enumerate(axes):
+        for side, sign in ((0, -1), (1, 1)):
+            if sign * dot(d, E) <= 0:
+                continue             # facing away
+            quad = []
+            for i, j in ((0, 0), (1, 0), (1, 1), (0, 1)):
+                idx = [i, j]
+                idx.insert(axis, side)
+                quad.append(corner(*idx))
+            out.append(quad)
+    return out
+
+
 def members(house, frame, colour):
     """The members of the exterior walls and the roof, without the clutter inside: those facing the viewer as
     colour gives them, the far ones faint."""
     shell = {w.id for w in house.walls if w.role == "exterior"} | {r.id for r in house.roofs}
     near = facing(house)
-    return [(m.points, *(colour(m) if m.surface in near or colour(m)[0] == RED else ("#fff", "#d4d4d0", 0.25)), True,
-             m.panel or m.surface) for m in frame.members if m.surface in shell]
+    out = []
+    for m in frame.members:
+        if m.surface in shell:
+            look = colour(m) if m.surface in near or colour(m)[0] == RED else ("#fff", "#d4d4d0", 0.25)
+            out += [(f, *look, False, m.panel or m.surface) for f in faces(m)]
+    return out
 
 
 # ---------------------------------------------------------------- pieces
@@ -276,8 +308,8 @@ def figure():
                   vx + 10, row + 10, vw - 20, 118)]
 
     # output: the frame as the prefab panels it is built in, pulled apart
-    panel_shapes = [(pts, "#fff", "#4a4a47" if m.surface in near else "#c4c4c0", 0.25, True, m.panel or m.surface)
-                    for m, pts in exploded(framed, lambda m: m.surface in shell)]
+    panel_shapes = [(f, "#fff", "#4a4a47" if m.surface in near else "#c4c4c0", 0.25, False, m.panel or m.surface)
+                    for m, pts in exploded(framed, lambda m: m.surface in shell) for f in faces(m, pts)]
     o += [box(ox, top, ow, bottom - top, "Evolved grammar", "frames as prefab panels"),
           drawing(panel_shapes, ox + 10, top + 60, ow - 20, 220)]
 
