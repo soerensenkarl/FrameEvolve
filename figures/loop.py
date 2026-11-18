@@ -1,6 +1,6 @@
 """The report's overview figure: inputs, the loop, the output, in the plain style of the report's other figures
 (grey surfaces, black members, red for what matters) and drawn from the real geometry: a house as the builder
-gets it, framed by a grammar early in a run, its faults as the verifier finds them, and framed by the run's best.
+gets it with its loads, framed, its faults as the verifier finds them, and the frame as prefab panels.
 Writes loop.svg, loop.pdf and loop.png beside this file (PDF and PNG by headless Chrome).
 
     uv run python figures/loop.py
@@ -19,8 +19,8 @@ from frameevolve.builder import build, load_rules  # noqa: E402
 from frameevolve.model import House  # noqa: E402
 from frameevolve.verifier import verify  # noqa: E402
 
-HOUSE, RUN, EARLY = "h008", "seed1", "c001"   # the house; the run; its grammar shown in the loop
-W, H = 1140, 436
+HOUSE, GRAMMAR, RUN = "h001", "advanced.py", "seed1"   # the house, the grammar that frames it, the run whose curve is shown
+W, H = 1100, 436
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 INK, GREY, LINE, RED = "#1d1d1b", "#6b6b6b", "#a8a8a8", "#d8342c"
 CSS = f"""
@@ -171,31 +171,45 @@ def progress(run):
     return out
 
 
-def best_grammar(run):
-    val = [Path(h).stem for h in json.loads((run / "config.json").read_text())["val"]]
-    cands = [json.loads(line) for line in (run / "candidates.jsonl").read_text().splitlines()]
-    best = min(cands, key=lambda c: tuple(sum(c["scores"][h][k] for h in val) for k in range(3)))
-    return run / "grammars" / f"{best['id']}.py"
-
-
-# ---------------------------------------------------------------- the figure
-
 def rule_list(x, y, rules, n):
     return "".join(f'<text class="mono" x="{x}" y="{y + i * 14}">{r.__name__}<tspan fill="{GREY}"> {r.match}</tspan></text>'
                    for i, r in enumerate(rules[:n])) + (f'<text class="sub" x="{x}" y="{y + n * 14}">+ {len(rules) - n} more</text>'
                                                          if len(rules) > n else "")
 
 
+def exploded(frame, keep, gap=0.22):
+    """The members `keep` takes, moved apart from the house's middle by panel (by surface for members built on
+    site), each group as one piece: the frame as it is delivered. Returns [(member, its moved points)]."""
+    ms = [m for m in frame.members if keep(m)]
+    pts = [p for m in ms for p in m.points]
+    mid = [sum(p[k] for p in pts) / len(pts) for k in range(3)]
+    groups = {}
+    for m in ms:
+        groups.setdefault(m.panel or m.surface, []).append(m)
+    out = []
+    for g in groups.values():
+        c = [sum(p[k] for m in g for p in m.points) / sum(len(m.points) for m in g) for k in range(3)]
+        d = [(c[k] - mid[k]) * gap * (2.4 if k == 2 else 1) for k in range(3)]   # lifted more than spread
+        out += [(m, [tuple(p[k] + d[k] for k in range(3)) for p in m.points]) for m in g]
+    return out
+
+
 def figure():
     house = House.load(ROOT / "data" / "houses" / f"{HOUSE}.json")
-    run = ROOT / "runs" / RUN
-    early, best = run / "grammars" / f"{EARLY}.py", best_grammar(run)
-    framed = build(early, house)
+    framed = build(ROOT / "grammars" / GRAMMAR, house)
     report = verify(house, framed)
     faulty = {mid for f in report.faults for mid in f.members}
-    evolved = build(best, house)
-    final = verify(house, evolved)
-    curve = progress(run)
+    curve = progress(ROOT / "runs" / RUN)
+    rules = load_rules(ROOT / "grammars" / GRAMMAR)
+    shell = {w.id for w in house.walls if w.role == "exterior"} | {r.id for r in house.roofs}
+    near = facing(house)
+
+    # a grid: house and output as full-height columns; the proposer and the search above the grammar, frame
+    # and verifier
+    top, row, bottom = 34, 216, 410             # the top row's top, the bottom row's top, both rows' bottom
+    cols = [(20, 180), (240, 180), (460, 180), (680, 180), (900, 180)]   # house, grammar, frame, verifier, output
+    (hx, hw), (gx, gw), (fx, fw), (vx, vw), (ox, ow) = cols
+    mid = row + 90                              # where the arrows along the bottom row run
 
     o = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}">', f"<style>{CSS}</style>",
          f'<defs><marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" '
@@ -203,58 +217,55 @@ def figure():
          f'<marker id="load" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" '
          f'orient="auto"><path d="M0 0L10 5L0 10z" fill="{RED}"/></marker></defs>',
          f'<rect width="{W}" height="{H}" fill="#fff"/>',
-         '<text class="col" x="20" y="18">INPUT</text>', '<text class="col" x="236" y="18">LOOP</text>',
-         '<text class="col" x="960" y="18">OUTPUT</text>']
+         f'<text class="col" x="{hx}" y="22">INPUT</text>', f'<text class="col" x="{gx}" y="22">LOOP</text>',
+         f'<text class="col" x="{ox}" y="22">OUTPUT</text>']
 
-    # input: the house, as surfaces with their loads
-    o += [box(20, 136, 186, 290, "House", "surfaces and loads"), drawing(surfaces(house), 30, 160, 166, 190, loads(house))]
+    # input
+    o += [box(hx, top, hw, bottom - top, "House", "surfaces and loads"),
+          drawing(surfaces(house), hx + 10, top + 60, hw - 20, 200, loads(house))]
 
-    # the loop: proposer and search above, the deterministic part below
-    o += ['<rect class="env" x="236" y="226" width="704" height="200"/>',
-          '<text class="envlabel" x="930" y="242" text-anchor="end">Deterministic</text>']
-    o.append(box(320, 28, 336, 160, "Proposer", "LLM"))
+    # the loop
+    o += [f'<rect class="env" x="{gx - 16}" y="{row - 16}" width="{vx + vw - gx + 32}" height="{bottom - row + 32}"/>',
+          f'<text class="envlabel" x="{vx + vw + 10}" y="{bottom + 11}" text-anchor="end">Deterministic</text>']
+    o.append(box(gx, top, fx + fw - gx, 140, "Proposer", "LLM"))
     diff = [(" @rule(62, match=\"opening\")", INK), (" def header(s, o):", INK), ("-   s.place(\"2x8\", ...)", RED),
             ("+   n = 3 if s.load(o.u0, o.u1).sum > 4000 else 2", "#2f8a4a"),
             ("+   for i in range(n):", "#2f8a4a"), ("+       s.place(\"2x10\", ...)", "#2f8a4a")]
-    o += [f'<text class="mono" x="332" y="{50 + i * 15}" xml:space="preserve" style="fill:{c};white-space:pre">{t}</text>'
+    o += [f'<text class="mono" x="{gx + 12}" y="{top + 20 + i * 14}" xml:space="preserve" style="fill:{c};white-space:pre">{t}</text>'
           for i, (t, c) in enumerate(diff)]
-
-    o.append(box(710, 28, 230, 160, "Search", "keeps improvements"))
-    cx, cy, cw, ch = 752, 42, 172, 86
+    o.append(box(vx, top, vw, 140, "Search", "keeps improvements"))
+    cx, cy, cw, ch = vx + 44, top + 14, vw - 58, 66
     lo, hi = math.log10(min(curve)), math.log10(curve[0])
     px = lambda i: cx + cw * i / (len(curve) - 1)
     py = lambda v: cy + ch * (hi - math.log10(v)) / (hi - lo)
     o += [f'<path d="M{cx} {cy}V{cy + ch}H{cx + cw}" fill="none" stroke="{LINE}"/>',
           f'<text class="sub" x="{cx - 4}" y="{cy + 8}" text-anchor="end">{curve[0]:,}</text>',
           f'<text class="sub" x="{cx - 4}" y="{cy + ch}" text-anchor="end">{curve[-1]:,}</text>',
-          f'<text class="sub" x="{cx}" y="{cy + ch + 13}">hard faults</text>',
+          f'<text class="sub" x="{cx}" y="{cy + ch + 12}">hard faults</text>',
           f'<path d="{"".join(("L" if i else "M") + f"{px(i):.1f} {py(v):.1f}" for i, v in enumerate(curve))}" fill="none" stroke="{INK}" stroke-width="1.4"/>']
 
-    gy, gh = 252, 162
-    rules = load_rules(early)
-    o += [box(250, gy, 190, gh, "Grammar", "match → action"), rule_list(262, gy + 18, rules, 7)]
-    o += [box(482, gy, 200, gh, "Frame", f"{len(framed.members):,} members"),
-          drawing(members(house, framed, lambda m: ("#fff", "#4a4a47", 0.25)), 494, gy + 8, 176, 104),
-          box(724, gy, 200, gh, "Verifier", f"{len(report.faults)} faults"),
+    rh = bottom - row
+    o += [box(gx, row, gw, rh, "Grammar", "match → action"), rule_list(gx + 12, row + 20, rules, 8),
+          box(fx, row, fw, rh, "Frame", f"{len(framed.members):,} members"),
+          drawing(members(house, framed, lambda m: ("#fff", "#4a4a47", 0.25)), fx + 10, row + 10, fw - 20, 118),
+          box(vx, row, vw, rh, "Verifier", f"{len(report.faults)} faults"),
           drawing(members(house, framed, lambda m: (RED, "#7a1a15", 0.5) if m.id in faulty else ("#f4f4f2", "#b8b8b5", 0.3)),
-                  736, gy + 8, 176, 104)]
+                  vx + 10, row + 10, vw - 20, 118)]
+
+    # output: the frame as the prefab panels it is built in, pulled apart
+    panel_shapes = [(pts, "#fff", "#4a4a47" if m.surface in near else "#c4c4c0", 0.25, True)
+                    for m, pts in exploded(framed, lambda m: m.surface in shell)]
+    o += [box(ox, top, ow, bottom - top, "Evolved grammar", "frames as prefab panels"),
+          drawing(panel_shapes, ox + 10, top + 60, ow - 20, 220)]
 
     # arrows: none cross
-    o += [arrow(f"M206 {gy + 60}H250"),
-          arrow(f"M440 {gy + 60}H482", "build", 461, gy + 52),
-          arrow(f"M682 {gy + 60}H724"),
-          arrow(f"M824 {gy}V188", "score", 830, 216, "start"),
-          arrow("M710 100H656", "parent", 683, 92),
-                    arrow(f"M400 188V{gy}", "edit", 406, 216, "start"),
-          ]
-
-    # output
-    o += [arrow(f"M940 {gy + 60}H955"),
-          box(955, 28, 170, 398, "Evolved grammar", "unseen houses"),
-          f'<text class="sub" x="967" y="48">{len(load_rules(best))} rules</text>',
-          drawing(members(house, evolved, lambda m: ("#fff", "#4a4a47", 0.25)), 965, 90, 150, 200),
-                    f'<text class="sub" x="967" y="320">{len(evolved.panels())} panels</text>',
-          f'<text class="sub" x="967" y="334">{final.hard} hard faults</text>',
+    o += [arrow(f"M{hx + hw} {mid}H{gx}"),
+          arrow(f"M{gx + gw} {mid}H{fx}", "build", (gx + gw + fx) / 2, mid - 8),
+          arrow(f"M{fx + fw} {mid}H{vx}"),
+          arrow(f"M{vx + vw} {mid}H{ox}"),
+          arrow(f"M{vx + vw / 2} {row}V{top + 140}", "score", vx + vw / 2 + 6, row - 30, "start"),
+          arrow(f"M{vx} {top + 70}H{fx + fw}", "parent", (vx + fx + fw) / 2, top + 62),
+          arrow(f"M{gx + gw / 2} {top + 140}V{row}", "edit", gx + gw / 2 + 6, row - 30, "start"),
           "</svg>"]
     return "\n".join(o)
 
