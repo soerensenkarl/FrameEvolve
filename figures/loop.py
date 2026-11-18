@@ -147,7 +147,7 @@ def figure():
     seed, early, best = ROOT / "grammars" / "seed.py", run / "grammars" / f"{EARLY}.py", best_grammar(run)
     framed = build(early, house)
     report = verify(house, framed)
-    faulty = {mid for f in report.faults if f.hard for mid in f.members}
+    faulty = {mid for f in report.faults for mid in f.members}
     evolved = build(best, house)
     final = verify(house, evolved)
     curve = progress(run)
@@ -156,25 +156,25 @@ def figure():
          f'<defs><marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" '
          f'orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="{INK}"/></marker></defs>',
          f'<rect width="{W}" height="{H}" fill="#fff"/>',
-         '<text class="col" x="20" y="18">INPUTS</text>', '<text class="col" x="236" y="18">THE LOOP</text>',
+         '<text class="col" x="20" y="18">INPUTS</text>', '<text class="col" x="236" y="18">LOOP</text>',
          '<text class="col" x="960" y="18">OUTPUT</text>']
 
     # inputs: the seed grammar above, the house below
     seed_rules = load_rules(seed)
-    o += [box(20, 28, 186, 180, "Seed grammar", f"{len(seed_rules)} rules, by hand"), rule_list(32, 48, seed_rules, 8)]
-    o += [box(20, 226, 186, 210, "House", "walls, floors, roof planes"), drawing(surfaces(house), 34, 236, 158, 122)]
+    o += [box(20, 28, 186, 180, "Seed grammar", f"{len(seed_rules)} rules"), rule_list(32, 48, seed_rules, 8)]
+    o += [box(20, 226, 186, 210, "House", "surface representation"), drawing(surfaces(house), 34, 236, 158, 122)]
 
     # the loop: proposer and search above, the deterministic part below
     o += ['<rect class="env" x="236" y="226" width="704" height="224"/>',
           '<text class="envlabel" x="930" y="242" text-anchor="end">Deterministic</text>']
-    o.append(box(320, 28, 336, 160, "Proposer", "an LLM (Claude) edits the grammar"))
+    o.append(box(320, 28, 336, 160, "Proposer", "LLM"))
     diff = [(" @rule(62, match=\"opening\")", INK), (" def header(s, o):", INK), ("-   s.place(\"2x8\", ...)", RED),
             ("+   n = 3 if s.load(o.u0, o.u1).sum > 4000 else 2", "#2f8a4a"),
             ("+   for i in range(n):", "#2f8a4a"), ("+       s.place(\"2x10\", ...)", "#2f8a4a")]
     o += [f'<text class="mono" x="332" y="{50 + i * 15}" xml:space="preserve" style="fill:{c};white-space:pre">{t}</text>'
           for i, (t, c) in enumerate(diff)]
 
-    o.append(box(710, 28, 230, 160, "Search", "keeps a grammar only if it improves"))
+    o.append(box(710, 28, 230, 160, "Search", "keeps improvements"))
     cx, cy, cw, ch = 752, 42, 172, 86
     lo, hi = math.log10(min(curve)), math.log10(curve[0])
     px = lambda i: cx + cw * i / (len(curve) - 1)
@@ -182,15 +182,15 @@ def figure():
     o += [f'<path d="M{cx} {cy}V{cy + ch}H{cx + cw}" fill="none" stroke="{LINE}"/>',
           f'<text class="sub" x="{cx - 4}" y="{cy + 8}" text-anchor="end">{curve[0]:,}</text>',
           f'<text class="sub" x="{cx - 4}" y="{cy + ch}" text-anchor="end">{curve[-1]:,}</text>',
-          f'<text class="sub" x="{cx}" y="{cy + ch + 13}">hard faults, by iteration</text>',
+          f'<text class="sub" x="{cx}" y="{cy + ch + 13}">hard faults</text>',
           f'<path d="{"".join(("L" if i else "M") + f"{px(i):.1f} {py(v):.1f}" for i, v in enumerate(curve))}" fill="none" stroke="{INK}" stroke-width="1.4"/>']
 
     gy, gh = 252, 162
     rules = load_rules(early)
-    o += [box(250, gy, 190, gh, "Grammar", "rules: match → action"), rule_list(262, gy + 18, rules, 7)]
-    o += [box(482, gy, 200, gh, "Frame", f"{len(framed.members):,} members, in panels"),
+    o += [box(250, gy, 190, gh, "Grammar", "match → action"), rule_list(262, gy + 18, rules, 7)]
+    o += [box(482, gy, 200, gh, "Frame", f"{len(framed.members):,} members"),
           drawing(members(framed, lambda m: ("#f4f4f2", "#2a2a28", 0.35)), 494, gy + 8, 176, 104),
-          box(724, gy, 200, gh, "Verifier", f"{report.hard} hard faults, in red"),
+          box(724, gy, 200, gh, "Verifier", f"{len(report.faults)} faults"),
           drawing(members(framed, lambda m: (RED, "#7a1a15", 0.5) if m.id in faulty else ("#f4f4f2", "#b8b8b5", 0.3)),
                   736, gy + 8, 176, 104)]
 
@@ -199,19 +199,17 @@ def figure():
           arrow(f"M440 {gy + 60}H482", "build", 461, gy + 52),
           arrow(f"M682 {gy + 60}H724"),
           arrow(f"M824 {gy}V188", "score", 830, 216, "start"),
-          arrow("M710 100H656", "a parent", 683, 92),
-          '<text class="label" x="683" y="116" text-anchor="middle">+ faults</text>',
-          arrow(f"M400 188V{gy}", "edit", 406, 216, "start"),
-          arrow(f"M206 400H222V{gy + gh + 22}H582V{gy + gh}", "surfaces, loads", 452, gy + gh + 17, "start")]
+          arrow("M710 100H656", "parent", 683, 92),
+                    arrow(f"M400 188V{gy}", "edit", 406, 216, "start"),
+          arrow(f"M206 400H222V{gy + gh + 22}H582V{gy + gh}", "surfaces", 452, gy + gh + 17, "start")]
 
     # output
     o += [arrow(f"M940 {gy + 60}H955"),
-          box(955, 28, 170, 422, "Evolved grammar", "frames houses it never saw"),
-          f'<text class="sub" x="967" y="48">{len(load_rules(best))} rules after {len(curve) - 1} iterations</text>',
+          box(955, 28, 170, 422, "Evolved grammar", "unseen houses"),
+          f'<text class="sub" x="967" y="48">{len(load_rules(best))} rules</text>',
           drawing(members(evolved, lambda m: ("#f4f4f2", "#2a2a28", 0.3)), 965, 90, 150, 200),
-          f'<text class="sub" x="967" y="320">{len(evolved.members):,} members,</text>',
-          f'<text class="sub" x="967" y="334">{len(evolved.panels())} prefab panels,</text>',
-          f'<text class="sub" x="967" y="348">{final.hard} hard faults</text>',
+                    f'<text class="sub" x="967" y="320">{len(evolved.panels())} panels</text>',
+          f'<text class="sub" x="967" y="334">{final.hard} hard faults</text>',
           "</svg>"]
     return "\n".join(o)
 
