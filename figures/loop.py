@@ -25,7 +25,7 @@ from frameevolve.model import House  # noqa: E402
 from frameevolve.verifier import verify  # noqa: E402
 
 HOUSE, GRAMMAR, RUN = "h001", "advanced.py", "seed1"   # the house, the grammar that frames it, the run whose Pareto set is shown
-W, H = 1100, 448
+W, H = 1100, 470
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 INK, GREY, LINE, RED, AMBER = "#1d1d1b", "#6b6b6b", "#a8a8a8", "#d8342c", "#e8930c"
 CSS = f"""
@@ -35,8 +35,8 @@ text {{ font-family: Helvetica, Arial, sans-serif; fill: {INK}; }}
 .sub {{ font-size: 11px; fill: {GREY}; }}
 .mono {{ font: 10.5px Menlo, Consolas, monospace; fill: {INK}; }}
 .box {{ fill: #fff; stroke: {LINE}; stroke-width: 1; }}
-.env {{ fill: none; stroke: {LINE}; stroke-width: 1; stroke-dasharray: 4 3; }}
-.envlabel {{ font-size: 11px; font-weight: 700; fill: {INK}; }}
+.env {{ fill: #efeeea; stroke: #cfccc5; stroke-width: 1; }}
+.envlabel {{ font-size: 10px; font-weight: 700; letter-spacing: .12em; fill: {GREY}; }}
 .arrow {{ fill: none; stroke: {INK}; stroke-width: 1.1; }}
 .label {{ font-size: 11px; fill: {GREY}; }}
 """
@@ -395,7 +395,7 @@ def figure():
 
     # a grid: house and output as full-height columns; the proposer and the search above the grammar, frame
     # and verifier
-    top, row, bottom = 34, 228, 422             # the top row's top, the bottom row's top, both rows' bottom
+    top, row, bottom = 34, 248, 442             # the top row's top, the bottom row's top, both rows' bottom
     cols = [(20, 180), (240, 180), (460, 180), (680, 180), (900, 180)]   # house, grammar, frame, verifier, output
     (hx, hw), (gx, gw), (fx, fw), (vx, vw), (ox, ow) = cols
     mid = row + 90                              # where the arrows along the bottom row run
@@ -414,8 +414,8 @@ def figure():
           drawing(surfaces(house), hx + 10, top + 60, hw - 20, 200, loads(house))]
 
     # the loop
-    o += [f'<rect class="env" x="{gx - 16}" y="{row - 16}" width="{vx + vw - gx + 32}" height="{bottom - row + 32}"/>',
-          f'<text class="envlabel" x="{vx + vw + 10}" y="{bottom + 11}" text-anchor="end">Deterministic</text>']
+    o += [f'<rect class="env" x="{gx - 14}" y="{row - 14}" width="{vx + vw - gx + 28}" height="{bottom - row + 36}" rx="8"/>',
+          f'<text class="envlabel" x="{gx}" y="{bottom + 15}">DETERMINISTIC</text>']
     # above, as search.py runs it: the verifier scores every frame and writes its faults in words; the search keeps
     # a child only if it beats its parent, holds the best grammar for each house (the Pareto set) and picks a
     # parent from it; the parent's report goes to the proposer, which writes the child
@@ -464,11 +464,11 @@ def figure():
           arrow(f"M{gx + gw} {mid}H{fx}", "build", (gx + gw + fx) / 2, mid - 8),
           arrow(f"M{fx + fw} {mid}H{vx}"),
           arrow(f"M{vx + vw} {mid}H{ox}"),
-          arrow(f"M{vx + vw * 0.7} {row}V{top + TOP}", "score", vx + vw * 0.7 + 6, top + TOP + 17, "start"),
-          arrow(f"M{vx + vw * 0.25} {row}V{top + TOP + 24}H{fx + fw / 2}V{top + TOP}", "report", fx + fw / 2 + 6, top + TOP + 17, "start"),
+          arrow(f"M{vx + vw * 0.7} {row}V{top + TOP}", "score", vx + vw * 0.7 + 6, top + TOP + 18, "start"),
+          arrow(f"M{vx + vw * 0.25} {row}V{top + TOP + 30}H{fx + fw / 2}V{top + TOP}", "report", fx + fw / 2 + 6, top + TOP + 18, "start"),
           arrow(f"M{vx} {top + TOP / 2}H{fx + fw}", "parent", (vx + fx + fw) / 2, top + TOP / 2 - 8),
           arrow(f"M{fx} {top + TOP / 2}H{gx + gw}"),
-          arrow(f"M{gx + gw / 2} {top + TOP}V{row}", "edit", gx + gw / 2 + 6, top + TOP + 17, "start"),
+          arrow(f"M{gx + gw / 2} {top + TOP}V{row}", "edit", gx + gw / 2 + 6, top + TOP + 18, "start"),
           "</svg>"]
     return "\n".join(o)
 
