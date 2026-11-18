@@ -24,7 +24,7 @@ from frameevolve.builder import build, load_rules  # noqa: E402
 from frameevolve.model import House  # noqa: E402
 from frameevolve.verifier import verify  # noqa: E402
 
-HOUSE, GRAMMAR, RUN = "h001", "advanced.py", "seed1"   # the house, the grammar that frames it, the run whose Pareto set is shown
+HOUSE, GRAMMAR = "h001", "advanced.py"   # the house, and the grammar that frames it
 W, H = 1100, 470
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 INK, GREY, LINE, RED, AMBER = "#1d1d1b", "#6b6b6b", "#a8a8a8", "#d8342c", "#e8930c"
@@ -373,26 +373,21 @@ def wrap(text, width, lines):
     return out
 
 
-def pareto(run, x, y, w, h):
-    """The run's last grammars against its validation houses: a black square where a grammar is in the search's
-    Pareto set and best on that house (search.pareto, over every grammar of the run). The search picks parents
-    from the grammars with a square, weighted by how many they have."""
-    from types import SimpleNamespace
-    from frameevolve.search import pareto as front
-    val = [Path(v).stem for v in json.loads((run / "config.json").read_text())["val"]]
-    every = [json.loads(line) for line in (run / "candidates.jsonl").read_text().splitlines()]
-    won = front([SimpleNamespace(id=c["id"], scores=c["scores"]) for c in every], val)   # the search's own set
-    cands = every[-7:]                                                                    # the last few, drawn
-    cw, rh, lab = (w - 30) / len(val), h / len(cands), 30
+def pareto(x, y, w, h):
+    """The Pareto set, schematic: grammars (rows) against houses (columns), a black square where a grammar is the
+    best on that house. Grammars best somewhere are kept as parents (bold); the rest drop out (grey)."""
+    rows = ["g1", "g2", "g3", "g4", "g5"]
+    best = [1, 3, 3, 1, 4, 3, 1, 4]                  # the best grammar on each house
+    cw, rh, lab = (w - 26) / len(best), h / len(rows), 26
     out = []
-    for i, c in enumerate(cands):
-        wins = [v in won.get(c["id"], []) for v in val]
-        out.append(f'<text class="sub" x="{x}" y="{y + i * rh + rh - 1.5}" style="font-size:8.5px;{"" if any(wins) else "fill:#c0c0bc"}">{c["id"]}</text>')
-        for j, win in enumerate(wins):
-            cx = x + lab + j * cw
-            out.append(f'<rect x="{cx + 1:.1f}" y="{y + i * rh + 1:.1f}" width="{cw - 2:.1f}" height="{rh - 2:.1f}" '
-                       f'fill="{INK if win else "#ececea"}"/>')
-    out.append(f'<text class="sub" x="{x + lab}" y="{y + h + 11}" style="font-size:8.5px">houses →</text>')
+    for i, g in enumerate(rows):
+        kept = i in best
+        out.append(f'<text class="sub" x="{x}" y="{y + i * rh + rh - 3}" style="font-size:9.5px;'
+                   f'{"font-weight:700;fill:" + INK if kept else "fill:#c0c0bc"}">{g}</text>')
+        for j, b in enumerate(best):
+            out.append(f'<rect x="{x + lab + j * cw + 1:.1f}" y="{y + i * rh + 1:.1f}" width="{cw - 2:.1f}" '
+                       f'height="{rh - 2:.1f}" fill="{INK if b == i else "#ececea"}"/>')
+    out.append(f'<text class="sub" x="{x + lab}" y="{y + h + 11}" style="font-size:9px">houses →</text>')
     return "".join(out)
 
 
@@ -458,8 +453,8 @@ def figure():
                  f'<text x="{cols[1]}" y="{y}" style="font-size:10px">{where}</text>'
                  f'<text class="mono" x="{cols[2]}" y="{y}">{f.rules[-1] if f.rules else ""}</text>')
 
-    o.append(box(vx, top, vw, TOP, "Search", "Pareto set: best per house"))
-    o.append(pareto(ROOT / "runs" / RUN, vx + 12, top + 12, vw - 24, 80))
+    o.append(box(vx, top, vw, TOP, "Search", "keeps grammars best on a house"))
+    o.append(pareto(vx + 12, top + 12, vw - 24, 80))
 
     rh = bottom - row
     o += [box(gx, row, gw, rh, "Grammar", "rules: match → action"), rule_cards(gx + 12, row + 10, gw - 24, rules),
