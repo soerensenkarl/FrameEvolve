@@ -279,10 +279,10 @@ def arrow(d, label="", lx=0, ly=0, anchor="middle"):
 
 
 def rule_cards(x, y, w, rules):
-    """The grammar as cards, as in the report's rule figure: rules 1, 2, 3, then the dots, then the last, each
+    """The grammar as cards, as in the report's rule figure: rules 1, 2, 3, then the dots, then the last (n), each
     with its number, its name and what it matches."""
     ch, gap, out = 26, 4, []
-    shown = [(i + 1, r) for i, r in enumerate(rules[:3])] + [None, (len(rules), rules[-1])]
+    shown = [(i + 1, r) for i, r in enumerate(rules[:3])] + [None, ("n", rules[-1])]
     cy = y
     for item in shown:
         if item is None:       # the rules between
