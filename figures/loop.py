@@ -19,10 +19,10 @@ from frameevolve.builder import build, load_rules  # noqa: E402
 from frameevolve.model import House  # noqa: E402
 from frameevolve.verifier import verify  # noqa: E402
 
-HOUSE, GRAMMAR, RUN = "h001", "advanced.py", "seed1"   # the house, the grammar that frames it, the run whose curve is shown
-W, H = 1100, 436
+HOUSE, GRAMMAR, RUN = "h001", "advanced.py", "seed1"   # the house, the grammar that frames it, the run whose Pareto set is shown
+W, H = 1100, 448
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-INK, GREY, LINE, RED = "#1d1d1b", "#6b6b6b", "#a8a8a8", "#d8342c"
+INK, GREY, LINE, RED, AMBER = "#1d1d1b", "#6b6b6b", "#a8a8a8", "#d8342c", "#e8930c"
 CSS = f"""
 text {{ font-family: Helvetica, Arial, sans-serif; fill: {INK}; }}
 .col {{ font-size: 11px; font-weight: 700; letter-spacing: .12em; fill: {GREY}; }}
@@ -182,7 +182,7 @@ def members(house, frame, colour):
     out = []
     for m in frame.members:
         if m.surface in shell:
-            look = colour(m) if m.surface in near or colour(m)[0] == RED else ("#fff", "#d4d4d0", 0.25)
+            look = colour(m) if m.surface in near or colour(m)[0] in (RED, AMBER) else ("#fff", "#d4d4d0", 0.25)
             out += [(f, *look, False, m.panel or m.surface) for f in faces(m)]
     return out
 
@@ -200,15 +200,6 @@ def arrow(d, label="", lx=0, ly=0, anchor="middle"):
             + (f'<text class="label" x="{lx}" y="{ly}" text-anchor="{anchor}">{label}</text>' if label else ""))
 
 
-def progress(run):
-    val = [Path(h).stem for h in json.loads((run / "config.json").read_text())["val"]]
-    best, out = math.inf, []
-    for line in (run / "candidates.jsonl").read_text().splitlines():
-        best = min(best, sum(json.loads(line)["scores"][h][0] for h in val))
-        out.append(best)
-    return out
-
-
 CARDS = ("studs", "header", "joists", "rafters")   # the rules shown as cards: one for each part of a house
 
 
@@ -216,7 +207,7 @@ def rule_cards(x, y, w, rules):
     """A few of the grammar's rules as cards, as in the report's rule figure: a number, the rule's name and what it
     matches; the rest as a stack behind the last card."""
     shown = [r for r in rules if r.__name__ in CARDS]
-    ch, gap, out = 30, 6, []
+    ch, gap, out = 28, 5, []
     last = y + (len(shown) - 1) * (ch + gap)
     for k in (2, 1):           # the cards not shown, stacked behind the last
         out.append(f'<rect x="{x + 3 * k}" y="{last + 3 * k}" width="{w}" height="{ch}" rx="3" fill="#fff" stroke="{LINE}"/>')
@@ -249,19 +240,64 @@ def exploded(frame, keep, gap=0.22):
     return out
 
 
+TOP = 150    # the top row's height
+
+
+def example_faults(report):
+    """Three faults for the report box: two hard of different checks, one soft."""
+    out, seen = [], set()
+    for want in (True, True, False):
+        f = next((f for f in report.faults if f.hard == want and f.check not in seen), None)
+        if f:
+            out.append(f)
+            seen.add(f.check)
+    return out
+
+
+def wrap(text, width, lines):
+    words, out = text.split(), [""]
+    for w in words:
+        if len(out[-1]) + len(w) + 1 > width:
+            if len(out) == lines:
+                out[-1] = out[-1].rstrip() + "…"
+                return out
+            out.append("")
+        out[-1] += ("" if not out[-1] else " ") + w
+    return out
+
+
+def pareto(run, x, y, w, h):
+    """The run's grammars against its validation houses: a black square where a grammar is the best on that house.
+    Grammars with a square form the Pareto set the search picks parents from."""
+    val = [Path(v).stem for v in json.loads((run / "config.json").read_text())["val"]]
+    cands = [json.loads(line) for line in (run / "candidates.jsonl").read_text().splitlines()][-7:]
+    best = {v: min(tuple(c["scores"][v]) for c in cands) for v in val}
+    cw, rh, lab = (w - 30) / len(val), h / len(cands), 30
+    out = []
+    for i, c in enumerate(cands):
+        wins = [tuple(c["scores"][v]) == best[v] for v in val]
+        out.append(f'<text class="sub" x="{x}" y="{y + i * rh + rh - 1.5}" style="font-size:8.5px;{"" if any(wins) else "fill:#c0c0bc"}">{c["id"]}</text>')
+        for j, win in enumerate(wins):
+            cx = x + lab + j * cw
+            out.append(f'<rect x="{cx + 1:.1f}" y="{y + i * rh + 1:.1f}" width="{cw - 2:.1f}" height="{rh - 2:.1f}" '
+                       f'fill="{INK if win else "#ececea"}"/>')
+    out.append(f'<text class="sub" x="{x + lab}" y="{y + h + 11}" style="font-size:8.5px">houses →</text>')
+    return "".join(out)
+
+
 def figure():
     house = House.load(ROOT / "data" / "houses" / f"{HOUSE}.json")
     framed = build(ROOT / "grammars" / GRAMMAR, house)
     report = verify(house, framed)
-    faulty = {mid for f in report.faults for mid in f.members}
-    curve = progress(ROOT / "runs" / RUN)
+    hard = {mid for f in report.faults if f.hard for mid in f.members}
+    soft = {mid for f in report.faults if not f.hard for mid in f.members} - hard
     rules = load_rules(ROOT / "grammars" / GRAMMAR)
     shell = {w.id for w in house.walls if w.role == "exterior"} | {r.id for r in house.roofs}
     near = facing(house)
 
     # a grid: house and output as full-height columns; the proposer and the search above the grammar, frame
     # and verifier
-    top, row, bottom = 34, 216, 410             # the top row's top, the bottom row's top, both rows' bottom
+    top, row, bottom = 34, 228, 422             # the top row's top, the bottom row's top, both rows' bottom
     cols = [(20, 180), (240, 180), (460, 180), (680, 180), (900, 180)]   # house, grammar, frame, verifier, output
     (hx, hw), (gx, gw), (fx, fw), (vx, vw), (ox, ow) = cols
     mid = row + 90                              # where the arrows along the bottom row run
@@ -282,29 +318,35 @@ def figure():
     # the loop
     o += [f'<rect class="env" x="{gx - 16}" y="{row - 16}" width="{vx + vw - gx + 32}" height="{bottom - row + 32}"/>',
           f'<text class="envlabel" x="{vx + vw + 10}" y="{bottom + 11}" text-anchor="end">Deterministic</text>']
-    o.append(box(gx, top, fx + fw - gx, 140, "Proposer", "LLM"))
-    diff = [(" @rule(62, match=\"opening\")", INK), (" def header(s, o):", INK), ("-   s.place(\"2x8\", ...)", RED),
-            ("+   n = 3 if s.load(o.u0, o.u1).sum > 4000 else 2", "#2f8a4a"),
-            ("+   for i in range(n):", "#2f8a4a"), ("+       s.place(\"2x10\", ...)", "#2f8a4a")]
-    o += [f'<text class="mono" x="{gx + 12}" y="{top + 20 + i * 14}" xml:space="preserve" style="fill:{c};white-space:pre">{t}</text>'
+    # above: the proposer edits, the report says what is wrong, the search keeps the best grammar for each house
+    o.append(box(gx, top, gw, TOP, "Proposer", "LLM edits a rule"))
+    diff = [(" def header(s, o):", INK), ("-  s.place(\"2x8\", ...)", RED), ("+  n = plies(s.load(o))", "#2f8a4a"),
+            ("+  for i in range(n):", "#2f8a4a"), ("+    s.place(\"2x10\", ...)", "#2f8a4a")]
+    o += [f'<text class="mono" x="{gx + 12}" y="{top + 26 + i * 16}" xml:space="preserve" style="fill:{c};white-space:pre">{t}</text>'
           for i, (t, c) in enumerate(diff)]
-    o.append(box(vx, top, vw, 140, "Search", "keeps improvements"))
-    cx, cy, cw, ch = vx + 44, top + 14, vw - 58, 66
-    lo, hi = math.log10(min(curve)), math.log10(curve[0])
-    px = lambda i: cx + cw * i / (len(curve) - 1)
-    py = lambda v: cy + ch * (hi - math.log10(v)) / (hi - lo)
-    o += [f'<path d="M{cx} {cy}V{cy + ch}H{cx + cw}" fill="none" stroke="{LINE}"/>',
-          f'<text class="sub" x="{cx - 4}" y="{cy + 8}" text-anchor="end">{curve[0]:,}</text>',
-          f'<text class="sub" x="{cx - 4}" y="{cy + ch}" text-anchor="end">{curve[-1]:,}</text>',
-          f'<text class="sub" x="{cx}" y="{cy + ch + 12}">hard faults</text>',
-          f'<path d="{"".join(("L" if i else "M") + f"{px(i):.1f} {py(v):.1f}" for i, v in enumerate(curve))}" fill="none" stroke="{INK}" stroke-width="1.4"/>']
+
+    o.append(box(fx, top, fw, TOP, "Report", "faults in words"))
+    for i, f in enumerate(example_faults(report)):
+        y = top + 22 + i * 32
+        o.append(f'<rect x="{fx + 12}" y="{y - 8}" width="8" height="8" fill="{RED if f.hard else AMBER}"/>'
+                 f'<text x="{fx + 25}" y="{y}" style="font-size:10.5px;font-weight:700">{f.check}</text>')
+        o += [f'<text class="sub" x="{fx + 25}" y="{y + 12 + j * 11}" style="font-size:9.5px">{t}</text>'
+              for j, t in enumerate(wrap(f.message, 31, 1))]
+
+    o.append(box(vx, top, vw, TOP, "Search", "Pareto set: best per house"))
+    o.append(pareto(ROOT / "runs" / RUN, vx + 12, top + 12, vw - 24, 80))
 
     rh = bottom - row
     o += [box(gx, row, gw, rh, "Grammar", f"{len(rules)} rules: match → action"), rule_cards(gx + 12, row + 12, gw - 30, rules),
           box(fx, row, fw, rh, "Frame", f"{len(framed.members):,} members"),
           drawing(members(house, framed, lambda m: ("#fff", "#4a4a47", 0.25)), fx + 10, row + 10, fw - 20, 118),
-          box(vx, row, vw, rh, "Verifier", f"{len(report.faults)} faults"),
-          drawing(members(house, framed, lambda m: (RED, "#7a1a15", 0.5) if m.id in faulty else ("#f4f4f2", "#b8b8b5", 0.3)),
+          box(vx, row, vw, rh, "Verifier", " "),
+          f'<rect x="{vx + 12}" y="{row + rh - 19}" width="9" height="9" fill="{RED}"/>'
+          f'<text class="sub" x="{vx + 25}" y="{row + rh - 10}">{report.hard} hard</text>'
+          f'<rect x="{vx + 82}" y="{row + rh - 19}" width="9" height="9" fill="{AMBER}"/>'
+          f'<text class="sub" x="{vx + 95}" y="{row + rh - 10}">{report.soft} soft</text>',
+          drawing(members(house, framed, lambda m: (RED, "#7a1a15", 0.5) if m.id in hard else
+                          (AMBER, "#8a5506", 0.5) if m.id in soft else ("#f4f4f2", "#b8b8b5", 0.3)),
                   vx + 10, row + 10, vw - 20, 118)]
 
     # output: the frame as the prefab panels it is built in, pulled apart
@@ -318,9 +360,10 @@ def figure():
           arrow(f"M{gx + gw} {mid}H{fx}", "build", (gx + gw + fx) / 2, mid - 8),
           arrow(f"M{fx + fw} {mid}H{vx}"),
           arrow(f"M{vx + vw} {mid}H{ox}"),
-          arrow(f"M{vx + vw / 2} {row}V{top + 140}", "score", vx + vw / 2 + 6, row - 30, "start"),
-          arrow(f"M{vx} {top + 70}H{fx + fw}", "parent", (vx + fx + fw) / 2, top + 62),
-          arrow(f"M{gx + gw / 2} {top + 140}V{row}", "edit", gx + gw / 2 + 6, row - 30, "start"),
+          arrow(f"M{vx + vw / 2} {row}V{top + TOP}", "score", vx + vw / 2 + 6, top + TOP + 17, "start"),
+          arrow(f"M{vx} {top + TOP / 2}H{fx + fw}", "parent", (vx + fx + fw) / 2, top + TOP / 2 - 8),
+          arrow(f"M{fx} {top + TOP / 2}H{gx + gw}"),
+          arrow(f"M{gx + gw / 2} {top + TOP}V{row}", "edit", gx + gw / 2 + 6, top + TOP + 17, "start"),
           "</svg>"]
     return "\n".join(o)
 
