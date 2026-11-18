@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 400" width="1000" height="400">
+<style>
+text { font-family: Helvetica, Arial, sans-serif; fill: #1a1a1a; }
+.col { font-size: 12px; font-weight: 700; letter-spacing: .12em; }
+.title { font-size: 13.5px; font-weight: 700; }
+.sub { font-size: 10.5px; fill: #555; }
+.note { font-size: 11px; fill: #333; }
+.mono { font: 10.5px Menlo, Consolas, monospace; fill: #222; }
+.box { fill: #fff; stroke: #333; stroke-width: 1.1; }
+.env { fill: #f3f3f1; stroke: #c8c8c4; stroke-width: 1; }
+.envlabel { font-size: 10.5px; font-style: italic; fill: #666; }
+.arrow { fill: none; stroke: #333; stroke-width: 1.3; }
+.arrow.loop { stroke: #2f6fdf; stroke-width: 1.6; }
+.label { font-size: 11px; font-style: italic; fill: #333; }
+.tim { fill: #d9b98c; stroke: #8a6a3e; stroke-width: .5; }
+.surf { fill: #eef2f6; stroke: #6f8399; stroke-width: 1; }
+.op { fill: #fff; stroke: #6f8399; stroke-width: 1; }
+.ok { fill: #2f8a4a; } .bad { fill: #c8322b; }
+.hollow { fill: #fff; stroke: #333; stroke-width: 1.2; }
+</style>
+<defs><marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker><marker id="head-loop" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#2f6fdf"/></marker></defs>
+<rect width="1000" height="400" fill="#fff"/>
+<text class="col" x="95" y="22" text-anchor="middle">INPUTS</text>
+<text class="col" x="495" y="22" text-anchor="middle">THE LOOP</text>
+<text class="col" x="910" y="22" text-anchor="middle">OUTPUT</text>
+<rect class="box" x="20" y="44" width="150" height="126" rx="6"/><text class="title" x="95.0" y="64" text-anchor="middle">Seed grammar</text><text class="sub" x="95.0" y="160" text-anchor="middle">a few obvious rules</text>
+<text class="mono" x="36" y="84" text-anchor="start">wall   → studs</text><text class="mono" x="36" y="100" text-anchor="start">window → header</text><text class="mono" x="36" y="116" text-anchor="start">floor  → joists</text><text class="mono" x="36" y="132" text-anchor="start">roof   → rafters</text>
+<rect class="box" x="20" y="206" width="150" height="150" rx="6"/><text class="title" x="95.0" y="226" text-anchor="middle">House</text><text class="sub" x="95.0" y="346" text-anchor="middle">surfaces only, no timber</text>
+<path class="surf" d="M52 276L95 244L138 276V328H52Z"/>
+<path class="surf" d="M52 276H138"/>
+<rect class="op" x="64" y="288" width="16" height="16"/><rect class="op" x="110" y="288" width="16" height="16"/>
+<rect class="op" x="88" y="302" width="14" height="26"/><rect class="op" x="89" y="256" width="12" height="12"/>
+<rect class="env" x="200" y="180" width="590" height="196" rx="10"/>
+<text class="envlabel" x="778" y="368" text-anchor="end">deterministic</text>
+<rect class="box" x="330" y="44" width="210" height="100" rx="6"/><text class="title" x="435.0" y="64" text-anchor="middle">Proposer (LLM)</text><text class="sub" x="435.0" y="134" text-anchor="middle">the only LLM in the loop</text>
+<text class="note" x="435" y="82" text-anchor="middle">reads the faults, looks at the</text><text class="note" x="435" y="97" text-anchor="middle">frames, tries variations, and</text><text class="note" x="435" y="112" text-anchor="middle">edits the rules</text>
+<rect class="box" x="600" y="44" width="170" height="100" rx="6"/><text class="title" x="685.0" y="64" text-anchor="middle">Search</text><text class="sub" x="685.0" y="134" text-anchor="middle">keeps what improves</text>
+<path d="M620 66V118H752" fill="none" stroke="#999" stroke-width=".8"/>
+<path d="M626 70L650 94L674 102L698 107L722 110L746 111" fill="none" stroke="#2f8a4a" stroke-width="1.6"/>
+<circle cx="626" cy="70" r="2.3" class="ok"/>
+<circle cx="650" cy="94" r="2.3" class="ok"/>
+<circle cx="674" cy="102" r="2.3" class="ok"/>
+<circle cx="698" cy="107" r="2.3" class="ok"/>
+<circle cx="722" cy="110" r="2.3" class="ok"/>
+<circle cx="746" cy="111" r="2.3" class="ok"/>
+<rect class="box" x="220" y="214" width="150" height="128" rx="6"/><text class="title" x="295.0" y="234" text-anchor="middle">Grammar</text><text class="sub" x="295.0" y="332" text-anchor="middle">rules: match → action</text>
+<text class="mono" x="236" y="260" text-anchor="start">wall   → studs</text><text class="mono" x="236" y="276" text-anchor="start">window → header</text><text class="mono" x="236" y="292" text-anchor="start">corner → studs</text><text class="mono" x="236" y="308" text-anchor="start">load   → post</text>
+<rect class="box" x="420" y="214" width="150" height="128" rx="6"/><text class="title" x="495.0" y="234" text-anchor="middle">Frame</text><text class="sub" x="495.0" y="332" text-anchor="middle">members in prefab panels</text>
+<rect class="tim" x="438" y="248" width="114" height="3"/><rect class="tim" x="438" y="315" width="114" height="3"/><rect class="tim" x="438.0" y="251" width="3" height="64"/><rect class="tim" x="453.9" y="251" width="3" height="64"/><rect class="tim" x="469.7" y="251" width="3" height="64"/><rect class="tim" x="517.3" y="251" width="3" height="64"/><rect class="tim" x="533.1" y="251" width="3" height="64"/><rect class="tim" x="549.0" y="251" width="3" height="64"/><rect class="tim" x="482.9" y="251" width="3" height="64"/><rect class="tim" x="513.2" y="251" width="3" height="64"/><rect class="tim" x="485.9" y="267.6" width="27.4" height="5.4"/><rect class="tim" x="485.9" y="291.4" width="27.4" height="3"/><rect class="tim" x="498.1" y="251" width="3" height="16.6"/><rect class="tim" x="498.1" y="294.4" width="3" height="20.6"/>
+<rect class="box" x="620" y="214" width="150" height="128" rx="6"/><text class="title" x="695.0" y="234" text-anchor="middle">Verifier</text><text class="sub" x="695.0" y="332" text-anchor="middle">score: (hard, soft, cost)</text>
+<circle cx="636" cy="256" r="4.5" class="ok"/><text x="636" y="258.5" text-anchor="middle" style="font-size:8px;font-weight:700;fill:#fff">✓</text><text class="note" x="646" y="260">can it stand?</text>
+<circle cx="636" cy="273" r="4.5" class="ok"/><text x="636" y="275.5" text-anchor="middle" style="font-size:8px;font-weight:700;fill:#fff">✓</text><text class="note" x="646" y="277">will it hold?</text>
+<circle cx="636" cy="290" r="4.5" class="bad"/><text x="636" y="292.5" text-anchor="middle" style="font-size:8px;font-weight:700;fill:#fff">✕</text><text class="note" x="646" y="294">does it meet code?</text>
+<circle cx="636" cy="307" r="4.5" class="ok"/><text x="636" y="309.5" text-anchor="middle" style="font-size:8px;font-weight:700;fill:#fff">✓</text><text class="note" x="646" y="311">can it go up as panels?</text>
+<path class="arrow" d="M170 107H260V214" marker-end="url(#head)"/>
+<path class="arrow" d="M170 330H200V362H495V342" marker-end="url(#head)"/><text class="label" x="300" y="356" text-anchor="middle">surfaces + loads</text>
+<path class="arrow loop" d="M370 278H420" marker-end="url(#head-loop)"/><text class="label" x="395" y="270" text-anchor="middle">build</text>
+<path class="arrow loop" d="M570 278H620" marker-end="url(#head-loop)"/>
+<path class="arrow loop" d="M695 214V144" marker-end="url(#head-loop)"/><text class="label" x="701" y="168" text-anchor="start">the score</text>
+<path class="arrow loop" d="M600 94H540" marker-end="url(#head-loop)"/><text class="label" x="570" y="86" text-anchor="middle">a parent</text>
+<text class="label" x="570" y="110" text-anchor="middle">+ faults</text>
+<path class="arrow loop" d="M350 144V214" marker-end="url(#head-loop)"/><text class="label" x="356" y="168" text-anchor="start">an edit</text>
+<path class="hollow" d="M797 270h18v-10l16 18-16 18v-10h-18z"/>
+<rect class="box" x="840" y="180" width="140" height="196" rx="6"/><text class="title" x="910.0" y="200" text-anchor="middle">Evolved grammar</text><text class="sub" x="910.0" y="366" text-anchor="middle">on unseen houses</text>
+<text class="mono" x="855" y="216" text-anchor="start">wall   → studs</text><text class="mono" x="855" y="231" text-anchor="start">window → header</text><text class="mono" x="855" y="246" text-anchor="start">load   → post</text><text class="mono" x="855" y="261" text-anchor="start">+ many more</text>
+<rect class="tim" x="854" y="280" width="54" height="3"/><rect class="tim" x="854" y="331" width="54" height="3"/><rect class="tim" x="854.0" y="283" width="3" height="48"/><rect class="tim" x="866.8" y="283" width="3" height="48"/><rect class="tim" x="905.0" y="283" width="3" height="48"/><rect class="tim" x="867.2" y="283" width="3" height="48"/><rect class="tim" x="894.5" y="283" width="3" height="48"/><rect class="tim" x="870.2" y="295.1" width="24.3" height="5.4"/><rect class="tim" x="870.2" y="313.5" width="24.3" height="3"/><rect class="tim" x="880.9" y="283" width="3" height="12.1"/><rect class="tim" x="880.9" y="316.5" width="3" height="14.5"/>
+<rect class="tim" x="912" y="280" width="54" height="3"/><rect class="tim" x="912" y="331" width="54" height="3"/><rect class="tim" x="912.0" y="283" width="3" height="48"/><rect class="tim" x="924.8" y="283" width="3" height="48"/><rect class="tim" x="937.5" y="283" width="3" height="48"/><rect class="tim" x="950.2" y="283" width="3" height="48"/><rect class="tim" x="963.0" y="283" width="3" height="48"/>
+<text class="sub" x="910" y="350" text-anchor="middle">as prefab panels,</text>
+</svg>
