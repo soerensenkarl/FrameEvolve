@@ -301,6 +301,16 @@ def rule_cards(x, y, w, rules):
     return "".join(out)
 
 
+def tone(quad):
+    """A face's grey, by which way it faces: light on top, darker on the sides, as timber looks in daylight."""
+    a = [quad[1][k] - quad[0][k] for k in range(3)]
+    b = [quad[3][k] - quad[0][k] for k in range(3)]
+    n = [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+    up = abs(n[2]) / (math.sqrt(sum(c * c for c in n)) or 1)
+    side = abs(n[0]) / (math.sqrt(sum(c * c for c in n)) or 1)
+    return "#e4e2dd" if up > 0.7 else "#cdcac3" if side > 0.5 else "#d8d5cf"
+
+
 def exploded(frame, keep, gap=0.22):
     """The members `keep` takes, moved apart from the house's middle by panel (by surface for members built on
     site), each group as one piece: the frame as it is delivered. Returns [(member, its moved points)]."""
@@ -429,7 +439,8 @@ def figure():
                   vx + 10, row + 10, vw - 20, 118)]
 
     # output: the frame as the prefab panels it is built in, pulled apart
-    panel_shapes = [(f, "#fff", "#4a4a47" if m.surface in near else "#c4c4c0", 0.25, False, m.panel or m.surface)
+    panel_shapes = [(f, tone(f) if m.surface in near else "#f6f6f4", "#4a4a47" if m.surface in near else "#c4c4c0",
+                     0.25, False, m.panel or m.surface)
                     for m, pts in exploded(framed, lambda m: m.surface in shell) for f in faces(m, pts)]
     o += [box(ox, top, ow, bottom - top, "Evolved grammar", "frames as prefab panels"),
           render(panel_shapes, ox + 10, top + 60, ow - 20, 220)]
