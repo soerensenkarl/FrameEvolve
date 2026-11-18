@@ -421,9 +421,9 @@ def figure():
           render(members(house, framed, lambda m: ("#fff", "#4a4a47", 0.25)), fx + 10, row + 10, fw - 20, 118),
           box(vx, row, vw, rh, "Verifier", " "),
           f'<rect x="{vx + 12}" y="{row + rh - 19}" width="9" height="9" fill="{RED}"/>'
-          f'<text class="sub" x="{vx + 25}" y="{row + rh - 10}">hard faults</text>'
-          f'<rect x="{vx + 82}" y="{row + rh - 19}" width="9" height="9" fill="{AMBER}"/>'
-          f'<text class="sub" x="{vx + 95}" y="{row + rh - 10}">soft</text>',
+          f'<text class="sub" x="{vx + 25}" y="{row + rh - 10}">hard</text>'
+          f'<rect x="{vx + 62}" y="{row + rh - 19}" width="9" height="9" fill="{AMBER}"/>'
+          f'<text class="sub" x="{vx + 75}" y="{row + rh - 10}">soft faults</text>',
           render(members(house, framed, lambda m: (RED, "#7a1a15", 0.5) if m.id in hard else
                           (AMBER, "#8a5506", 0.5) if m.id in soft else ("#f4f4f2", "#b8b8b5", 0.3)),
                   vx + 10, row + 10, vw - 20, 118)]
