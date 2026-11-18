@@ -5,8 +5,11 @@ Writes loop.svg, loop.pdf and loop.png beside this file (PDF and PNG by headless
 
     uv run python figures/loop.py
 """
+import base64
 import json
 import math
+import struct
+import zlib
 import subprocess
 import sys
 from pathlib import Path
@@ -14,6 +17,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(ROOT))
+
+import numpy as np  # noqa: E402
 
 from frameevolve.builder import build, load_rules  # noqa: E402
 from frameevolve.model import House  # noqa: E402
@@ -98,6 +103,79 @@ def drawing(shapes, x, y, w, h, arrows=()):
     return "".join(out)
 
 
+def colour(hexa):
+    """A colour #rgb or #rrggbb as [r, g, b]."""
+    hexa = hexa.lstrip("#")
+    hexa = "".join(c * 2 for c in hexa) if len(hexa) == 3 else hexa
+    return [int(hexa[i:i + 2], 16) for i in (0, 2, 4)]
+
+
+def png(rgb) -> bytes:
+    """An RGB array (height, width, 3) of bytes as a PNG file."""
+    h, w, _ = rgb.shape
+    raw = b"".join(b"\0" + rgb[i].tobytes() for i in range(h))
+    chunk = lambda t, d: struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b""))
+
+
+def render(shapes, x, y, w, h, px=5, ss=3):
+    """Faces [(world quad, fill, line colour, ...)] drawn with a depth buffer, as a renderer does: at every pixel
+    the face nearest the viewer wins, and a line runs where one face meets another or the background. Painting
+    faces back to front cannot get crossing members right; this can. Returns an image px pixels a unit, fitted
+    in w x h at x, y (drawn ss times larger and averaged down, for smooth lines)."""
+    flat = [[proj(p) for p in sh[0]] for sh in shapes]
+    xs = [p[0] for ps in flat for p in ps]
+    ys = [p[1] for ps in flat for p in ps]
+    k = min(w / (max(xs) - min(xs)), h / (max(ys) - min(ys)))
+    ox = (w - (max(xs) - min(xs)) * k) / 2 - min(xs) * k
+    oy = (h - (max(ys) - min(ys)) * k) / 2 - min(ys) * k
+    S = px * ss
+    W_, H_ = int(w * S), int(h * S)
+    zbuf = np.full((H_, W_), -np.inf)
+    ids = np.full((H_, W_), -1, dtype=np.int32)
+    for i, (sh, ps) in enumerate(zip(shapes, flat)):
+        q = [((ox + a * k) * S, (oy + b * k) * S) for a, b in ps]
+        z = [sum(p[c] * E[c] for c in range(3)) for p in sh[0]]
+        for t in ((0, 1, 2), (0, 2, 3)):
+            (x0, y0), (x1, y1), (x2, y2) = (q[j] for j in t)
+            den = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
+            if abs(den) < 1e-9:
+                continue
+            c0, c1 = max(int(min(x0, x1, x2)), 0), min(int(max(x0, x1, x2)) + 1, W_)
+            r0, r1 = max(int(min(y0, y1, y2)), 0), min(int(max(y0, y1, y2)) + 1, H_)
+            if c0 >= c1 or r0 >= r1:
+                continue
+            gx, gy = np.meshgrid(np.arange(c0, c1) + .5, np.arange(r0, r1) + .5)
+            l0 = ((y1 - y2) * (gx - x2) + (x2 - x1) * (gy - y2)) / den
+            l1 = ((y2 - y0) * (gx - x2) + (x0 - x2) * (gy - y2)) / den
+            l2 = 1 - l0 - l1
+            inside = (l0 >= -1e-6) & (l1 >= -1e-6) & (l2 >= -1e-6)
+            d = l0 * z[t[0]] + l1 * z[t[1]] + l2 * z[t[2]]
+            zb, ib = zbuf[r0:r1, c0:c1], ids[r0:r1, c0:c1]
+            win = inside & (d > zb)
+            zb[win], ib[win] = d[win], i
+    fills = np.array([colour(sh[1]) for sh in shapes] + [[255, 255, 255]], dtype=np.float64)
+    lines = np.array([colour(sh[2]) for sh in shapes] + [[255, 255, 255]], dtype=np.float64)
+    img = fills[ids]                     # -1 indexes the white at the end
+    edge = np.zeros_like(ids, dtype=bool)
+    edge[:, :-1] |= ids[:, :-1] != ids[:, 1:]
+    edge[:-1, :] |= ids[:-1, :] != ids[1:, :]
+    # the line takes the colour of the nearer face on it; widened to ss pixels, one pixel once averaged down
+    near = ids.copy()
+    near[:, :-1] = np.where(zbuf[:, 1:] > zbuf[:, :-1], ids[:, 1:], near[:, :-1])
+    near[:-1, :] = np.where(zbuf[1:, :] > zbuf[:-1, :], ids[1:, :], near[:-1, :])
+    wide = edge.copy()
+    for _ in range(ss - 1):
+        wide[1:, :] |= wide[:-1, :]
+        wide[:, 1:] |= wide[:, :-1]
+    img[wide] = lines[near[wide]]
+    img = img.reshape(H_ // ss, ss, W_ // ss, ss, 3).mean(axis=(1, 3)) if H_ % ss == 0 and W_ % ss == 0 else \
+        img[: H_ // ss * ss, : W_ // ss * ss].reshape(H_ // ss, ss, W_ // ss, ss, 3).mean(axis=(1, 3))
+    data = base64.b64encode(png(np.clip(img, 0, 255).astype(np.uint8))).decode()
+    return f'<image x="{x}" y="{y}" width="{img.shape[1] / px:.2f}" height="{img.shape[0] / px:.2f}" href="data:image/png;base64,{data}"/>'
+
+
 def surfaces(house):
     """The house as the builder gets it: walls and roof planes, openings cut out as white."""
     out = []
@@ -176,12 +254,12 @@ def faces(m, pts=None):
 
 def members(house, frame, colour):
     """The members of the exterior walls and the roof, without the clutter inside: those facing the viewer as
-    colour gives them, the far ones faint."""
+    colour gives them, the far ones faint. A member colour marks (red or amber) shows wherever it is."""
     shell = {w.id for w in house.walls if w.role == "exterior"} | {r.id for r in house.roofs}
     near = facing(house)
     out = []
     for m in frame.members:
-        if m.surface in shell:
+        if m.surface in shell or colour(m)[0] in (RED, AMBER):
             look = colour(m) if m.surface in near or colour(m)[0] in (RED, AMBER) else ("#fff", "#d4d4d0", 0.25)
             out += [(f, *look, False, m.panel or m.surface) for f in faces(m)]
     return out
@@ -289,8 +367,9 @@ def figure():
     house = House.load(ROOT / "data" / "houses" / f"{HOUSE}.json")
     framed = build(ROOT / "grammars" / GRAMMAR, house)
     report = verify(house, framed)
-    hard = {mid for f in report.faults if f.hard for mid in f.members}
-    soft = {mid for f in report.faults if not f.hard for mid in f.members} - hard
+    # a member in a soft fault shows amber even when it is in a hard one too, so the soft ones are seen
+    soft = {mid for f in report.faults if not f.hard for mid in f.members}
+    hard = {mid for f in report.faults if f.hard for mid in f.members} - soft
     rules = load_rules(ROOT / "grammars" / GRAMMAR)
     shell = {w.id for w in house.walls if w.role == "exterior"} | {r.id for r in house.roofs}
     near = facing(house)
@@ -339,13 +418,13 @@ def figure():
     rh = bottom - row
     o += [box(gx, row, gw, rh, "Grammar", f"{len(rules)} rules: match → action"), rule_cards(gx + 12, row + 12, gw - 30, rules),
           box(fx, row, fw, rh, "Frame", f"{len(framed.members):,} members"),
-          drawing(members(house, framed, lambda m: ("#fff", "#4a4a47", 0.25)), fx + 10, row + 10, fw - 20, 118),
+          render(members(house, framed, lambda m: ("#fff", "#4a4a47", 0.25)), fx + 10, row + 10, fw - 20, 118),
           box(vx, row, vw, rh, "Verifier", " "),
           f'<rect x="{vx + 12}" y="{row + rh - 19}" width="9" height="9" fill="{RED}"/>'
           f'<text class="sub" x="{vx + 25}" y="{row + rh - 10}">{report.hard} hard</text>'
           f'<rect x="{vx + 82}" y="{row + rh - 19}" width="9" height="9" fill="{AMBER}"/>'
           f'<text class="sub" x="{vx + 95}" y="{row + rh - 10}">{report.soft} soft</text>',
-          drawing(members(house, framed, lambda m: (RED, "#7a1a15", 0.5) if m.id in hard else
+          render(members(house, framed, lambda m: (RED, "#7a1a15", 0.5) if m.id in hard else
                           (AMBER, "#8a5506", 0.5) if m.id in soft else ("#f4f4f2", "#b8b8b5", 0.3)),
                   vx + 10, row + 10, vw - 20, 118)]
 
@@ -353,7 +432,7 @@ def figure():
     panel_shapes = [(f, "#fff", "#4a4a47" if m.surface in near else "#c4c4c0", 0.25, False, m.panel or m.surface)
                     for m, pts in exploded(framed, lambda m: m.surface in shell) for f in faces(m, pts)]
     o += [box(ox, top, ow, bottom - top, "Evolved grammar", "frames as prefab panels"),
-          drawing(panel_shapes, ox + 10, top + 60, ow - 20, 220)]
+          render(panel_shapes, ox + 10, top + 60, ow - 20, 220)]
 
     # arrows: none cross
     o += [arrow(f"M{hx + hw} {mid}H{gx}"),
