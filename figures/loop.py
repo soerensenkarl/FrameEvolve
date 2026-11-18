@@ -419,7 +419,10 @@ def figure():
     # above, as search.py runs it: the verifier scores every frame and writes its faults in words; the search keeps
     # a child only if it beats its parent, holds the best grammar for each house (the Pareto set) and picks a
     # parent from it; the parent's report goes to the proposer, which writes the child
-    o.append(box(gx, top, gw, TOP, "Proposer", "LLM edits the grammar"))
+    o.append(box(gx, top, gw, TOP, "Proposer", "the only LLM in the loop"))
+    o.append(f'<rect x="{gx}" y="{top}" width="{gw}" height="{TOP}" fill="none" stroke="{INK}" stroke-width="1.8"/>'   # where the LLM sits
+             f'<rect x="{gx + gw - 46}" y="{top + 8}" width="38" height="17" rx="3" fill="{INK}"/>'
+             f'<text x="{gx + gw - 27}" y="{top + 20.5}" text-anchor="middle" style="font-size:10px;font-weight:700;fill:#fff;letter-spacing:.06em">LLM</text>')
     diff = [(" def header(s, o):", INK), ("-  s.place(\"2x8\", ...)", RED), ("+  n = plies(s.load(o))", "#2f8a4a"),
             ("+  for i in range(n):", "#2f8a4a"), ("+    s.place(\"2x10\", ...)", "#2f8a4a")]
     o += [f'<text class="mono" x="{gx + 12}" y="{top + 26 + i * 16}" xml:space="preserve" style="fill:{c};white-space:pre">{t}</text>'
