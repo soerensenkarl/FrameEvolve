@@ -583,6 +583,8 @@ class Handler(BaseHTTPRequestHandler):
                 if WEB in f.parents and f.is_file():
                     return self.send(200, f.read_bytes(), TYPES.get(f.suffix, "application/octet-stream"))
                 return self.send(404, {"error": "not found"})
+            if path == "/figures/loop.svg":
+                return self.send(200, (ROOT / "figures" / "loop.svg").read_bytes(), "image/svg+xml")
             if path == "/api/houses":
                 return self.send(200, [house_card(House.load(f)) for f in sorted(HOUSES.glob("*.json"))])
             if path.startswith("/api/house/") and path.endswith("/thumb.svg"):

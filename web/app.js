@@ -16,7 +16,6 @@ import { setup3d, resize, render3d, look3d, renderSurfaces, fit, startLiveDraw, 
 import { renderElev, renderStoreys, renderCaption, scrollElevTo } from "./elevations.js";
 import { renderInspect, renderReport, renderTimeline, stepBy } from "./inspect.js";
 import { renderVerifier, chooseFault } from "./verifier.js";
-import { renderExplain } from "./explain.js";
 import { setView, renderSide } from "./views.js";
 import { loadGrammar } from "./editor.js";
 import { rs, pollJobs, loadRunsList, enterRuns } from "./runs.js";
@@ -146,7 +145,6 @@ function renderAll() {
   renderStoreys();
   renderInspect();
   renderVerifier();
-  if (document.body.dataset.tab === "explain") renderExplain();   // opened before the first build came in
   renderReport();
   renderTimeline();
   renderCaption();
@@ -261,7 +259,6 @@ export function showTab(id) {
     document.body.classList.toggle("page-other", page !== "work");
     document.body.classList.toggle("runs-mode", id === "runs");
     document.body.classList.toggle("verifier-mode", id === "verifier" || id === "explain");
-    if (id === "explain") renderExplain();
     hideTip();
     renderCaption();
     if (id === "runs") enterRuns();

@@ -242,16 +242,23 @@ def inline(s: Site) -> list[Fault]:
 
 # ------------------------------------------------------------------------------------- floors and roofs
 
-def extents(m: Member, notches: list, step: float) -> list[tuple[float, float | None]]:
-    """m's depth at sections along it: (distance from its start, how deep it is there, or None past its ends)."""
-    pieces = solid.solid(m.start, m.end, m.up, m.width, m.depth, m.cuts, notches)
+def depth_at(m: Member, pieces: list, t: float) -> float | None:
+    """How deep the solid `pieces` of m is at the section t from its start, or None past its ends."""
     a, up = axis(m), unit(m.up)
-    out = []
-    for i in range(int(m.length / step)):
-        t = (i + 0.5) * step
-        polys = solid.section(pieces, a, dot(a, m.start) + t)
-        vals = [dot(up, q) for poly in polys for q in poly]
-        out.append((t, max(vals) - min(vals) if vals else None))
+    vals = [dot(up, q) for poly in solid.section(pieces, a, dot(a, m.start) + t) for q in poly]
+    return max(vals) - min(vals) if vals else None
+
+
+def notched(m: Member, whole: list) -> list[tuple[float, float]]:
+    """Where along m its notches are: (from, to) for each notch that takes something out of `whole`."""
+    a, out = axis(m), []
+    for region in m.notches:
+        for inside in whole:
+            for n, d in region:
+                inside = solid.clip(inside, tuple(n), d) if inside else inside
+            if inside:
+                ts = [dot(a, q) - dot(a, m.start) for q in solid.points(inside)]
+                out.append((min(ts), max(ts)))
     return out
 
 
@@ -266,9 +273,12 @@ def notches(s: Site) -> list[Fault]:
         if not m.notches:
             continue
         step = 0.5
-        full = extents(m, [], step)
-        cut = extents(m, m.notches, step)
-        lost = [(t, (f or 0.0) - (c or 0.0)) for (t, f), (_, c) in zip(full, cut) if f]
+        whole = solid.solid(m.start, m.end, m.up, m.width, m.depth, m.cuts)   # the member without its notches
+        full = lambda t: depth_at(m, whole, t)
+        ts = [(i + 0.5) * step for i in range(int(m.length / step))]
+        spans = notched(m, whole)           # sections are only taken at the notches: the rest lost nothing
+        lost = [(t, f - (depth_at(m, m.pieces, t) or 0.0)) for t in ts
+                if any(a - step <= t <= b + step for a, b in spans) and (f := full(t))]
         runs, cur = [], []
         for t, r in lost:
             if r > 0.06:
@@ -280,7 +290,7 @@ def notches(s: Site) -> list[Fault]:
             runs.append(cur)
         if not runs:
             continue
-        ends = [t for t, f in full if f]
+        ends = [next(t for t in ts if full(t)), next(t for t in reversed(ts) if full(t))]
         rests = supports(s, m)
         for run in runs:
             t0, t1 = run[0][0] - step / 2, run[-1][0] + step / 2

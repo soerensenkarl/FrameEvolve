@@ -64,7 +64,11 @@ def meet(a: Member, b: Member, g: Graph) -> None:
                 n[k] = 1.0 if abs(a.box.hi[k] - b.box.lo[k]) <= EPS else -1.0
                 g._side(a.id, b.id, area, tuple(n), c)
         return
-    vol, contacts = solid.meet(a.pieces, b.pieces)
+    # kept on a until either is reshaped: the graph is rebuilt often while a frame is built, most pairs unchanged
+    known = a.__dict__.setdefault("meets", {})
+    if b.id not in known or known[b.id][0] is not b.pieces:
+        known[b.id] = (b.pieces, solid.meet(a.pieces, b.pieces))
+    vol, contacts = known[b.id][1]
     if vol > 1e-6:
         g.clashes.append((a.id, b.id, vol))
         return
@@ -91,12 +95,13 @@ def build_graph(members: list[Member], ground: float = 0.0) -> Graph:
         if abs(m.box.lo[2] - ground) <= EPS and m.plain:
             s = m.box.size
             g.bears[m.id][GROUND] = g.carries[GROUND][m.id] = s[0] * s[1]
-    order = sorted(members, key=lambda m: m.box.lo[0])
-    for i, a in enumerate(order):
-        for b in order[i + 1:]:
-            if b.box.lo[0] > a.box.hi[0] + EPS:
+    # a sweep along x: only members whose boxes touch or overlap are looked at closely
+    order = sorted(((m.box.lo, m.box.hi, m) for m in members), key=lambda t: t[0][0])
+    for i, (alo, ahi, a) in enumerate(order):
+        reach, y0, y1, z0, z1 = ahi[0] + EPS, alo[1] - EPS, ahi[1] + EPS, alo[2] - EPS, ahi[2] + EPS
+        for blo, bhi, b in order[i + 1:]:
+            if blo[0] > reach:
                 break
-            if min(overlaps(a.box, b.box)) < -EPS:
-                continue
-            meet(a, b, g)
+            if bhi[1] >= y0 and blo[1] <= y1 and bhi[2] >= z0 and blo[2] <= z1:
+                meet(a, b, g)
     return g

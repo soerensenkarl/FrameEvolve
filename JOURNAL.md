@@ -347,3 +347,16 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
   Rules renamed to say what they do: layout_grid, wall_panel_joints, floor_panel_joints, build_into_panels.
 - Verifier: a rafter lying along a member (a rake plate) is held along its length. The thrust check took one
   contact point, the middle, and so missed that the rafter rests high up on the gable wall.
+
+## 2026-11-19: faster, by doing less; the About page is the figure
+
+- Simplicity is the rule for the whole project (Karl): remove before adding, backend and frontend.
+- Speed, with identical frames and reports on six benchmark builds (fingerprints compared): build 30 s to 6 s,
+  verify 13 s to 2 s, the test suite 90 s to 44 s. All of it was repeated work: a surface's origin and axes were
+  recomputed on each of 7.5 million coordinate conversions (now worked out once); a member's box on a surface
+  was recomputed on every question (kept until the member is reshaped); the contact graph, rebuilt about 40 times
+  a build, re-met every cut pair (kept per pair until reshaped) and tested boxes through tuples (inline sweep);
+  the notch check took sections every 1/2" along every notched member, twice (now only at the notches).
+  No spatial index: after this it was not needed.
+- The About tab is the report's overview figure (figures/loop.svg, served as is); the interactive diagram and its
+  320 lines are gone.

@@ -65,12 +65,21 @@ class Surface:
     itself and "inner" on the far side of the framing."""
     faces = ("outer", "inner")
 
+    @cached_property
+    def frame(self) -> tuple[Vec, Vec, Vec, Vec]:
+        """Its origin and axes, worked out once: a surface's geometry does not change after it is made."""
+        return self.origin, self.eu, self.ev, self.ew
+
     def world(self, u: float, v: float, w: float) -> Vec:
-        return add(self.origin, add(mul(self.eu, u), add(mul(self.ev, v), mul(self.ew, w))))
+        o, a, b, c = self.frame
+        return (o[0] + (a[0] * u + (b[0] * v + c[0] * w)), o[1] + (a[1] * u + (b[1] * v + c[1] * w)),
+                o[2] + (a[2] * u + (b[2] * v + c[2] * w)))
 
     def local(self, p: Vec) -> Vec:
-        q = sub(p, self.origin)
-        return (dot(q, self.eu), dot(q, self.ev), dot(q, self.ew))
+        o, a, b, c = self.frame
+        q = (p[0] - o[0], p[1] - o[1], p[2] - o[2])
+        return (q[0] * a[0] + q[1] * a[1] + q[2] * a[2], q[0] * b[0] + q[1] * b[1] + q[2] * b[2],
+                q[0] * c[0] + q[1] * c[1] + q[2] * c[2])
 
     def world_dir(self, d: Vec) -> Vec:
         return add(mul(self.eu, d[0]), add(mul(self.ev, d[1]), mul(self.ew, d[2])))
@@ -84,7 +93,10 @@ class Surface:
         if isinstance(x, Box):
             return Box.around([self.local((a, b, c)) for a in (x.lo[0], x.hi[0])
                                for b in (x.lo[1], x.hi[1]) for c in (x.lo[2], x.hi[2])])
-        return Box.around([self.local(p) for p in x.points])
+        boxes = x.__dict__.setdefault("local_boxes", {})   # per surface, until the member is reshaped
+        if self.id not in boxes:
+            boxes[self.id] = Box.around([self.local(p) for p in x.points])
+        return boxes[self.id]
 
     def square(self, m: "Member") -> bool:
         """True if a plain member's axes run along this surface's axes, so its local box is exact."""
@@ -474,7 +486,7 @@ class Member:
             self.cuts.append(cut)
         if notch is not None:
             self.notches.append(notch)
-        for k in ("box", "points", "pieces"):
+        for k in ("box", "points", "pieces", "local_boxes", "meets"):
             self.__dict__.pop(k, None)
 
     def to_dict(self) -> dict:
