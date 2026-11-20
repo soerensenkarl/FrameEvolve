@@ -587,3 +587,37 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
   house stood off to one side, half hidden by cars and trees, and had to be found in the picture from the
   camera's place and heading. The city's photo mesh gives every house the same four square views, lined up with
   its model, so it is the one source of pictures (Karl: cleaner).
+
+## 2026-11-20: the houses review page, as it stands
+
+What it is for: looking at real houses next to what the detailer made of them, and telling the detailer's author
+what is wrong by marking it, so faults are fixed in the rules and checked again in place.
+
+- Run: `uv run python -m frameevolve.cambridge_view 20` (the number is how many houses, a spread over roof
+  types), then http://localhost:8770. One Python file serves it (cambridge_view.py, standard library), one HTML
+  file draws it (web/cambridge.html, Three.js from a CDN). The page is built afresh on every load: each house is
+  read (envelope.py), detailed (detail.py, with its brief if data/cambridge/briefs/<model>.json exists) and
+  checked (check.py), so a reload shows the code as it is now. Restart the server after editing Python.
+- A house on the page: the city's model as it was downloaded, and every surface of the detailed House (walls
+  with their openings cut out and windows glazed, floors with stair openings, ceilings, roof planes). The line
+  under the toolbar gives the assessor's record, what the detailer made (storeys, walls, openings, roof planes),
+  what was taken off the model (chimneys, dormers, low masses), and VALID or NOT VALID with the reasons from
+  check.py. Houses that fail are marked with a cross in the list.
+- Views, on the number keys: 1 the city's model; 2 the detailed house; 3 the inside walls with everything else
+  ghosted; 4 without the roof and ceilings; 5 without the top storey as well; 6 the next storey down, and so on.
+  Layers on R F O I (roofs, floors, outside walls, inside walls). [ and ] show one storey at a time, 0 all. V
+  steps round the four corner views, T looks from above. E shows the photos of the four sides (photos.py) where
+  they have been made.
+- Review: hold Shift and drag to mark on the view (or P for the pen), Z undoes a stroke, C clears. Enter goes to
+  the comment box, Enter again saves; S saves without a comment. G passes the house as good and jumps to the
+  next unreviewed one; N jumps without passing. Left and right, or J and K, step through the houses. The list
+  shows a tick for passed houses, a dot and a count for houses with open notes, and "n of 20 reviewed".
+- A note is two files in data/cambridge/notes: a picture of the view with the marks, the house, the view and
+  the comment written under it; and JSON (house, comment, view and layers, camera, status, reply). The fixer
+  reads the pictures, fixes the cause, and sets the status to fixed with a reply, which shows in green under the
+  note on the page; Done, Reopen and Delete are on each note. A pass is a note with status "ok" and no picture.
+- Used so far: five notes from Karl (walls through a flat roof, a gap and stacked strips at a roof's edge, a
+  nick at a gable's peak, an overhang at a gambrel's break, a slot between two roofs), each traced to a rule
+  and answered on the page.
+- Not tested by Claude in a browser (no browser at hand in the session): the server is tested with requests,
+  the page by Karl's use of it.
