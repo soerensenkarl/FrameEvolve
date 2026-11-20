@@ -1,14 +1,18 @@
 """A page to look at Cambridge houses in 3D: each as the city's model and as the detailed House, one over the other.
 
-`python -m frameevolve.cambridge_view [count]` details a spread of houses (by roof type) and writes
-out/cambridge.html, one file that opens without a server.
+`python -m frameevolve.cambridge_view [count]` details a spread of houses (by roof type) and serves the page at
+http://localhost:8770, built afresh on every load. On the page a pen marks what is wrong; each note is saved in
+data/cambridge/notes as a picture (the view with the marks) and a JSON file (house, comment, status, reply).
 """
 from __future__ import annotations
 
+import base64
 import json
 import random
 import sys
+import time
 import traceback
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from frameevolve import cambridge, envelope
@@ -45,7 +49,11 @@ def surfaces(house) -> list[dict]:
     return out
 
 
-def build(count: int = 20) -> Path:
+NOTES = cambridge.OUT / "notes"
+PORT = 8770
+
+
+def build(count: int = 20) -> str:
     houses = json.loads((cambridge.OUT / "houses.json").read_text())
     data = []
     for h in sample(houses, count):
@@ -66,11 +74,66 @@ def build(count: int = 20) -> Path:
         except Exception:
             item["info"] += ". Detailing failed: " + traceback.format_exc().splitlines()[-1]
         data.append(item)
-    out = ROOT / "out" / "cambridge.html"
-    out.parent.mkdir(exist_ok=True)
-    out.write_text((ROOT / "web" / "cambridge.html").read_text().replace("/*DATA*/", json.dumps(data)))
-    return out
+    return (ROOT / "web" / "cambridge.html").read_text().replace("/*DATA*/", json.dumps(data))
+
+
+def notes() -> list[dict]:
+    """Every note, oldest first."""
+    return [json.loads(p.read_text()) for p in sorted(NOTES.glob("*.json"))]
+
+
+def serve(count: int) -> None:
+    """The page and its notes: GET / builds the page; notes are listed, added, changed and deleted under /notes."""
+    NOTES.mkdir(parents=True, exist_ok=True)
+
+    class Handler(BaseHTTPRequestHandler):
+        def send(self, body: bytes, kind: str = "application/json", code: int = 200) -> None:
+            self.send_response(code)
+            self.send_header("Content-Type", kind)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def body(self) -> dict:
+            return json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+
+        def note(self) -> Path:
+            return NOTES / (Path(self.path).stem + ".json")       # the name only: nothing outside the notes folder
+
+        def do_GET(self):
+            if self.path in ("/", "/index.html"):
+                self.send(build(count).encode(), "text/html; charset=utf-8")
+            elif self.path == "/notes":
+                self.send(json.dumps(notes()).encode())
+            elif self.path.endswith(".png") and self.note().with_suffix(".png").exists():
+                self.send(self.note().with_suffix(".png").read_bytes(), "image/png")
+            else:
+                self.send(b"{}", code=404)
+
+        def do_POST(self):
+            d = self.body()
+            name = f"{time.strftime('%Y%m%d-%H%M%S')}-{d['house']}"
+            (NOTES / f"{name}.png").write_bytes(base64.b64decode(d.pop("png").split(",", 1)[1]))
+            (NOTES / f"{name}.json").write_text(json.dumps({"id": name, **d, "status": "open", "reply": ""}, indent=1))
+            self.send(b"{}")
+
+        def do_PUT(self):
+            p = self.note()
+            p.write_text(json.dumps({**json.loads(p.read_text()), **self.body()}, indent=1))
+            self.send(b"{}")
+
+        def do_DELETE(self):
+            for p in (self.note(), self.note().with_suffix(".png")):
+                p.unlink(missing_ok=True)
+            self.send(b"{}")
+
+        def log_message(self, *args):
+            pass
+
+    print(f"http://localhost:{PORT}")
+    ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
 
 
 if __name__ == "__main__":
-    print(build(int(sys.argv[1]) if len(sys.argv) > 1 else 20))
+    serve(int(sys.argv[1]) if len(sys.argv) > 1 else 20)
