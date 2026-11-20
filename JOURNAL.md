@@ -381,3 +381,12 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
   source has (storeys and floors, openings, partitions, a stair); a gate keeps a house if its loads reach the
   ground and the seed builds. Open: how much detail to keep. A dormer is a wall standing on a roof, which a House
   cannot say yet. Nothing converted and nothing in the repo yet; the trial is in a scratch folder.
+- Facade photos, tried on 103 Belmont St (model CAM_7IURX-WTEMJ-9MIKC, 93 flat faces). The city's photo mesh
+  (an Esri I3S integrated mesh, public, JPEG textures, WGS84 with heights in metres:
+  .../Mesh_Cambridge_Reality_WGS1984_EGM96/SceneServer/layers/0) is read down to its finest nodes within 45 m of
+  the house (about 200,000 triangles), moved into the model's coordinates (EPSG:2249, feet; the OBJ files are
+  offset by 731100, 2902900) and drawn square to each face of the model, keeping what lies from 4 ft behind to
+  9 ft in front of the face, 0.1 ft a pixel. The two sources line up without any fitting: ground at 39.5 ft in
+  both. Windows, doors, the porch and its steps read clearly; the four largest walls are 81, 71, 44 and 72%
+  covered (the rest is below grade, behind a porch or a neighbour, or hidden by trees). Terms of use of the mesh
+  not found yet. Next: have Claude read each facade for its openings.
