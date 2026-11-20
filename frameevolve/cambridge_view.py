@@ -50,7 +50,7 @@ def build(count: int = 20) -> Path:
     data = []
     for h in sample(houses, count):
         path = cambridge.OUT / "models" / f"{h['model']}.obj"
-        item = {"name": h["address"], "info": f'{h["propertyclass"]}, {h.get("exterior_style", "")}, {h.get("exterior_numstories")} storeys, '
+        item = {"name": h["address"], "id": h["model"], "info": f'{h["propertyclass"]}, {h.get("exterior_style", "")}, {h.get("exterior_numstories")} storeys, '
                 f'{h.get("exterior_rooftype")} roof, {h.get("exterior_walltype")}, built {h.get("condition_yearbuilt")}'}
         try:
             env = envelope.envelope(path)

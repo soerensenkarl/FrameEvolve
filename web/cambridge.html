@@ -2,12 +2,16 @@
 <style>
  body{margin:0;font:14px system-ui;background:#f4f1ec;color:#222;overflow:hidden}
  #bar{position:fixed;top:0;left:0;right:0;padding:8px 14px;background:#fffd;display:flex;gap:10px;align-items:center;flex-wrap:wrap;z-index:1}
- select,button{font:inherit;padding:4px 9px} button.on{background:#333;color:#fff} #info{color:#555;flex-basis:100%}
+ select,button,input{font:inherit;padding:4px 9px} button.on{background:#333;color:#fff} #info{color:#555;flex-basis:100%}
+ #ink{position:fixed;inset:0;pointer-events:none} #ink.on{pointer-events:auto;cursor:crosshair} #note{flex:1;min-width:220px} .sep{width:1px;height:22px;background:#bbb}
 </style>
 <div id="bar"><button id="prev">&larr;</button><select id="pick"></select><button id="next">&rarr;</button>
  <button id="raw">City model</button><button id="det" class="on">Detailed</button>
  <button id="roofs" class="on">Roofs</button><button id="floors" class="on">Floors</button><button id="outer" class="on">Outside walls</button><button id="inner" class="on">Inside walls</button>
+ <span class="sep"></span><button id="pen" title="Draw on the view; the camera holds still while the pen is on">Pen</button><button id="undo">Undo</button><button id="clear">Clear</button>
+ <input id="note" placeholder="What is wrong here?"><button id="save" title="Saves a picture of the view with your marks and note to Downloads">Save note</button>
  <span id="info"></span></div>
+<canvas id="ink"></canvas>
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
 <script type="module">
 import * as THREE from "three";
@@ -15,7 +19,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 const H = /*DATA*/;
 const scene = new THREE.Scene(); scene.background = new THREE.Color("#f4f1ec");
 const cam = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 10, 30000); cam.up.set(0, 0, 1);
-const r = new THREE.WebGLRenderer({ antialias: true }); r.setPixelRatio(devicePixelRatio); r.setSize(innerWidth, innerHeight); document.body.append(r.domElement);
+const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); r.setPixelRatio(devicePixelRatio); r.setSize(innerWidth, innerHeight); document.body.append(r.domElement);
 const ctl = new OrbitControls(cam, r.domElement);
 scene.add(new THREE.HemisphereLight("#ffffff", "#b9b2a6", 1.7)); const sun = new THREE.DirectionalLight("#fff", 1.3); sun.position.set(-600, -900, 1200); scene.add(sun);
 const COL = { wall: "#efe9de", interior: "#cfd9e2", roof: "#b98f6a", floor: "#d9c9a8", ceiling: "#e9e4da" };
@@ -69,7 +73,37 @@ pick.onchange = () => load(+pick.value);
 for (const k of Object.keys(show)) document.getElementById(k).onclick = () => { show[k] = !show[k]; apply(); };
 const step = (n) => load((+pick.value + n + H.length) % H.length);
 document.getElementById("prev").onclick = () => step(-1); document.getElementById("next").onclick = () => step(1);
-addEventListener("keydown", (e) => { if (e.key === "ArrowRight") step(1); if (e.key === "ArrowLeft") step(-1); });
+addEventListener("keydown", (e) => { if (e.target.id === "note") return; if (e.key === "ArrowRight") step(1); if (e.key === "ArrowLeft") step(-1); });
+// The pen: marks drawn over the view, saved with a note as one picture for whoever fixes the problem.
+const ink = document.getElementById("ink"), ctx = ink.getContext("2d"), note = document.getElementById("note");
+let strokes = [], line = null, saved = 0;
+function fit() { ink.width = innerWidth * devicePixelRatio; ink.height = innerHeight * devicePixelRatio; ink.style.width = innerWidth + "px"; ink.style.height = innerHeight + "px"; draw(); }
+function draw(c = ctx) {
+  if (c === ctx) c.clearRect(0, 0, ink.width, ink.height);
+  c.lineWidth = 3 * devicePixelRatio; c.strokeStyle = "#e0192d"; c.lineCap = c.lineJoin = "round";
+  for (const pts of strokes) { c.beginPath(); pts.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y))); if (pts.length === 1) c.lineTo(pts[0][0] + 0.1, pts[0][1]); c.stroke(); }
+}
+function pen(on) { ink.classList.toggle("on", on); document.getElementById("pen").classList.toggle("on", on); ctl.enabled = !on; }
+const at = (e) => [e.clientX * devicePixelRatio, e.clientY * devicePixelRatio];
+ink.onpointerdown = (e) => { line = [at(e)]; strokes.push(line); ink.setPointerCapture(e.pointerId); draw(); };
+ink.onpointermove = (e) => { if (line) { line.push(at(e)); draw(); } };
+ink.onpointerup = () => { line = null; };
+document.getElementById("pen").onclick = () => pen(!ink.classList.contains("on"));
+document.getElementById("undo").onclick = () => { strokes.pop(); draw(); };
+document.getElementById("clear").onclick = () => { strokes = []; draw(); };
+document.getElementById("save").onclick = () => {
+  r.render(scene, cam);
+  const out = document.createElement("canvas"), band = 64 * devicePixelRatio; out.width = ink.width; out.height = ink.height + band;
+  const c = out.getContext("2d"); c.fillStyle = "#fff"; c.fillRect(0, 0, out.width, out.height);
+  c.drawImage(r.domElement, 0, 0, ink.width, ink.height); draw(c);
+  const h = H[+pick.value], layers = Object.keys(show).filter((k) => show[k]).join(", ");
+  c.fillStyle = "#111"; c.font = `${15 * devicePixelRatio}px system-ui`;
+  c.fillText(`${h.name} (${h.id || ""})  showing: ${layers}`, 12 * devicePixelRatio, ink.height + 24 * devicePixelRatio);
+  c.font = `bold ${17 * devicePixelRatio}px system-ui`; c.fillText("Note: " + (note.value || "(none)"), 12 * devicePixelRatio, ink.height + 50 * devicePixelRatio);
+  const a = document.createElement("a"); a.download = `house-note-${h.name.replace(/[^A-Za-z0-9]+/g, "_")}-${Date.now()}.png`; a.href = out.toDataURL("image/png"); a.click();
+  saved += 1; document.getElementById("save").textContent = `Save note (${saved} saved)`; strokes = []; note.value = ""; draw(); pen(false);
+};
+addEventListener("resize", fit); fit();
 addEventListener("resize", () => { cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); r.setSize(innerWidth, innerHeight); });
 load(0);
 (function loop() { ctl.update(); r.render(scene, cam); requestAnimationFrame(loop); })();
