@@ -39,7 +39,7 @@ export function setup3d() {
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = false;      // as in Rhino: the view stops when the mouse does, no glide
   // as in Rhino: left clicks select, right drag orbits (Shift: pans), middle drag pans, Cmd/Ctrl + right drag
-  // zooms about the view's centre; wheel and trackpad are handled in bindViewInput
+  // zooms about the view's centre; the wheel zooms at the cursor (bindViewInput)
   // OrbitControls itself pans when Shift is held over a rotate button (and would rotate if the button were set to pan)
   controls.mouseButtons = { LEFT: -1, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
   controls.enableZoom = false;
@@ -114,31 +114,13 @@ function bindViewInput(canvas) {
     const id = pick(e).hit?.object.userData.id;
     if (!clickMember(id)) select(id ? { kind: "member", id } : null);   // the panels and assembly views take a click themselves
   });
-  // wheel and trackpad, as in Rhino: a mouse wheel zooms at the cursor (Shift: pans); on a trackpad two fingers
-  // orbit (Shift: pan) and pinch zooms, never a two-finger zoom. A wheel notch is counted in lines, or is a whole
-  // multiple of a notch's step: 4.000244140625 px in Chrome on a Mac, 100 or 120 elsewhere. Anything else is a
-  // trackpad. A gesture keeps what it was until it rests, so a trackpad's momentum is never read as a wheel.
-  let gesture = null, lastWheel = 0;
-  const NOTCH = 4.000244140625;
-  const notch = (d) => d > 0 && (Math.abs(d / NOTCH - Math.round(d / NOTCH)) < 1e-9
-    || (Number.isInteger(d) && (d % 100 === 0 || d % 120 === 0)));
-  const fromTrackpad = (e) => {
-    const now = performance.now();
-    if (!gesture || now - lastWheel > 250) {
-      const mouse = e.deltaMode !== 0 || (e.deltaX === 0 && notch(Math.abs(e.deltaY))) || (e.shiftKey && notch(Math.abs(e.deltaX)));
-      gesture = mouse ? "mouse" : "pad";
-    }
-    lastWheel = now;
-    return gesture === "pad";
-  };
+  // the wheel (and a trackpad's two-finger scroll or pinch) zooms at the cursor; Shift pans
   canvas.addEventListener("wheel", (e) => {
     e.preventDefault();
     const px = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1;
     const dx = e.deltaX * px, dy = e.deltaY * px;
-    if (e.ctrlKey) zoomAt(Math.exp(dy * 0.01), e);                       // pinch
-    else if (fromTrackpad(e)) e.shiftKey ? panBy(dx, dy) : orbitBy(dx * 0.006, dy * 0.006);
-    else if (e.shiftKey) panBy(dx, dy);
-    else if (dy) zoomAt(Math.exp(Math.sign(dy) * Math.min(0.25, Math.max(0.1, Math.abs(dy) * 0.0015))), e);   // a notch: 10 to 25%
+    if (e.shiftKey) panBy(dx, dy);
+    else if (dy) zoomAt(Math.exp(Math.sign(dy) * Math.min(0.25, Math.abs(dy) * (e.ctrlKey ? 0.01 : 0.004))), e);
     controls.update();
   }, { passive: false });
 }
@@ -238,17 +220,6 @@ function measureClick(e) {
 }
 
 // ---------------------------------------------------------------- the camera
-
-function orbitBy(dAz, dPol) {
-  const off = camera.position.clone().sub(controls.target);
-  const r = off.length();
-  let az = Math.atan2(off.y, off.x), pol = Math.acos(THREE.MathUtils.clamp(off.z / r, -1, 1));
-  az += dAz;
-  pol = THREE.MathUtils.clamp(pol + dPol, 0.02, Math.PI - 0.02);
-  off.set(r * Math.sin(pol) * Math.cos(az), r * Math.sin(pol) * Math.sin(az), r * Math.cos(pol));
-  camera.position.copy(controls.target).add(off);
-  camera.lookAt(controls.target);
-}
 
 function panBy(dx, dy) {
   const el = renderer.domElement;
