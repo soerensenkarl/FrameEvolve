@@ -111,8 +111,9 @@ function bindViewInput(canvas) {
     if (zoomDrag) { zoomDrag = null; return; }
     if (!down || down[2] !== 0 || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
     if (measure.on) return measureClick(e);
-    const id = pick(e).hit?.object.userData.id;
-    if (!clickMember(id)) select(id ? { kind: "member", id } : null);   // the panels and assembly views take a click themselves
+    const { ray, hit } = pick(e), id = hit?.object.userData.id;
+    const mark = st.view === "faults" ? ray.intersectObjects(markGroup.children.filter((x) => x.visible), false)[0] : null;
+    if (!clickMember(id, mark?.object.userData.fault)) select(id ? { kind: "member", id } : null);   // the panels, assembly and faults views take a click themselves
   });
   // the wheel (and a trackpad's two-finger scroll or pinch) zooms at the cursor; Shift pans
   canvas.addEventListener("wheel", (e) => {
@@ -387,11 +388,12 @@ export function renderMarks() {
   const hardMat = new THREE.MeshBasicMaterial({ color: 0xd8342c, depthTest: false, transparent: true });
   const softMat = new THREE.MeshBasicMaterial({ color: 0xe08a00, depthTest: false, transparent: true });
   const ball = new THREE.SphereGeometry(0.06, 16, 12);
-  for (const f of st.data.faults) {
+  for (const [i, f] of st.data.faults.entries()) {
     if (!f.at || f.check === "backing" || (only && f.check !== only)) continue;
     const s = new THREE.Mesh(ball, f.hard ? hardMat : softMat);
     s.position.set(...f.at.map((x) => x * S));
     s.userData.surface = f.surface;
+    s.userData.fault = i;
     s.renderOrder = 10;
     markGroup.add(s);
   }
