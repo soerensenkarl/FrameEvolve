@@ -582,3 +582,8 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
   storeys on the ground. From the brief: floors at 3.3, 13.3 and 23.3 ft, 27 of 36 seen openings placed (5 found
   no place, 4 fell on no wall facing that side), the house passes every check. The photos are soft but rows,
   counts and places of windows read clearly on three sides; the fourth is half behind a tree.
+- Mapillary tried as a second source of photos and dropped. Of four houses, two had no usable photo (one had a
+  single photo within 55 m; one had 87, all dashcam shots along the street), and where there were photos the
+  house stood off to one side, half hidden by cars and trees, and had to be found in the picture from the
+  camera's place and heading. The city's photo mesh gives every house the same four square views, lined up with
+  its model, so it is the one source of pictures (Karl: cleaner).
