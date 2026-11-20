@@ -390,3 +390,9 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
   both. Windows, doors, the porch and its steps read clearly; the four largest walls are 81, 71, 44 and 72%
   covered (the rest is below grade, behind a porch or a neighbour, or hidden by trees). Terms of use of the mesh
   not found yet. Next: have Claude read each facade for its openings.
+- The same on three more houses (18 Holworthy Pl, 18 Holmes St, 75 Holworthy St), the nearest surface winning.
+  Not precise enough to take openings from: upper storeys and street fronts read well, but the photos are aerial,
+  so the ground floor of side walls is smeared or missing behind neighbours, fences and trees (the cape: two of
+  four main walls under 10% covered), and edges of windows are soft by several inches. Karl's verdict on seeing
+  it: not good enough. The photo mesh is dropped as a source of openings; the building models stay as the
+  source of envelopes.
