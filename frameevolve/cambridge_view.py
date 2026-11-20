@@ -17,6 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from frameevolve import cambridge, envelope
+from frameevolve.check import problems
 from frameevolve.detail import detail
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -70,11 +71,15 @@ def build(count: int = 20) -> str:
             house = detail(env, h, 0, h["model"])
             item["lift"] = house.foundation
             item["surfaces"] = surfaces(house)
+            wrong = problems(house)
+            item["problems"] = wrong
+            item["name"] = ("" if not wrong else "✗ ") + item["name"]
             item["info"] += (f'. Detailed: {len({w.base for w in house.walls})} storeys, {len(house.walls)} walls, '
                              f'{sum(len(w.openings) for w in house.walls)} openings, {len(house.roofs)} roof planes; '
-                             f'taken off: {env.dropped or "nothing"}')
+                             f'taken off: {env.dropped or "nothing"}. '
+                             + ("VALID: passes every check." if not wrong else "NOT VALID: " + "; ".join(wrong[:4])))
         except Exception:
-            item["info"] += ". Detailing failed: " + traceback.format_exc().splitlines()[-1]
+            item["problems"] = ["detailing failed: " + traceback.format_exc().splitlines()[-1]]
         data.append(item)
     return (ROOT / "web" / "cambridge.html").read_text().replace("/*DATA*/", json.dumps(data))
 

@@ -521,3 +521,29 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
   passes a house and jumps to the next unreviewed one, [ and ] show one storey at a time, V and T change the
   view, 1 2 R F O I switch layers; ? lists the keys. The house list shows which are passed and which have open
   notes.
+
+## 2026-11-20: a house must be a buildable design: check.py
+
+- Karl's order of importance: first that no house is an invalid or broken design, then that they are richly
+  detailed and varied. So every detailed house is checked by rule (check.py), and only one with nothing wrong
+  belongs in the dataset: every wall above the ground floor stands on a floor; no two walls of a storey cross or
+  lie along each other, none is a sliver under 12 in.; every opening is clear of its wall's ends, the other
+  openings, the walls that meet it and the wall's top; every room is reached through doors from outside or from
+  the stair; a stair opening in every floor; no bearing wall or partition through the roof; all load reaches
+  the ground (under 0.5% astray). Whether the seed frames it is reported apart: the seed cannot frame the
+  pointed end of a hip plane, which is the search's to learn, not the house's fault.
+- First run: 6 of 20 valid. Causes found and fixed in the rules:
+  - Slivers and walls a degree off square came from the models. envelope.square() now squares the masses'
+    outlines: an edge within 3 degrees of x or y runs along it; lines along one axis within 12 in. of each other,
+    on any mass, become one line on a whole 2 in.; edges still under 12 in. are taken out. Roof faces are left
+    as they are, so a wall may stand a few inches off its roof's edge.
+  - Rooms cut off behind a lower wing: a door may now go through any wall with a room on both sides.
+  - Bearing walls and partitions were laid across the ground of other masses standing inside a mass: a mass's
+    rooms are now its ground less that of other masses with their own walls.
+  - A mansard or gambrel: the storeys under its steep sides are set by where those sides start, so their walls
+    reach the floor the sides stand on; a ceiling is only laid where walls hold at least 30% of its edge.
+  - The stair is placed where every floor is, not anywhere in the main mass.
+  - A wall whose top follows the roof is cut back to where it stands 24 in. (48 in. inside) or more.
+- Now 16 of 20 valid, and 183 of 300 on a wider spread (61%). What fails among the 300: loads 94 (a floor or
+  roof edge with no wall under it: set-back top storeys, roofs that come down to a floor), walls 19, rooms 9,
+  stair 8, the detailing crashing 5, standing 1.

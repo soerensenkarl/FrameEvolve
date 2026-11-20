@@ -24,6 +24,8 @@ WELD = 0.5           # vertices closer than this are one, inches
 CHIMNEY = 36 * 144   # a mass smaller than this in plan is a chimney or a vent, square inches
 DORMER = 200 * 144   # a mass smaller than this that mostly stands on other roofs is a dormer
 LOW = 78.0           # a mass whose roof starts lower than this over the ground is not a room: steps, a deck
+SQUARE = math.tan(math.radians(3))   # an outline edge within 3 degrees of x or y is made to run along it
+SNAP = 12.0          # edges along one axis closer than this are put in one line: no jog shorter than a wall can be
 Pt = tuple[float, float]
 
 
@@ -52,9 +54,11 @@ class Face:
 
 @dataclass
 class Mass:
-    """Roof faces that meet in space, and the ground they cover."""
+    """Roof faces that meet in space, and the ground they cover: `area`, squared up, with any hole another
+    mass stands in; `shape`, the same without holes."""
     faces: list[Face]
     shape: Polygon = field(default=None)
+    area: Polygon = field(default=None)
 
     def z(self, x: float, y: float) -> float:
         """The roof's height over a point of the mass (or just beside it)."""
@@ -222,6 +226,33 @@ def eave(m: Mass, others: list[Mass]) -> float:
     return levels[-1][0]
 
 
+def foot(m: Mass) -> float | None:
+    """Where a mansard's or gambrel's steep sides start, if most of the mass's eaves are under such sides."""
+    steep, other = [], 0.0
+    for f in m.faces:
+        if f.slope < FLAT:
+            continue
+        for (a, b) in f.edges:
+            za, zb = f.z(*a), f.z(*b)
+            L = math.dist(a, b)
+            c = f.shape.centroid
+            if L < 6 or abs(za - zb) > 1.5 or not free(f, a, b, m) or f.z(c.x, c.y) <= (za + zb) / 2 + 1:
+                continue
+            if f.slope >= STEEP:
+                steep.append(((za + zb) / 2, L))
+            else:
+                other += L
+    if not steep or sum(L for _, L in steep) < other:
+        return None
+    steep.sort()
+    half, run = sum(L for _, L in steep) / 2, 0.0
+    for z, L in steep:
+        run += L
+        if run >= half:
+            return z
+    return steep[-1][0]
+
+
 def free(f: Face, a: Pt, b: Pt, m: Mass) -> bool:
     """True if edge a-b of face f is on the edge of its mass: no other face of the mass on its other side."""
     mx, my = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
@@ -326,7 +357,87 @@ def envelope(path) -> Envelope:
         for g in m.faces:
             g.shape = affinity.translate(g.shape, -x0, -y0)
             g.c += g.a * x0 + g.b * y0
+    square(ms)
     return Envelope(ms, angle, about, (x0, y0), dict(dropped), 12 * min(float(l.split()[3]) for l in Path(path).read_text().splitlines() if l.startswith('v ')))
+
+
+def square(ms: list[Mass]) -> None:
+    """Square the masses' outlines up: an edge nearly along x or y is made to run along it, and edges along one
+    axis that lie within SNAP of each other, on any mass, are put in one line. So walls that the model has a
+    degree off square, or jogged by a few inches, come out straight, and two masses still meet on one line.
+    The roof faces are left as they are: a wall may stand a few inches off the edge of its roof."""
+    true = {id(m): _piece(unary_union([f.shape.buffer(0.25, join_style=2) for f in m.faces]).buffer(-0.25, join_style=2)) for m in ms}
+    lines = {"h": [], "v": []}
+    for shape in true.values():
+        for ring in [shape.exterior, *shape.interiors]:
+            pts = list(ring.coords)
+            for a, b in zip(pts, pts[1:]):
+                dx, dy, L = abs(b[0] - a[0]), abs(b[1] - a[1]), math.dist(a, b)
+                if L >= 2 and dy <= dx * SQUARE:
+                    lines["h"].append(((a[1] + b[1]) / 2, L))
+                elif L >= 2 and dx <= dy * SQUARE:
+                    lines["v"].append(((a[0] + b[0]) / 2, L))
+    at = {}
+    for k, values in lines.items():           # lines closer than SNAP become one, the longest edges weighing most
+        groups = [[v * L, L] for v, L in sorted(values)]
+        while len(groups) > 1:
+            gaps = [(groups[i + 1][0] / groups[i + 1][1] - groups[i][0] / groups[i][1], i) for i in range(len(groups) - 1)]
+            gap, i = min(gaps)
+            if gap >= SNAP:
+                break
+            groups[i] = [groups[i][0] + groups[i + 1][0], groups[i][1] + groups[i + 1][1]]
+            del groups[i + 1]
+        at[k] = [round(vL / L / 2) * 2.0 for vL, L in groups]      # on whole 2 in., as a builder would set out
+    snap = lambda k, v: min(at[k], key=lambda c: abs(c - v))
+
+    def squared(ring) -> list:
+        pts = [p for i, p in enumerate(list(ring.coords)[:-1])]
+        pts = [p for i, p in enumerate(pts) if math.dist(p, pts[i - 1]) >= 2] or pts
+        kinds = []
+        for a, b in zip(pts, pts[1:] + pts[:1]):
+            dx, dy = abs(b[0] - a[0]), abs(b[1] - a[1])
+            kinds.append(("h", snap("h", (a[1] + b[1]) / 2)) if dy <= dx * SQUARE else
+                         ("v", snap("v", (a[0] + b[0]) / 2)) if dx <= dy * SQUARE else ("d", 0.0))
+        out = []
+        for i, p in enumerate(pts):
+            (k0, v0), (k1, v1) = kinds[i - 1], kinds[i]
+            if k0 == k1 == "h":
+                out += [] if v0 == v1 else [(p[0], v0), (p[0], v1)]
+            elif k0 == k1 == "v":
+                out += [] if v0 == v1 else [(v0, p[1]), (v1, p[1])]
+            elif {k0, k1} == {"h", "v"}:
+                out.append((v0, v1) if k0 == "v" else (v1, v0))
+            else:
+                out.append((p[0], v0 if k0 == "h" else v1 if k1 == "h" else p[1]) if "h" in (k0, k1) else
+                           (v0 if k0 == "v" else v1 if k1 == "v" else p[0], p[1]))
+        return trim(out)
+
+    def trim(pts: list) -> list:
+        """Without the edges too short to be a wall: the corner that changes the shape least goes."""
+        pts = list(pts)
+        while len(pts) > 4:
+            i = min(range(len(pts)), key=lambda i: math.dist(pts[i], pts[(i + 1) % len(pts)]))
+            if math.dist(pts[i], pts[(i + 1) % len(pts)]) >= SNAP:
+                break
+            lost = lambda j: abs((pts[j][0] - pts[j - 1][0]) * (pts[(j + 1) % len(pts)][1] - pts[j][1]) -
+                                 (pts[j][1] - pts[j - 1][1]) * (pts[(j + 1) % len(pts)][0] - pts[j][0]))
+            del pts[min((i, (i + 1) % len(pts)), key=lost)]
+        return pts
+    for m in ms:
+        shape = true[id(m)]
+        try:
+            holes = [squared(r) for r in shape.interiors if Polygon(r).area >= DORMER]      # a smaller hole is no room
+            new = Polygon(squared(shape.exterior), [r for r in holes if len(r) >= 3]).buffer(0)
+            new = _piece(new)
+        except Exception:
+            new = shape
+        m.area = new if new.geom_type == "Polygon" and new.area > 0.7 * shape.area else shape
+        m.shape = Polygon(m.area.exterior)
+
+
+def _piece(shape) -> Polygon:
+    """The largest piece of a shape, holes kept."""
+    return max(getattr(shape, "geoms", [shape]), key=lambda g: g.area)
 
 
 def _longest(shape: Polygon) -> float:
