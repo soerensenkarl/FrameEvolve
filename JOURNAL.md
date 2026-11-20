@@ -423,3 +423,10 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
   grid stud standing beside an opening is called a king, which it is. Fault messages use these names.
 - Plan: the verifier in three plain categories, Sanity, Structure, Buildability, with Code compliance as a fourth
   once its limits are audited. Sanity first: rule error, clash, floating, in an opening, outside its surface.
+- ZInD by its paper (Cruz et al., CVPR 2021): all single-family homes, 42.8% one floor, 46.7% two storeys, 9.8%
+  three; 1,524 homes in 20 US cities across 12 states, 2,564 floor plans (one a floor), 18,648 windows and 46,657
+  doors annotated, about a third of rooms tagged with a complex (not flat) ceiling. No addresses, on purpose; we
+  do not try to recover them. The datasets it compares itself with are all interiors (Matterport3D, ScanNet,
+  Structured3D, SUNCG) or floor plans (RPLAN, LIFULL, CubiCasa5K): none has envelopes or roofs. So the two real
+  sources mirror each other: Cambridge has real envelopes and roofs and no insides; ZInD has real plans and
+  openings and no roofs.
