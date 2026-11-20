@@ -46,7 +46,8 @@ def surfaces(house) -> list[dict]:
     for x in house.surfaces:
         kind = "roof" if x.role == "roof" else x.role if x in house.floors else "wall"
         z = x.base if kind == "wall" else x.z if kind in ("floor", "ceiling") else None
-        out.append({"id": x.id, "kind": kind, "role": x.role, "z": z, "o": x.origin, "u": x.eu, "v": x.ev,
+        bearing = kind == "wall" and x.role == "interior" and x.id[1] in "sj"      # a bearing wall or a junction wall: it carries floors
+        out.append({"id": x.id, "kind": kind, "role": x.role, "bearing": bearing, "z": z, "o": x.origin, "u": x.eu, "v": x.ev,
                     "outline": [list(p) for p in x.outline_uv],
                     "openings": [[o.kind, o.u0, o.v0, o.u1, o.v1] for o in x.openings]})
     return out
