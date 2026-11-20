@@ -4,8 +4,30 @@
     {
       "name": "workbench",
       "runtimeExecutable": "uv",
-      "runtimeArgs": ["run", "python", "-m", "frameevolve", "serve", "--port", "8765"],
+      "runtimeArgs": [
+        "run",
+        "python",
+        "-m",
+        "frameevolve",
+        "serve",
+        "--port",
+        "8765"
+      ],
       "port": 8765
+    },
+    {
+      "name": "workbench-8766",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run",
+        "python",
+        "-m",
+        "frameevolve",
+        "serve",
+        "--port",
+        "8766"
+      ],
+      "port": 8766
     }
   ]
 }

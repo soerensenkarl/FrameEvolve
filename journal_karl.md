@@ -434,7 +434,7 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
   CLAUDE.md has a short "Working together" note: own journal, a branch and a pull request per task, tests pass
   before merging.
 
-## 2026-11-19: all of Cambridge's houses downloaded
+## 2026-11-20: all of Cambridge's houses downloaded
 
 - frameevolve/cambridge.py (`uv run python -m frameevolve.cambridge`, 16 s once the tiles are cached) downloads
   the assessor's records and all 16 tiles of building models (90 MB zipped) and writes data/cambridge (not in
