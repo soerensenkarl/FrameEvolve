@@ -433,3 +433,28 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
 - Three journals, one each (journal_karl.md, journal_kenny.md, journal_joe.md): nobody writes in another's.
   CLAUDE.md has a short "Working together" note: own journal, a branch and a pull request per task, tests pass
   before merging.
+
+## 2026-11-19: all of Cambridge's houses downloaded
+
+- frameevolve/cambridge.py (`uv run python -m frameevolve.cambridge`, 16 s once the tiles are cached) downloads
+  the assessor's records and all 16 tiles of building models (90 MB zipped) and writes data/cambridge (not in
+  git, rebuilt by the script): models/<model id>.obj and houses.json, the assessor's record of each house with
+  its model.
+- Filter: property class one-, two- or three-family or single-family with an auxiliary apartment; at most 3
+  storeys by the assessor; a point on record. Join: the nearest model at least 12 ft tall (lower ones are garages
+  and sheds) within 20 m of the assessor's point; a model that several houses share is a row of townhouses and
+  is left out.
+
+  | | houses |
+  |---|---|
+  | assessed and passing the filter | 7,227 |
+  | no model within 20 m | 24 |
+  | sharing a model with another house | 870 |
+  | kept | 6,333 |
+
+- Of the 6,333: 3,072 single-family, 2,067 two-family, 1,041 three-family, 153 with an auxiliary apartment.
+  Roofs: 3,996 gable, 970 flat, 709 hip, 361 mansard, 249 gambrel, 47 shed. About 5,900 are wood framed by their
+  wall type (clapboard, shingle, vinyl, asbestos or asphalt shingle); 234 brick and 120 stucco are still in, to
+  be filtered when sampling. Storeys: 2 to 3 for all but about 530.
+- Not checked yet: how often the nearest model is the wrong building (a neighbour, or a large garage), and
+  semi-detached pairs that are one model but two records were dropped with the townhouses.

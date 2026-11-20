@@ -30,6 +30,7 @@ Three people, each with their own Claude: Karl, Kenny and Joe.
 | `frameevolve/verifier/` | `verify(house, frame) -> Report`; one module per question (physical, analysis, boards, code, prefab, cost), read in the order `__init__.py` lists |
 | `frameevolve/verifier/kinds.py` | what each member is by its geometry (stud, king, jack, header, joist, rafter...); messages use these names, never the grammar's labels |
 | `frameevolve/houses.py` | procedural houses: blocks, storeys, openings, stairs, roofs; `generate(seed)`, `toy()` |
+| `frameevolve/cambridge.py` | real houses: downloads Cambridge's one- to three-family houses (assessor records joined to the city's 3D building models) into `data/cambridge/`, not in git |
 | `frameevolve/render.py` | elevations and an axonometric as PNGs, for the proposer |
 | `frameevolve/search.py` | the GEPA-style search: `Run`, `evaluate` (separate processes, cached), Pareto set |
 | `frameevolve/proposer.py` | the Claude proposer (Agent SDK on the subscription, or the API) and its tools |
