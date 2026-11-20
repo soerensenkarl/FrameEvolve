@@ -9,7 +9,7 @@
  .n.fixed{opacity:.6} .n .reply{color:#0a6b2d;margin-top:4px} .n small{color:#777} .n button{padding:1px 7px;float:right;margin-left:4px}
  #big{position:fixed;inset:0;background:#000c;display:none;z-index:4;align-items:center;justify-content:center} #big img{max-width:95%;max-height:95%}
  #ink{position:fixed;inset:0;pointer-events:none;z-index:1} #ink.on{pointer-events:auto;cursor:crosshair}
- #help{position:fixed;left:14px;bottom:14px;background:#fffe;border:1px solid #ccc;border-radius:8px;padding:10px 14px;z-index:3;display:none;line-height:1.7}
+ #help{position:fixed;right:14px;top:100px;background:#fffe;border:1px solid #ccc;border-radius:8px;padding:10px 14px;z-index:3;display:none;line-height:1.7}
  #help.on{display:block} #flash{position:fixed;left:50%;top:45%;transform:translate(-50%,-50%);background:#222;color:#fff;padding:8px 16px;border-radius:8px;z-index:5;opacity:0;transition:opacity .25s;pointer-events:none}
  #verdict{font-weight:600}
  #photos{position:fixed;left:0;right:0;bottom:0;display:none;gap:6px;padding:6px;background:#000a;z-index:3;justify-content:center}
@@ -19,7 +19,7 @@
  <span class="sep"></span><button id="raw">City model<kbd>1</kbd></button><button id="det">Detailed<kbd>2</kbd></button>
  <button id="roofs">Roofs<kbd>R</kbd></button><button id="floors">Floors<kbd>F</kbd></button><button id="outer">Outside<kbd>O</kbd></button><button id="inner">Inside<kbd>I</kbd></button>
  <button id="storey">All storeys<kbd>[ ]</kbd></button>
- <span class="sep"></span><input id="note" placeholder="Shift-drag to mark, type what is wrong, Enter saves"><button id="good">Good<kbd>G</kbd></button><button id="keys">?</button>
+ <span class="sep"></span><input id="note" placeholder="Shift-drag to mark, type what is wrong, Enter saves"><button id="good">Good<kbd>G</kbd></button><button id="keys">Shortcuts<kbd>?</kbd></button>
  <span id="info"></span></div>
 <div id="photos"></div><canvas id="ink"></canvas><div id="notes"></div><div id="big"><img></div><div id="flash"></div>
 <div id="help"><b>Mark</b>: hold Shift and drag (or <kbd>P</kbd> for the pen) &nbsp; <kbd>Z</kbd> undo &nbsp; <kbd>C</kbd> clear<br>
@@ -155,7 +155,9 @@ $("notes").onclick = (e) => {
   if (t.tagName === "IMG") { $("big").firstChild.src = t.src; $("big").style.display = "flex"; }
 };
 $("big").onclick = (e) => { e.currentTarget.style.display = "none"; };
-$("good").onclick = good; $("keys").onclick = () => $("help").classList.toggle("on");
+$("good").onclick = good;
+const help = () => { $("help").classList.toggle("on"); $("keys").classList.toggle("on", $("help").classList.contains("on")); };
+$("keys").onclick = help;
 const KEYS = {
   ArrowRight: () => step(1), ArrowLeft: () => step(-1), k: () => step(1), j: () => step(-1), n: unreviewed, g: good,
   1: () => { show.raw = !show.raw; apply(); }, 2: () => { show.det = !show.det; apply(); },
@@ -164,7 +166,7 @@ const KEYS = {
   v: () => { view = (view + 1) % 4; look(); }, t: () => look(true),
   p: () => { penOn = !penOn; pen(penOn); flash(penOn ? "Pen on" : "Pen off"); }, z: () => { strokes.pop(); draw(); }, c: () => { strokes = []; draw(); },
   e: () => $("photos").classList.toggle("on"),
-  s: save, Enter: () => note.focus(), "?": () => $("help").classList.toggle("on"),
+  s: save, Enter: () => note.focus(), "?": help,
 };
 addEventListener("keydown", (e) => {
   if (e.target === note) { if (e.key === "Enter") save(); if (e.key === "Escape") note.blur(); return; }
