@@ -115,7 +115,9 @@ function setMode(m) {              // a view starts whole: every layer on, every
 for (const b of document.querySelectorAll("[data-mode]")) b.onclick = () => setMode(+b.dataset.mode);
 $("peel").onclick = () => setMode(mode >= 3 + levels.length ? 4 : Math.max(5, mode + 1));
 const pick = $("pick");
-H.forEach((h, i) => pick.add(new Option(h.name, i)));
+const group = (label) => { const g = document.createElement("optgroup"); g.label = label; pick.append(g); return g; };
+const amended = group("Amended from evidence"), plain = group("General procedure only");
+H.forEach((h, i) => (h.amended ? amended : plain).append(new Option(h.name, i)));
 pick.onchange = () => { load(+pick.value); pick.blur(); };
 for (const k of Object.keys(show)) $(k).onclick = () => { show[k] = !show[k]; apply(); };
 const step = (n) => load((+pick.value + n + H.length) % H.length);

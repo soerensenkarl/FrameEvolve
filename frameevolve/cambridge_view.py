@@ -72,6 +72,7 @@ def build(count: int = 20) -> str:
             item["raw"] = {"v": [round(c, 1) for v in vs for c in v], "f": [i for t in tris for i in t]}
             house, _ = amend.build(h, env)
             missed = sum(not r.startswith("applied") and "placed" not in r for _, r in house.amended)
+            item["amended"] = len(house.amended)
             item["lift"] = house.foundation
             item["surfaces"] = surfaces(house)
             wrong = problems(house)
@@ -86,6 +87,7 @@ def build(count: int = 20) -> str:
         except Exception:
             item["problems"] = ["detailing failed: " + traceback.format_exc().splitlines()[-1]]
         data.append(item)
+    data.sort(key=lambda item: not item.get("amended"))       # the houses with amendments first, in their own group
     return (ROOT / "web" / "cambridge.html").read_text().replace("/*DATA*/", json.dumps(data))
 
 
