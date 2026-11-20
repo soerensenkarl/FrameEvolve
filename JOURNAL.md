@@ -360,3 +360,24 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
   No spatial index: after this it was not needed.
 - The About tab is the report's overview figure (figures/loop.svg, served as is); the interactive diagram and its
   320 lines are gone.
+
+## 2026-11-19: houses from Cambridge's 3D city model
+
+- Wanted: 100 input houses from the most open design space, not what a generator's vocabulary allows. Photos give
+  no geometry; open floor plan sets (CubiCasa5K, RPLAN) are single floors without roofs; the photo mesh of the city
+  is one skin with trees and cars in it. What fits is the city's LoD2 building models: one small mesh a building
+  (20 to 150 triangles), walls and roof planes truly flat, with dormers, bays and porches, in feet (Massachusetts
+  state plane). Tiles of OBJ files with a catalog: https://www.cambridgema.gov/gis/3d/3ddata/3ddatadownloadmap
+  (16 tiles, about 95 MB; file names Camb3D_<tile>_2023_Bulding_Models_OBJ.zip). Boston publishes the same on the
+  same tile grid. It also matches the verifier's loads, which are Cambridge's.
+- The typology comes from the assessor's Property Database (https://data.cambridgema.gov/d/waa7-ibdu): class,
+  style, storeys (with half storeys), wall type, roof type, year, living area, rooms, units. About 7,100 one- to
+  three-family houses, 6,500 of them wood framed; roofs 4,364 gable, 1,102 flat, 759 hip, 463 mansard, 259 gambrel,
+  143 shed.
+- Tried on tile C-3 (1.5 MB, 400 models): all 130 one- to three-family houses there have a model within 25 m of
+  their assessor point. The model's Building_ID is not the assessor's Map/Lot, so the join is by place; a row of
+  townhouses shares one model; garages and sheds are models of their own.
+- Plan: the assessor picks the houses, the model gives the envelope, and a script or Claude fills in what no
+  source has (storeys and floors, openings, partitions, a stair); a gate keeps a house if its loads reach the
+  ground and the seed builds. Open: how much detail to keep. A dormer is a wall standing on a roof, which a House
+  cannot say yet. Nothing converted and nothing in the repo yet; the trial is in a scratch folder.
