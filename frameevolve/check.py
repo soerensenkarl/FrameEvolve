@@ -67,7 +67,7 @@ def problems(house: House, framing: bool = False) -> list[str]:
         if len(reached) < len(rooms):
             out.append(f"rooms: {len(rooms) - len(reached)} of {len(rooms)} rooms on storey {bases.index(base) + 1} cannot be reached")
     floors = [f for f in house.floors if f.role == "floor"]
-    if len(bases) > 1 and (not floors or any(not f.openings for f in floors if f.id[2:] == "")):
+    if len(bases) > 1 and (not floors or any(not any(o.kind == "stair" for o in f.openings) for f in floors if f.id[2:] == "")):
         out.append("stair: a floor has no stair opening")
     for w in house.walls:
         if w.id[1] not in "sp":           # a junction wall's top is its own mass's roof, at the roof's edge

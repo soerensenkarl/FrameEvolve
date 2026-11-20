@@ -659,3 +659,47 @@ what is wrong by marking it, so faults are fixed in the rules and checked again 
 - Karl, on what the set must be: buildable first; then, taken together, covering the design situations of
   houses: bearing walls, beams over long spans, posts, large windows, rooms of double height, top-floor rooms
   open to the roof, lofts. Not every house has each; the collection must.
+
+## 2026-11-20: the set must cover what houses ask of a framer
+
+- The detailer now gives a house, by seeded chance weighted by its age, some of the situations the set must
+  cover (noted in house.has): a bearing line on the ground storey opened into posts and a beam (openings of 8
+  to 16 ft between piers; 40% of bearing walls there, 10% above); a long span (bearing walls laid for 22 ft, not
+  16; 15% of houses, 30% from 1950 on); a wide window (6 to 9 ft) or a sliding door on the ground storey (20%,
+  60% for later houses); a porch open between corner posts (60% of one-storey masses under 260 sq ft); a room
+  of double height (an opening of 12 by 14 ft in the floor over the ground storey; 7%, 20% from 1960 on); a top
+  storey open to the roof (no ceiling, 12%) or with a loft (a ceiling over one side of the bearing wall, 12%).
+  A column is not a thing a House can say: posts are the piers left in a wall line.
+- dataset.py names a house's situations (those given, and those of its shape: storeys, roof forms, bearing
+  walls, knee walls, walls off the square, a lower roof against a higher wall, a stair) and chooses a set that
+  evens them out, rare ones first. On 600 houses: 361 valid and of at most 3 storeys (failing: loads 182, walls
+  52, rooms 30, stair 17, crash 14, roof 6, standing 4); 100 chosen (data/cambridge/chosen.json):
+
+  | situation | among 361 valid | among 100 chosen |
+  |---|---|---|
+  | bearing wall inside | 343 | 93 |
+  | stair | 341 | 89 |
+  | hip | 243 | 77 |
+  | flat roof | 227 | 71 |
+  | posts and a beam | 204 | 67 |
+  | walls off the square (a bay) | 148 | 50 |
+  | a lower roof against a higher wall | 146 | 56 |
+  | valley | 137 | 58 |
+  | gable | 106 | 47 |
+  | wide opening | 92 | 43 |
+  | open porch | 75 | 39 |
+  | knee walls | 67 | 34 |
+  | 3 storeys / 2 / 1 | 113 / 228 / 20 | 30 / 59 / 11 |
+  | steep roof sides (mansard, gambrel) | 28 | 24 |
+  | shed roof | 22 | 15 |
+  | loft | 19 | 14 |
+  | open to the roof | 18 | 15 |
+  | long span | 16 | 12 |
+  | double height | 6 | 6 |
+
+  Double height is thin (6): the opening has to fit clear of the stair and the bearing walls.
+- Not looked at by eye yet: none of the new situations has been reviewed on the page.
+- Review page: three notes from Karl said every house has a gap between roof and walls. It is the raised heel
+  (walls stop 9 in. under the roof plane, where rafters sit); I had answered the first with that explanation and
+  he reopened it. The page now draws a roof with its framing depth, so nothing shows as air; the data is as
+  before. Number keys now reset the layers and the storey filter.

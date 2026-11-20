@@ -83,7 +83,8 @@ def build(count: int = 20) -> str:
                              f'{sum(len(w.openings) for w in house.walls)} openings, {len(house.roofs)} roof planes; '
                              f'taken off: {env.dropped or "nothing"}. '
                              + ("VALID: passes every check." if not wrong else "NOT VALID: " + "; ".join(wrong[:4]))
-                             + (" Detailed from a BRIEF read off photos." if item["briefed"] else ""))
+                             + (" Detailed from a BRIEF read off photos." if item["briefed"] else "")
+                             + (" Has: " + ", ".join(sorted(house.has)) + "." if house.has else ""))
         except Exception:
             item["problems"] = ["detailing failed: " + traceback.format_exc().splitlines()[-1]]
         data.append(item)
