@@ -403,3 +403,13 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
   registering and accepting Zillow's terms (redistribution rights not read yet). A candidate for grounding
   interiors (room sizes, partition and door patterns), not tied to Cambridge. Mapillary (street-level photos,
   CC BY-SA, camera pose per photo) is a candidate for front facades; its API needs an access token, not tried yet.
+- Survey of research datasets of houses (web search, 2026-11-19; not opened unless said). No real dataset has a
+  whole house (envelope, openings and interior together). Complete but synthetic: SYNBUILD-3D (Stanford, 2025,
+  arXiv 2508.21169, https://purl.stanford.edu/kz908vb7844): 6.2 million procedurally generated residential
+  buildings as labelled wireframes with rooms, doors and windows, floor plans and roof point clouds; a sample of
+  100 is a separate download. BuildingBRep-11K (arXiv 2506.15718): 11,000 generated multi-storey solids with
+  rule-based openings. Real envelopes: city LoD2 models (Cambridge, Boston, 3DBAG). Real facades with openings:
+  only tens of buildings (TUM Ingolstadt LoD3, about 50; GT-LOD3, 32); BuildingNet has 2,000 artist-made models
+  with labelled windows, doors and roofs. Real interiors: floor plans of single floors (ZInD 1,524 US homes;
+  ResPlan 17,000; RPLAN 80,000; Swiss Dwellings 5,372 building floors; CubiCasa5K 5,000). Real BIM houses: a
+  handful. So real envelopes plus generated or pattern-based insides remains the plan.
