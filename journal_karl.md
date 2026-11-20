@@ -458,3 +458,26 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
   be filtered when sampling. Storeys: 2 to 3 for all but about 530.
 - Not checked yet: how often the nearest model is the wrong building (a neighbour, or a large garage), and
   semi-detached pairs that are one model but two records were dropped with the townhouses.
+
+## 2026-11-20: a first detailing of real envelopes, on 20 houses (branch cambridge-houses)
+
+- envelope.py reads a building model as its flat roof faces (a plane and a shape in plan each) and groups them
+  into masses: faces that meet along an edge at one height are one mass; where the roof steps there are two
+  (main block, wing, bay, porch, dormer). Taken off, because a House cannot say them yet: masses under 25 sq ft
+  (chimneys), masses under 200 sq ft that mostly stand on other roofs (dormers; the faces around them are grown
+  over the hole, each point to the face lowest there), masses whose roof starts under 6 ft 6 in (steps, decks).
+  The envelope is turned so the largest roof face's eave runs along x. Needs shapely (added).
+- detail.py makes a House of an envelope and the assessor's record, seeded: a storey height by age (8 or 9 ft
+  walls), the record's count of full storeys, the rest of the main eave's height taken off as foundation; every
+  roof face a roof plane with a 12 in. overhang at its eaves; per storey, exterior walls around the masses that
+  reach it and junction walls between them, top walls following the roof with a 9 in. raised heel at eaves; a
+  floor a level, a ceiling a mass; bearing walls where a mass is deeper than 16 ft, partitions between bearing
+  lines, a stair; windows in columns that line up over the storeys, a front and a back door, a gable window,
+  doors inside.
+- cambridge_view.py writes out/cambridge.html: a spread of houses by roof type, each as the city's model and as
+  the detailed House, switchable.
+- On the first 20 (all roof types): all detail without an error. The seed grammar builds all 20, 14 without a
+  rule error (the errors: members asked for on surfaces at odd angles). The load takedown crashes on 13 with a
+  division by zero, not looked into yet. Known wrong: some junction walls show on the outside; mansards and
+  gambrels are read as steep roofs, so their top storey is under the roof; saltbox-like masses get the lower
+  eave everywhere.
