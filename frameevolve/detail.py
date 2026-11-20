@@ -89,7 +89,7 @@ def detail(env: Envelope, record: dict, seed: int = 0, name: str = "") -> House:
     n = {id(m): 1 + sum(E[id(m)] - k * level >= KNEE for k in range(1, 9)) for m in ms}
     if low is None or top is not None:
         E[id(ms[0])] = (n[id(ms[0])] - 1) * level + top                      # the main mass, exactly
-    whole = Polygon(unary_union([m.shape.buffer(0.5, join_style=2) for m in ms]).buffer(-0.5, join_style=2).exterior) \
+    whole = pieces(unary_union([m.shape.buffer(0.5, join_style=2) for m in ms]).buffer(-0.5, join_style=2))[0] \
         if len(ms) > 1 else ms[0].shape
     carried = {id(m): len(ms) > 1 and grounded(m, whole) < CARRIED for m in ms}
     rooms = {}                            # where each mass's own rooms are: not where another mass has its own walls
@@ -110,8 +110,13 @@ def detail(env: Envelope, record: dict, seed: int = 0, name: str = "") -> House:
             for j, piece in enumerate(pieces(unary_union([m.shape.buffer(0.5, join_style=2) for m in here]).buffer(-0.5, join_style=2))):
                 house.floors.append(Floor(f"f{k}" + "abcdefgh"[j - 1] * (j > 0), ring(piece), (k - 1) * level))
     ceilings(house, ms, E, n, level)
-    for j, (m, f) in enumerate((m, f) for m in ms for f in m.faces):
-        house.roofs.append(roof(f"r{j + 1}", f, m, ms))
+    for m in ms:
+        for f in m.faces:
+            clean = f.shape.buffer(-0.75, join_style=2).buffer(0.75, join_style=2)     # no spike or sliver thinner than 1 1/2 in.
+            clean = max(getattr(clean, "geoms", [clean]), key=lambda g: g.area)
+            if not clean.is_empty and clean.area > 144:
+                f.shape = Polygon(clean.exterior).simplify(0.05)
+                house.roofs.append(roof(f"r{len(house.roofs) + 1}", f, m, ms))
     core = rooms[id(ms[0])]               # the stair goes where every floor is
     for f in house.floors:
         if f.role == "floor" and len(f.id) == 2:

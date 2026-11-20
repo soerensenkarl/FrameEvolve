@@ -23,6 +23,7 @@ STEEP = 2.0          # a roof face over 24:12 is the side of a mansard or a gamb
 WELD = 0.5           # vertices closer than this are one, inches
 CHIMNEY = 36 * 144   # a mass smaller than this in plan is a chimney or a vent, square inches
 DORMER = 200 * 144   # a mass smaller than this that mostly stands on other roofs is a dormer
+TRIM = 24.0          # a strip of roof narrower than this is trim (a cornice, a gutter edge), not a roof
 LOW = 78.0           # a mass whose roof starts lower than this over the ground is not a room: steps, a deck
 SQUARE = math.tan(math.radians(3))   # an outline edge within 3 degrees of x or y is made to run along it
 SNAP = 12.0          # edges along one axis closer than this are put in one line: no jog shorter than a wall can be
@@ -254,12 +255,11 @@ def foot(m: Mass) -> float | None:
 
 
 def free(f: Face, a: Pt, b: Pt, m: Mass) -> bool:
-    """True if edge a-b of face f is on the edge of its mass: no other face of the mass on its other side."""
-    mx, my = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
+    """True if edge a-b of face f is on the edge of its mass: no other face of the mass along it. (Touching,
+    not a point beyond: a mansard's steep side is only inches wide in plan.)"""
     L = math.dist(a, b)
-    nx, ny = (b[1] - a[1]) / L, -(b[0] - a[0]) / L        # outward: to the right of a counter-clockwise edge
-    p = Point(mx + 2 * nx, my + 2 * ny)
-    return not any(g is not f and g.shape.contains(p) for g in m.faces)
+    quarter = [Point(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t) for t in (0.3, 0.5, 0.7)]
+    return not any(g is not f and all(g.shape.distance(p) < 1.0 for p in quarter) for g in m.faces)
 
 
 @dataclass
@@ -285,14 +285,14 @@ def grounded(m: Mass, all_: Polygon) -> float:
     return edge.intersection(all_.exterior.buffer(1.0)).length / edge.length
 
 
-def close_over(d: Mass, rest: list[Mass]) -> None:
-    """Give a dormer's ground to the roof faces around it: each point to the face that is lowest there, as a
-    roof without the dormer would run (faces meeting in a hip or a ridge)."""
-    near = [f for m in rest for f in m.faces if f.shape.distance(d.shape) < 1.5]
+def close_over(ground: Polygon, faces: list[Face]) -> None:
+    """Give a piece of ground with no roof of its own (a dormer taken off, a strip of trim, a gap in the model) to
+    the roof faces around it: each point to the face that is lowest there, as the roof would run on without it
+    (faces meeting in a hip or a ridge)."""
+    near = [f for f in faces if f.shape.distance(ground) < 1.5]
     if not near:
         return
-    hole = d.shape.buffer(0.75, join_style=2)
-    x0, y0, x1, y1 = hole.bounds
+    hole = ground.buffer(0.75, join_style=2)
     far = 1e5
     for f in near:
         part = hole
@@ -312,15 +312,28 @@ def close_over(d: Mass, rest: list[Mass]) -> None:
                             (px + far * tx - far * a / n, py + far * ty - far * b / n)])
             part = part.intersection(half)
         if not part.is_empty and part.area > 1:
-            grown = unary_union([f.shape, part]).buffer(0)
-            f.shape = _solid(grown)
+            f.shape = _solid(unary_union([f.shape, part]).buffer(0))
+
+
+def whole_roof(vs, tris, faces: list[Face]) -> list[Face]:
+    """The faces that are roofs, covering all the model's ground: strips of trim are taken out, and any ground
+    left without a face over it (those strips, faces too small or too steep to read) goes to the faces around."""
+    ground = unary_union([Polygon([vs[i][:2] for i in t]).buffer(0) for t in tris]).buffer(0.5, join_style=2).buffer(-0.5, join_style=2)
+    wide = [f for f in faces if 2 * f.shape.area / f.shape.length >= TRIM / 2] or faces
+    if len(wide) < len(faces) and sum(f.shape.area for f in wide) > 0.5 * sum(f.shape.area for f in faces):
+        faces = wide
+    bare = ground.difference(unary_union([f.shape.buffer(0.3) for f in faces]))
+    for piece in sorted(getattr(bare, "geoms", [bare]), key=lambda g: -g.area):
+        if piece.geom_type == "Polygon" and piece.area > 36:
+            close_over(piece, faces)
+    return faces
 
 
 def envelope(path) -> Envelope:
     """Read a building model: its masses with chimneys dropped, dormers closed over and low things left out,
     turned square to x and y with its longest roof's eave along x, shifted to start at the origin."""
     vs, tris = read(path)
-    ms = masses(roof_faces(vs, tris))
+    ms = masses(whole_roof(vs, tris, roof_faces(vs, tris)))
     if not ms:
         raise ValueError("no roof faces")
     dropped = defaultdict(int)
@@ -333,7 +346,7 @@ def envelope(path) -> Envelope:
         m = small[0]
         ms.remove(m)
         if grounded(m, all_) < 0.5:
-            close_over(m, ms)
+            close_over(m.shape, [f for k in ms for f in k.faces])
             dropped["chimney" if m.shape.area < CHIMNEY else "dormer"] += 1
         else:
             dropped["chimney"] += 1
@@ -365,7 +378,7 @@ def square(ms: list[Mass]) -> None:
     """Square the masses' outlines up: an edge nearly along x or y is made to run along it, and edges along one
     axis that lie within SNAP of each other, on any mass, are put in one line. So walls that the model has a
     degree off square, or jogged by a few inches, come out straight, and two masses still meet on one line.
-    The roof faces are left as they are: a wall may stand a few inches off the edge of its roof."""
+    Each mass's roof faces are then run on to its squared outline, so no wall stands outside its roof."""
     true = {id(m): _piece(unary_union([f.shape.buffer(0.25, join_style=2) for f in m.faces]).buffer(-0.25, join_style=2)) for m in ms}
     lines = {"h": [], "v": []}
     for shape in true.values():
@@ -433,6 +446,10 @@ def square(ms: list[Mass]) -> None:
             new = shape
         m.area = new if new.geom_type == "Polygon" and new.area > 0.7 * shape.area else shape
         m.shape = Polygon(m.area.exterior)
+        bare = m.area.difference(unary_union([f.shape.buffer(0.3) for f in m.faces]))      # the roof runs on to the squared outline
+        for piece in getattr(bare, "geoms", [bare]):
+            if piece.geom_type == "Polygon" and piece.area > 4:
+                close_over(piece, m.faces)
 
 
 def _piece(shape) -> Polygon:

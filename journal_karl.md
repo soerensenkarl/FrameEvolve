@@ -547,3 +547,19 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
 - Now 16 of 20 valid, and 183 of 300 on a wider spread (61%). What fails among the 300: loads 94 (a floor or
   roof edge with no wall under it: set-back top storeys, roofs that come down to a floor), walls 19, rooms 9,
   stair 8, the detailing crashing 5, standing 1.
+- Four more notes from Karl on the page (a gap and stacked strips at a flat roof's edge, a nick at a gable's
+  peak, an overhang sticking out at a gambrel's break, a slot between two roofs). Causes and fixes, all in
+  envelope.py: a strip of roof under 2 ft wide is trim (a cornice), taken out; any ground of the model left with
+  no roof face over it (trim, faces too small or steep to read) goes to the faces around, the lowest there
+  winning, as for a dormer (whole_roof); an edge is shared, not an eave, whenever another face of the mass
+  touches it (a steep side is inches wide in plan, so a point 2 in. beyond missed it); after squaring, each
+  mass's roof faces are run on to its squared outline. check.py gains: no more than 3 sq ft of the house without
+  a roof over it. Roof outlines are cleaned of spikes thinner than 1 1/2 in., which made the model's seam
+  finding fail (27 of 300).
+- Under the stricter check: 15 of 20, 180 of 300 (60%). Failing among the 300: loads 88, walls 25, rooms 16,
+  the detailing crashing 9, stair 7, roof 6, standing 1.
+- Next, Karl's idea: per house, gather what is known (assessor's record, a flat photo of each face from the
+  city's photo mesh, a street photo where Mapillary has one) and have Claude write a brief the detailer follows
+  (which side is the street, windows a storey on each face, doors, porch or room), so the procedural house comes
+  close to the real one. Photos too soft to measure from are good enough to count from; the detailer places
+  what is counted, and check.py stays the judge.
