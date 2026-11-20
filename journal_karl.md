@@ -481,3 +481,33 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
   division by zero, not looked into yet. Known wrong: some junction walls show on the outside; mansards and
   gambrels are read as steep roofs, so their top storey is under the roof; saltbox-like masses get the lower
   eave everywhere.
+
+## 2026-11-20: reviewing the detailed houses; a second pass
+
+- A review page for it: `uv run python -m frameevolve.cambridge_view 20` serves http://localhost:8770, the page
+  built afresh on each load. A pen marks what is wrong on the 3D view; a note is saved (data/cambridge/notes: a
+  picture of the view with the marks, and the house, comment, status and reply as JSON) and listed beside its
+  house, so problems are reported by scribbling and answered in place.
+- I went through the 20 on sheets (a plan a storey, a roof plan, four elevations each). Faults found, each fixed
+  in the rule that caused it, not house by house:
+
+  | fault seen | cause | fix |
+  |---|---|---|
+  | a ring of outside walls inside a mansard, on every storey | a mass standing on another's roof got walls to the ground; what lies beyond a wall was found from mass outlines, which had lost their holes | a mass with under a quarter of its outline on the ground has walls only where it is clear of the roofs around it; what lies beyond a wall is read from the roof faces themselves |
+  | walls between two masses drawn as inside walls where they show above the lower roof | every shared edge was a junction wall | a shared wall is a junction only where the other mass's roof is over its top; otherwise exterior, marked abutted (no windows) |
+  | mansard and gambrel top storey missing or under the roof | their steep sides were read as roof, so the eave was a storey low | a face over 24:12 walls a storey in: the eave is its top |
+  | a three-decker given four storeys, a cape one storey on a 12 ft foundation | storeys chosen mostly by height | the assessor's count holds; one more only for a recorded half storey; a 7 ft wall height for low houses; tall foundations cost |
+  | long walls without windows; windows only where no inside wall happened to land | columns were set before the inside walls and then blocked by them | columns are set in each stretch between the bearing walls and mass junctions; partitions keep clear of the columns |
+  | no windows in low top storeys | the head height was fixed | a window's head and height come down under a low wall top |
+  | rooms with no door | doors were random | after the random doors, rooms are found (the regions the walls close) and doors added until each is reached from an outside door or the stair |
+  | overlapping ceilings | one a mass | masses that top out together share one ceiling |
+
+- Framework: the wind calculation divided by zero on a level roof (loads.py); a level roof now faces no wind.
+- The 20 after the second pass: storeys match the assessor's count on all but a mansard (4 for 3: its top is
+  modelled as a set-back storey); every multi-storey house has its stair. Loads reach the ground in full on 14
+  (was 6, with 13 crashes); on 6 between 1 and 26% is lost (floor edges with no wall under them, under roofs that
+  come down to the floor). The seed builds all 20, 14 without a rule error (rims and rafters on surfaces at odd
+  angles).
+- Still wrong or missing: dormers are taken off, not kept; near-straight walls stay as two walls a degree apart
+  (the models are not snapped square); a porch is detailed as a room; no bay or picture windows; partitions are
+  few, so rooms are large.

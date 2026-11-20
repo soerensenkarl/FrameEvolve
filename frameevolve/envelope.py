@@ -19,8 +19,9 @@ from shapely.geometry import LineString, Point, Polygon, box
 from shapely.ops import unary_union
 
 FLAT = 1 / 12        # a roof face under 1:12 is flat: no eave, no ceiling under it
+STEEP = 2.0          # a roof face over 24:12 is the side of a mansard or a gambrel: it walls a storey in
 WELD = 0.5           # vertices closer than this are one, inches
-CHIMNEY = 25 * 144   # a mass smaller than this in plan is a chimney or a vent, square inches
+CHIMNEY = 36 * 144   # a mass smaller than this in plan is a chimney or a vent, square inches
 DORMER = 200 * 144   # a mass smaller than this that mostly stands on other roofs is a dormer
 LOW = 78.0           # a mass whose roof starts lower than this over the ground is not a room: steps, a deck
 Pt = tuple[float, float]
@@ -192,7 +193,7 @@ def _solid(shape) -> Polygon:
 
 def eave(m: Mass, others: list[Mass]) -> float:
     """The height a mass's walls reach: the middle, by length, of its level free edges that the roof rises from;
-    for a flat roof, the roof."""
+    for a flat roof, the roof; under a steep face (a mansard's side), that face's top: it walls a storey in."""
     levels = []
     for f in m.faces:
         if f.slope < FLAT:
@@ -205,7 +206,8 @@ def eave(m: Mass, others: list[Mass]) -> float:
                 continue
             c = f.shape.centroid
             if f.z(c.x, c.y) > (za + zb) / 2 + 1:
-                levels.append(((za + zb) / 2, L))
+                top = max(f.z(x, y) for x, y in f.shape.exterior.coords)
+                levels.append((top if f.slope >= STEEP else (za + zb) / 2, L))
     if not levels:
         return min(f.z(x, y) for f in m.faces for x, y in f.shape.exterior.coords)
     levels.sort()
