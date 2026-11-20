@@ -95,6 +95,8 @@ def test_claude_proposer_edits_through_its_tools(tmp_path, monkeypatch):
         seen["frame"] = tools["frame"].call({"house": house, "surface": "1w0"})
         seen["trace"] = tools["trace"].call({"house": house, "rule": "studs"})
         seen["check"] = tools["check_grammar"].call({})
+        assert "Modules:" in tools["verifier"].call({}) and "def " in tools["verifier"].call({"module": "physical"})
+        assert "no module" in tools["verifier"].call({"module": "nope"})
         seen["lesson"] = tools["record_lesson"].call({"lesson": "24 in. studs need 2x6 under a floor."})
         yield FakeMessage("", "tool_use")
         yield FakeMessage("Widened the stud module to 24 in.; fewer studs, same backing.")
