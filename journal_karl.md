@@ -458,3 +458,13 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
   be filtered when sampling. Storeys: 2 to 3 for all but about 530.
 - Not checked yet: how often the nearest model is the wrong building (a neighbour, or a large garage), and
   semi-detached pairs that are one model but two records were dropped with the townhouses.
+
+## 2026-11-20: a run from the bare seed; the proposer reads the verifier
+
+- Run fri-2026-11-20-1347: bare seed, 5 iterations, all kept, 24 minutes. Validation hard faults 7,972 to 318,
+  soft 1,068 to 260, cost 136,606 to 282,370. Builds are no longer the slow part; the LLM is (4 to 6 min each).
+- The proposer learned the verifier's limits one fault at a time. It now has a `verifier` tool that returns the
+  verifier's own source, module by module, so it can read each limit and its code reference before it hits it.
+  The tool reads the files as they are, so it follows the verifier as it is reworked.
+- Workbench: a mouse wheel zooms, two fingers on a trackpad orbit; in the faults view a click on a faulted member
+  or a fault marker explains the fault in the inspector.
