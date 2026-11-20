@@ -22,11 +22,12 @@ by its age, some of: a bearing line opened up into posts and a beam; a mass left
 alone can; a wide window or a sliding door; a porch open between corner posts; a room of double height; a top
 storey open to the roof, or with a loft over part of it. Each is noted in house.has (dataset.py counts them).
 
-A brief says what is known of the real house, read from photos of its sides (photos.py), and the detailer follows
-it where it speaks: {"floors_ft": [4, 14], "sides": {"south": {"1": [{"at": 0.2, "kind": "window", "w": 30,
-"h": 60}, {"at": 0.5, "kind": "door"}], "2": [...]}, "east": null, ...}}. floors_ft are the floors' heights over
-the ground; a side is seen from outside, "at" running from 0 at its left end to 1 at its right; a side, or a
-storey of one, that is not given is made up as before.
+That is the general procedure. A house may have amendments to it (amend.py holds the format and the files): a
+list, taken in order, each one a setting for the procedure (the floors' heights, a long span, an open attic), a
+change to what it made (the openings of one side's storey, a wall added or taken out, a bearing wall opened up,
+a porch, the stair's place), or one of its steps replaced for this house (a storey's inside walls). Amendments
+name places, never the procedure's own names for things, so they outlive changes to the procedure; one that finds
+nothing to act on says so (house.amended), and check.py judges the house as it would any other.
 
 Everything is a surface with its openings, as the generator's houses are. Inches.
 """
@@ -81,19 +82,55 @@ class Run:
         return (self.a[0] + (self.b[0] - self.a[0]) * t / L + off * n[0], self.a[1] + (self.b[1] - self.a[1]) * t / L + off * n[1])
 
 
-def detail(env: Envelope, record: dict, seed: int = 0, name: str = "", brief: dict | None = None) -> House:
-    """A complete House on an envelope, by the assessor's record of it and, where there is one, a brief."""
-    brief = brief or {}
-    rng = random.Random(f"{name}/{seed}")
+class Amendments:
+    """A house's amendments to the general procedure, in order, and what came of each."""
+    VERBS = ("set", "openings", "porch", "stair", "void", "interior", "wall", "no_wall", "open", "close", "door")
+
+    def __init__(self, items):
+        self.items = list(items.get("amendments", []) if isinstance(items, dict) else items or [])
+        self.result = ["applied" if any(v in a for v in self.VERBS) else "not understood: no verb of " + ", ".join(self.VERBS)
+                       for a in self.items]
+
+    def of(self, verb: str) -> list[tuple[int, object]]:
+        return [(i, a[verb]) for i, a in enumerate(self.items) if verb in a]
+
+    def settings(self) -> dict:
+        """Every "set" amendment's settings together, a later one over an earlier."""
+        return {k: v for _, d in self.of("set") for k, v in d.items()}
+
+    def failed(self, i: int, why: str) -> None:
+        self.result[i] = "not applied: " + why
+
+    def note(self, i: int, what: str) -> None:
+        self.result[i] = what
+
+
+def inches(p) -> tuple:
+    """A plan point of an amendment (feet, in the house's own coordinates) in inches."""
+    return (12.0 * p[0], 12.0 * p[1])
+
+
+def nearest(walls: list, p: tuple, reach: float = 36.0):
+    """The wall of `walls` that passes nearest a plan point, if within reach of it."""
+    near = min(walls, key=lambda w: LineString([w.start, w.end]).distance(Point(p)), default=None)
+    return near if near is not None and LineString([near.start, near.end]).distance(Point(p)) <= reach else None
+
+
+def detail(env: Envelope, record: dict, seed: int = 0, name: str = "", amendments=None) -> House:
+    """A complete House on an envelope, by the assessor's record of it: the general procedure, with the house's
+    amendments where it has any."""
+    am = Amendments(amendments)
+    sets = am.settings()
+    rng = random.Random(f"{name}/{sets.get('seed', seed)}")
     year = int(record.get("condition_yearbuilt") or 1900)
     ms = sorted(env.masses, key=lambda m: -m.shape.area)
     eaves = {id(m): eave(m, ms) for m in ms}
     storeys = float(record.get("exterior_numstories") or 2)
     low = foot(ms[0])
-    if brief.get("floors_ft"):
+    if sets.get("floors_ft"):
         # the floors as seen, in feet over the ground: the ground floor's height is the foundation, the mean
         # step between floors the level, and the top storey has what is left under the eave
-        seen = [12.0 * z for z in brief["floors_ft"]]
+        seen = [12.0 * z for z in sets["floors_ft"]]
         cut = seen[0]
         level = (seen[-1] - seen[0]) / (len(seen) - 1) if len(seen) > 1 else PLATES[0] + JOISTS
         plate = level - JOISTS
@@ -113,8 +150,8 @@ def detail(env: Envelope, record: dict, seed: int = 0, name: str = "", brief: di
             f.c -= cut
     E = {id(m): eaves[id(m)] - HEEL - cut for m in ms}                       # each mass's wall top
     n = {id(m): 1 + sum(E[id(m)] - k * level >= KNEE for k in range(1, 9)) for m in ms}
-    if brief.get("floors_ft"):
-        n[id(ms[0])] = len(brief["floors_ft"])                               # every floor seen is a storey, however low its walls
+    if sets.get("floors_ft"):
+        n[id(ms[0])] = len(sets["floors_ft"])                                # every floor seen is a storey, however low its walls
     if top is not None:
         E[id(ms[0])] = (n[id(ms[0])] - 1) * level + top                      # the main mass, exactly
     whole = pieces(unary_union([m.shape.buffer(0.5, join_style=2) for m in ms]).buffer(-0.5, join_style=2))[0] \
@@ -126,19 +163,36 @@ def detail(env: Envelope, record: dict, seed: int = 0, name: str = "", brief: di
         left = m.shape.difference(unary_union(others).buffer(0.5)) if others else m.shape
         rooms[id(m)] = max(getattr(left, "geoms", [left]), key=lambda g: g.area) if not left.is_empty else m.shape
     style = Style(rng, year, plate)
+    for key, value in (sets.get("windows") or {}).items():       # width, height, head: inches
+        setattr(style, key, float(value))
     span = LONG if rng.random() < (0.3 if year >= 1950 else 0.15) else SPAN
+    span = {"long": LONG, "standard": SPAN}.get(sets.get("span"), span)
     attic = rng.choices(["ceiling", "open", "loft"], [0.76, 0.12, 0.12])[0]
+    attic = sets.get("attic", attic)
     house = House(name, [], kind=(record.get("exterior_style") or "").lower())
     house.foundation = cut            # how far the ground lies under the ground floor
     house.stair = None
-    house.missed = []                 # openings a brief saw that found no place
+    house.missed = []                 # openings an amendment asked for that found no place
     house.placed = 0                  # and how many of its openings did
     house.has = set()                 # the design situations this house was given
     house.porches = {id(m) for m in ms[1:] if n[id(m)] == 1 and m.shape.area <= PORCH and not carried[id(m)] and rng.random() < 0.6}
+    for i, p in am.of("porch"):
+        m = next((m for m in ms[1:] if m.shape.contains(Point(inches(p["near_ft"])))), None)
+        if m is None:
+            am.failed(i, "no mass but the main one stands at that place")
+        elif p.get("open", True):
+            house.porches.add(id(m))
+        else:
+            house.porches.discard(id(m))
     if spines(rooms[id(ms[0])], span)[1] != spines(rooms[id(ms[0])], SPAN)[1]:
         house.has.add("long span")
+    sides: dict = {}                      # the openings amended, by side and storey; and which amendment gave each
+    gave = {}
+    for i, o in am.of("openings"):
+        sides.setdefault(o["side"], {})[str(o["storey"])] = o.get("items", [])
+        gave[(o["side"], str(o["storey"]))] = i
     runs = {id(m): outline_runs(m, ms, style, rooms[id(m)], span) for m in ms}
-    briefed(brief, [r for rs in runs.values() for r in rs])
+    briefed(sides, [r for rs in runs.values() for r in rs])
     top_storey = max(n.values())
     for k in range(1, top_storey + 1):
         here = [m for m in ms if n[id(m)] >= k]
@@ -162,12 +216,55 @@ def detail(env: Envelope, record: dict, seed: int = 0, name: str = "", brief: di
     void = None                           # a room of double height: an opening in the floor over the ground storey
     if stair is not None and rng.random() < (0.2 if year >= 1960 else 0.07):
         void = hole_place(rng, rooms[id(ms[0])], core.difference(stair.buffer(48)), span, VOID)
+    for i, a in am.of("stair"):           # an amended stair: its corner, and which way its long side runs
+        x, y = inches(a["at_ft"])
+        w, d = STAIR if a.get("long", "y") == "y" else STAIR[::-1]
+        if n[id(ms[0])] > 1 and core.buffer(-6).contains(box(x, y, x + w, y + d)):
+            stair = house.stair = box(x, y, x + w, y + d)
+        else:
+            am.failed(i, "a stair there is not inside every floor")
+    for i, a in am.of("void"):
+        if not a:
+            void = None
+            continue
+        (x, y), (w, d) = inches(a["at_ft"]), inches(a.get("size_ft", (VOID[0] / 12, VOID[1] / 12)))
+        if stair is not None and core.buffer(-6).contains(box(x, y, x + w, y + d)) and box(x, y, x + w, y + d).distance(stair) > 24:
+            void = box(x, y, x + w, y + d)
+        else:
+            am.failed(i, "a double-height room there is not inside the floor, or is on the stair")
+
+    def height(k: int, p: tuple) -> float:
+        """How high a wall inside stands on storey k at a plan point: to the floor above, or its mass's top."""
+        m = next((m for m in ms if n[id(m)] >= k and m.shape.contains(Point(p))), ms[0])
+        return level if k < n[id(m)] else E[id(m)] - (k - 1) * level
+    replaced = {int(a["storey"]) for _, a in am.of("interior")}
+    walled = {k: {id(w.run.mass) for w in house.walls if round(w.base / level) + 1 == k} for k in range(1, top_storey + 1)}
     for k in range(1, top_storey + 1):
         for j, m in enumerate(ms):
-            if n[id(m)] < k or (carried[id(m)] and any(o is not m and n[id(o)] >= k and o.shape.contains(m.shape.centroid) for o in ms)):
-                continue                  # a mass standing on another is part of that one's rooms
+            if n[id(m)] < k or k in replaced or (carried[id(m)] and id(m) not in walled[k]):
+                continue                  # a mass standing on another, with no walls of its own here, is part of that one's rooms
+            own = [o.area for o in ms if o is not m and carried[id(o)] and id(o) in walled[k]]      # and one with walls here is not
+            region = rooms[id(m)].difference(unary_union(own).buffer(0.5)) if own else rooms[id(m)]
+            region = max(getattr(region, "geoms", [region]), key=lambda g: g.area)
+            if region.is_empty or region.area < 30 * 144:
+                continue
             h = level if k < n[id(m)] else E[id(m)] - (k - 1) * level
-            inside(rng, house, k, j, rooms[id(m)], h, (k - 1) * level, [x for x in (stair, void if k == 2 else None) if x is not None], runs[id(m)], style, span)
+            inside(rng, house, k, j, region, h, (k - 1) * level, [x for x in (stair, void if k == 2 else None) if x is not None], runs[id(m)], style, span)
+    added = 0
+    for i, a in [(i, {**w, "storey": a["storey"]}) for i, a in am.of("interior") for w in a.get("walls", [])] + am.of("wall"):
+        k, p, q = int(a["storey"]), inches(a["from_ft"]), inches(a["to_ft"])
+        if not 1 <= k <= top_storey or math.dist(p, q) < 24:
+            am.failed(i, "no such storey, or the wall is under 2 ft long")
+            continue
+        added += 1
+        house.walls.append(Wall(f"{k}{'s' if a.get('bearing') else 'p'}x{added}", p, q, height(k, ((p[0] + q[0]) / 2, (p[1] + q[1]) / 2)),
+                                (k - 1) * level, role="interior"))
+    for i, a in am.of("no_wall"):
+        w = nearest([w for w in house.walls if w.id[1] in "sp" and w.base == (int(a["storey"]) - 1) * level], inches(a["near_ft"]))
+        if w is None:
+            am.failed(i, "no wall inside within 3 ft of that place on that storey")
+        else:
+            house.walls.remove(w)
     for w in house.walls:
         if w.id[1] in "sp":
             under_roof(w, ms, HEEL)
@@ -187,11 +284,33 @@ def detail(env: Envelope, record: dict, seed: int = 0, name: str = "", brief: di
             (u0, v0, _), (u1, v1, _) = f.local((x0, y0, f.z)), f.local((x1, y1, f.z))
             f.openings.append(Opening(f"{f.id}o{len(f.openings)}", "void", min(u0, u1), max(u0, u1), min(v0, v1), max(v0, v1)))
             house.has.add("double height")
-    openings(rng, house, style, level, brief.get("sides") or {})
+    forced = {}                           # bearing walls an amendment opens into posts and a beam, or keeps solid
+    for verb in ("open", "close"):
+        for i, a in am.of(verb):
+            w = nearest([w for w in house.walls if w.id[1] == "s" and w.base == (int(a["storey"]) - 1) * level], inches(a["near_ft"]))
+            if w is None:
+                am.failed(i, "no bearing wall inside within 3 ft of that place on that storey")
+            else:
+                forced[w.id] = verb == "open"
+    tally = openings(rng, house, style, level, sides, forced)
+    for key, i in gave.items():
+        placed, asked = tally.get(key, (0, 0))
+        am.note(i, f"{placed} of {asked} placed" if asked else "applied: none there")
+    house.link()
+    for i, a in am.of("door"):
+        w = nearest([w for w in house.walls if w.role == "interior" and w.base == (int(a["storey"]) - 1) * level], inches(a["near_ft"]))
+        wide = float(a.get("w", 34))
+        if w is None:
+            am.failed(i, "no wall inside within 3 ft of that place on that storey")
+            continue
+        u = LineString([w.start, w.end]).project(Point(inches(a["near_ft"])))
+        if not any(cut(w, "door", u + shift - wide / 2, wide, 0.0, min(HEAD, w.height - 9), margin=4.0, tee=4.0) for shift in (0, 6, -6, 12, -12, 18, -18)):
+            am.failed(i, f"no clear place for a door on wall {w.id} there")
     house.link()
     for k in range(1, top_storey + 1):
         connect(house, (k - 1) * level, stair if k > 1 else None)
     house.link()
+    house.amended = list(zip(am.items, am.result))
     return house
 
 
@@ -293,10 +412,10 @@ def outline_runs(m: Mass, ms: list[Mass], style: Style, region: Polygon, span: f
 SIDES = {"south": (0, -1), "east": (1, 0), "north": (0, 1), "west": (-1, 0)}     # the way each side faces
 
 
-def briefed(brief: dict, runs: list[Run]) -> None:
-    """Give the runs facing a briefed side the brief's window places (of every storey), so that partitions keep
-    clear of where the windows will be."""
-    for side, storeys in (brief.get("sides") or {}).items():
+def briefed(sides: dict, runs: list[Run]) -> None:
+    """Give the runs facing a side whose openings are amended those openings' places (of every storey), so that
+    partitions keep clear of where the windows will be."""
+    for side, storeys in sides.items():
         if not storeys:
             continue
         d = SIDES[side]
@@ -638,11 +757,14 @@ def cut(w: Wall, kind: str, u0: float, width: float, v0: float, v1: float, **how
     return True
 
 
-def openings(rng, house: House, style: Style, level: float, sides: dict) -> None:
+def openings(rng, house: House, style: Style, level: float, sides: dict, forced: dict) -> dict:
     """Windows at each run's columns, the same columns on every storey, lower where a wall is low; a front and
-    a back door; a window in a tall gable; a door or two in each wall inside. Where a brief saw a storey of a
-    side, its openings are placed instead: each on the wall of that storey nearest the viewer there, moved a
-    little if it must to clear the walls that meet the wall."""
+    a back door; a window in a tall gable; a door or two in each wall inside. Where an amendment gives a storey
+    of a side its openings, those are placed instead: each on the wall of that storey nearest the viewer there,
+    moved a little if it must to clear the walls that meet the wall. `forced` says which bearing walls are opened
+    into posts and a beam (True) or kept solid (False) whatever the dice say. Returns, for each amended side
+    and storey, (openings placed, openings asked for)."""
+    tally: dict = {}
     outer = [w for w in house.walls if w.role == "exterior"]
     storey = lambda w: round(w.base / level) + 1
     faces = lambda w, d: -(w.normal[0] * d[0] + w.normal[1] * d[1])
@@ -655,6 +777,7 @@ def openings(rng, house: House, style: Style, level: float, sides: dict) -> None
         ends = [along(p) for w in outer for p in (w.start, w.end)]
         r0, r1 = min(ends), max(ends)
         for k, items in (storeys or {}).items():
+            tally[(side, str(k))] = [0, len(items or [])]
             for item in items or []:
                 kind, c = item.get("kind", "window"), r0 + float(item["at"]) * (r1 - r0)
                 over = [w for w in outer if storey(w) == int(k) and faces(w, d) > 0.5
@@ -674,12 +797,14 @@ def openings(rng, house: House, style: Style, level: float, sides: dict) -> None
                     if kind == "door":
                         if ww >= 24 and cut(w, "door", u + shift - ww / 2, ww, 0.0, min(HEAD, top_over(w, u + shift - ww / 2, u + shift + ww / 2) - 9), **how):
                             house.placed += 1
+                            tally[(side, str(k))][0] += 1
                             break
                     else:
                         head = min(style.head, top_over(w, u + shift - ww / 2, u + shift + ww / 2) - 9)
                         high = min(float(item.get("h") or style.height), head - 20)
                         if ww >= 16 and high >= 22 and cut(w, "window", u + shift - ww / 2, ww, head - high, head, **how):
                             house.placed += 1
+                            tally[(side, str(k))][0] += 1
                             break
                 else:
                     house.missed.append(f"{kind} at {item['at']} on the {side} side, storey {k}: no clear place on wall {w.id} ({w.length:.0f} in. long, {top_over(w, 0, w.length):.0f} high)")
@@ -733,7 +858,8 @@ def openings(rng, house: House, style: Style, level: float, sides: dict) -> None
         if w.role != "interior" or w.length < 60:
             continue
         bearing = w.id[1] in "sj"
-        if w.id[1] == "s" and w.height >= HEAD + 9 and rng.random() < (0.4 if w.base == 0 else 0.1):
+        dice = rng.random() < (0.4 if w.base == 0 else 0.1)
+        if w.id[1] == "s" and w.height >= HEAD + 9 and forced.get(w.id, dice):
             # a bearing line opened up: a beam on posts, a pier left at each end and where a wall meets it
             marks = [0.0] + [t.u for t in w.tees] + [w.length]
             for a, b in zip(marks, marks[1:]):
@@ -747,6 +873,7 @@ def openings(rng, house: House, style: Style, level: float, sides: dict) -> None
             for _ in range(30):
                 if cut(w, "door", 2.0 * round(rng.uniform(12, max(13, w.length - 12 - wide)) / 2), wide, 0.0, min(HEAD, w.height - 9)):
                     break
+    return tally
 
 
 def rooms_of(house: House, base: float, stair):

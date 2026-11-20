@@ -1,0 +1,429 @@
+{
+ "house": "CAM_MZIHZ-XJKWL-6HMW5",
+ "address": "95 Columbia St",
+ "notes": "Flat-roofed triple-decker, three even storeys, raised basement (row of small basement windows just above the ground on the south, red-painted foundation; not a storey). Window sills at about 6, 16 and 26 ft give floors at about 3.5, 13.3 and 23 ft; wall top about 34-35 ft. South: clear; a projecting bay at the left end (0-0.17) with a paired window on each storey, five single windows across the main wall, and a narrow window on the angled face of a right-end bay (~0.96). North: readable but dark and smeared on the lower left (storeys 1-2, 0.2-0.6, shadow), the window columns line up with storey 3; a pair of windows at 0.68/0.73 on each storey. East (street side?): mostly hidden by a tree; only storey 3 and the right part of storey 2 are readable, storey 1 left out; the entrance door is probably on this side but not seen. West: clear; a paired window and a single per storey, nothing on the left half; a slanted bulkhead / cellar hatch at ground level near 0.25, below the first floor, not recorded.",
+ "amendments": [
+  {
+   "set": {
+    "floors_ft": [
+     3.5,
+     13.3,
+     23.0
+    ]
+   },
+   "by": "Claude Opus agent, from the four side photos",
+   "from": "the four side photos (the city's photo mesh)",
+   "why": "the floors as the window rows show them"
+  },
+  {
+   "openings": {
+    "side": "south",
+    "storey": 1,
+    "items": [
+     {
+      "at": 0.12,
+      "kind": "window",
+      "w": 56,
+      "h": 58
+     },
+     {
+      "at": 0.325,
+      "kind": "window",
+      "w": 34,
+      "h": 58
+     },
+     {
+      "at": 0.43,
+      "kind": "window",
+      "w": 34,
+      "h": 58
+     },
+     {
+      "at": 0.547,
+      "kind": "window",
+      "w": 34,
+      "h": 58
+     },
+     {
+      "at": 0.636,
+      "kind": "window",
+      "w": 34,
+      "h": 58
+     },
+     {
+      "at": 0.9,
+      "kind": "window",
+      "w": 34,
+      "h": 58
+     },
+     {
+      "at": 0.963,
+      "kind": "window",
+      "w": 22,
+      "h": 58
+     }
+    ]
+   },
+   "by": "Claude Opus agent, from the four side photos",
+   "from": "the four side photos (the city's photo mesh)"
+  },
+  {
+   "openings": {
+    "side": "south",
+    "storey": 2,
+    "items": [
+     {
+      "at": 0.12,
+      "kind": "window",
+      "w": 56,
+      "h": 58
+     },
+     {
+      "at": 0.325,
+      "kind": "window",
+      "w": 34,
+      "h": 58
+     },
+     {
+      "at": 0.43,
+      "kind": "window",
+      "w": 34,
+      "h": 58
+     },
+     {
+      "at": 0.547,
+      "kind": "window",
+      "w": 34,
+      "h": 58
+     },
+     {
+      "at": 0.636,
+      "kind": "window",
+      "w": 34,
+      "h": 58
+     },
+     {
+      "at": 0.9,
+      "kind": "window",
+      "w": 34,
+      "h": 58
+     },
+     {
+      "at": 0.963,
+      "kind": "window",
+      "w": 22,
+      "h": 58
+     }
+    ]
+   },
+   "by": "Claude Opus agent, from the four side photos",
+   "from": "the four side photos (the city's photo mesh)"
+  },
+  {
+   "openings": {
+    "side": "south",
+    "storey": 3,
+    "items": [
+     {
+      "at": 0.12,
+      "kind": "window",
+      "w": 56,
+      "h": 60
+     },
+     {
+      "at": 0.325,
+      "kind": "window",
+      "w": 34,
+      "h": 62
+     },
+     {
+      "at": 0.43,
+      "kind": "window",
+      "w": 34,
+      "h": 62
+     },
+     {
+      "at": 0.547,
+      "kind": "window",
+      "w": 34,
+      "h": 62
+     },
+     {
+      "at": 0.636,
+      "kind": "window",
+      "w": 34,
+      "h": 62
+     },
+     {
+      "at": 0.9,
+      "kind": "window",
+      "w": 34,
+      "h": 62
+     },
+     {
+      "at": 0.963,
+      "kind": "window",
+      "w": 22,
+      "h": 58
+     }
+    ]
+   },
+   "by": "Claude Opus agent, from the four side photos",
+   "from": "the four side photos (the city's photo mesh)"
+  },
+  {
+   "openings": {
+    "side": "north",
+    "storey": 1,
+    "items": [
+     {
+      "at": 0.252,
+      "kind": "window",
+      "w": 32,
+      "h": 56
+     },
+     {
+      "at": 0.404,
+      "kind": "window",
+      "w": 32,
+      "h": 56
+     },
+     {
+      "at": 0.496,
+      "kind": "window",
+      "w": 32,
+      "h": 56
+     },
+     {
+      "at": 0.584,
+      "kind": "window",
+      "w": 32,
+      "h": 56
+     },
+     {
+      "at": 0.68,
+      "kind": "window",
+      "w": 32,
+      "h": 56
+     },
+     {
+      "at": 0.729,
+      "kind": "window",
+      "w": 32,
+      "h": 56
+     }
+    ]
+   },
+   "by": "Claude Opus agent, from the four side photos",
+   "from": "the four side photos (the city's photo mesh)"
+  },
+  {
+   "openings": {
+    "side": "north",
+    "storey": 2,
+    "items": [
+     {
+      "at": 0.252,
+      "kind": "window",
+      "w": 32,
+      "h": 56
+     },
+     {
+      "at": 0.404,
+      "kind": "window",
+      "w": 32,
+      "h": 56
+     },
+     {
+      "at": 0.496,
+      "kind": "window",
+      "w": 32,
+      "h": 56
+     },
+     {
+      "at": 0.584,
+      "kind": "window",
+      "w": 32,
+      "h": 56
+     },
+     {
+      "at": 0.68,
+      "kind": "window",
+      "w": 32,
+      "h": 56
+     },
+     {
+      "at": 0.729,
+      "kind": "window",
+      "w": 32,
+      "h": 56
+     }
+    ]
+   },
+   "by": "Claude Opus agent, from the four side photos",
+   "from": "the four side photos (the city's photo mesh)"
+  },
+  {
+   "openings": {
+    "side": "north",
+    "storey": 3,
+    "items": [
+     {
+      "at": 0.252,
+      "kind": "window",
+      "w": 32,
+      "h": 58
+     },
+     {
+      "at": 0.404,
+      "kind": "window",
+      "w": 32,
+      "h": 58
+     },
+     {
+      "at": 0.496,
+      "kind": "window",
+      "w": 32,
+      "h": 58
+     },
+     {
+      "at": 0.584,
+      "kind": "window",
+      "w": 32,
+      "h": 50
+     },
+     {
+      "at": 0.68,
+      "kind": "window",
+      "w": 32,
+      "h": 52
+     },
+     {
+      "at": 0.729,
+      "kind": "window",
+      "w": 32,
+      "h": 52
+     }
+    ]
+   },
+   "by": "Claude Opus agent, from the four side photos",
+   "from": "the four side photos (the city's photo mesh)"
+  },
+  {
+   "openings": {
+    "side": "east",
+    "storey": 2,
+    "items": [
+     {
+      "at": 0.58,
+      "kind": "window",
+      "w": 32,
+      "h": 56
+     },
+     {
+      "at": 0.82,
+      "kind": "window",
+      "w": 32,
+      "h": 56
+     }
+    ]
+   },
+   "by": "Claude Opus agent, from the four side photos",
+   "from": "the four side photos (the city's photo mesh)"
+  },
+  {
+   "openings": {
+    "side": "east",
+    "storey": 3,
+    "items": [
+     {
+      "at": 0.09,
+      "kind": "window",
+      "w": 30,
+      "h": 56
+     },
+     {
+      "at": 0.435,
+      "kind": "window",
+      "w": 70,
+      "h": 60
+     },
+     {
+      "at": 0.82,
+      "kind": "window",
+      "w": 32,
+      "h": 56
+     }
+    ]
+   },
+   "by": "Claude Opus agent, from the four side photos",
+   "from": "the four side photos (the city's photo mesh)"
+  },
+  {
+   "openings": {
+    "side": "west",
+    "storey": 1,
+    "items": [
+     {
+      "at": 0.53,
+      "kind": "window",
+      "w": 64,
+      "h": 58
+     },
+     {
+      "at": 0.69,
+      "kind": "window",
+      "w": 36,
+      "h": 58
+     }
+    ]
+   },
+   "by": "Claude Opus agent, from the four side photos",
+   "from": "the four side photos (the city's photo mesh)"
+  },
+  {
+   "openings": {
+    "side": "west",
+    "storey": 2,
+    "items": [
+     {
+      "at": 0.53,
+      "kind": "window",
+      "w": 64,
+      "h": 58
+     },
+     {
+      "at": 0.69,
+      "kind": "window",
+      "w": 36,
+      "h": 58
+     }
+    ]
+   },
+   "by": "Claude Opus agent, from the four side photos",
+   "from": "the four side photos (the city's photo mesh)"
+  },
+  {
+   "openings": {
+    "side": "west",
+    "storey": 3,
+    "items": [
+     {
+      "at": 0.53,
+      "kind": "window",
+      "w": 64,
+      "h": 62
+     },
+     {
+      "at": 0.69,
+      "kind": "window",
+      "w": 36,
+      "h": 62
+     }
+    ]
+   },
+   "by": "Claude Opus agent, from the four side photos",
+   "from": "the four side photos (the city's photo mesh)"
+  }
+ ]
+}

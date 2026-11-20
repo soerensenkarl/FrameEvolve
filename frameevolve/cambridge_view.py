@@ -18,9 +18,8 @@ import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from frameevolve import cambridge, envelope
+from frameevolve import amend, cambridge, envelope
 from frameevolve.check import problems
-from frameevolve.detail import detail
 
 ROOT = Path(__file__).resolve().parents[1]
 WOOD = ("Frame-Clapbrd", "Wood Shingle", "Aluminum-Vinyl", "Asbstos Shingl", "Ashalt Shingle")
@@ -71,9 +70,8 @@ def build(count: int = 20) -> str:
             vs = [env.place(tuple(map(float, l.split()[1:4]))) for l in path.read_text().splitlines() if l.startswith("v ")]
             tris = [[int(x.split("/")[0]) - 1 for x in l.split()[1:4]] for l in path.read_text().splitlines() if l.startswith("f ")]
             item["raw"] = {"v": [round(c, 1) for v in vs for c in v], "f": [i for t in tris for i in t]}
-            brief = cambridge.OUT / "briefs" / f"{h['model']}.json"
-            house = detail(env, h, 0, h["model"], json.loads(brief.read_text()) if brief.exists() else None)
-            item["briefed"] = brief.exists()
+            house, _ = amend.build(h, env)
+            missed = sum(not r.startswith("applied") and "placed" not in r for _, r in house.amended)
             item["lift"] = house.foundation
             item["surfaces"] = surfaces(house)
             wrong = problems(house)
@@ -83,7 +81,7 @@ def build(count: int = 20) -> str:
                              f'{sum(len(w.openings) for w in house.walls)} openings, {len(house.roofs)} roof planes; '
                              f'taken off: {env.dropped or "nothing"}. '
                              + ("VALID: passes every check." if not wrong else "NOT VALID: " + "; ".join(wrong[:4]))
-                             + (" Detailed from a BRIEF read off photos." if item["briefed"] else "")
+                             + (f" AMENDED: {len(house.amended)} amendments" + (f", {missed} not applied." if missed else ".") if house.amended else "")
                              + (" Has: " + ", ".join(sorted(house.has)) + "." if house.has else ""))
         except Exception:
             item["problems"] = ["detailing failed: " + traceback.format_exc().splitlines()[-1]]

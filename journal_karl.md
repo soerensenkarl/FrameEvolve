@@ -720,3 +720,32 @@ what is wrong by marking it, so faults are fixed in the rules and checked again 
   roof 7, crash 7, standing 1. The five briefed houses: four valid as before; 22 Arlington St (mansard) now has
   its set-back top storey's walls crossing partitions, a fault this change brought out and not yet fixed.
 - Review page: view 3 keeps the floors solid with the inside walls.
+
+## 2026-11-20: a general procedure and amendments a house
+
+- Karl's design, after the building code: one general procedure that covers most houses, and for each house an
+  annex of amendments saying what that house needs different: parameters for the procedure, additions and
+  subtractions, a step replaced, or a procedure of its own. Reason: no one algorithm fits every house, and the
+  logic of how a house was made should be kept so agents can add passes to it. A full script per house (my first
+  proposal) would have had to be rewritten for thousands of houses whenever the procedure improved.
+- Built (amend.py holds the format; detail.py applies it):
+
+  | kind | verbs |
+  |---|---|
+  | settings | set: floors_ft, span (long, standard), attic (ceiling, open, loft), windows, seed |
+  | changes | openings (one side's storey), porch, stair, void, wall, no_wall, open and close (a bearing wall into posts and a beam, or solid), door |
+  | a step replaced | interior (a storey's inside walls, all of them) |
+  | the last resort | "script": a Python file with build(env, record) |
+
+  Files are data/amendments/<model>.json, in git (they are the record of each house; the models are downloaded).
+  Each amendment may say by whom, from what and why. Amendments name places (a side's ruler, a plan point in
+  feet), never the procedure's names for walls, so they outlive changes to it; each reports what came of it
+  ("7 of 7 placed", "not applied: no wall inside within 3 ft of that place"), and check.py judges the house.
+- `uv run python -m frameevolve.amend <model>` tries a house's amendments: what came of each, what the
+  procedure chose where nothing was amended, the verdict, and drawings to hold against the photos (each side on
+  the photo's ruler, a plan a storey in feet). The brief of earlier today was the first two kinds; the five
+  briefs are now amendment files (9 to 12 amendments each), brief.py is gone.
+- tests/test_cambridge.py builds a city model of a plain gable house, reads, details, amends and checks it
+  (2 tests; the suite: 84 pass).
+- A fault the mansard brought out, fixed: a mass's inside walls were laid across a set-back storey that has
+  walls of its own. All five amended houses now pass every check; 184 of 300 unamended (61%).

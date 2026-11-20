@@ -14,10 +14,10 @@ import json
 import sys
 from collections import Counter
 
-from frameevolve import cambridge, envelope
+from frameevolve import amend, cambridge
 from frameevolve.cambridge_view import sample
 from frameevolve.check import problems
-from frameevolve.detail import ROOM, detail
+from frameevolve.detail import ROOM
 from frameevolve.model import House
 
 
@@ -74,7 +74,7 @@ def main(many: int = 300, size: int = 100) -> None:
     have, failed = {}, Counter()
     for h in sample(houses, many):
         try:
-            house = detail(envelope.envelope(cambridge.OUT / "models" / f"{h['model']}.obj"), h, 0, h["model"])
+            house, _ = amend.build(h)
             wrong = problems(house)
         except Exception as e:
             wrong = [f"crash: {type(e).__name__}"]
