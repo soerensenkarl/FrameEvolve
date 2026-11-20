@@ -614,7 +614,7 @@ def crushing(s: Site, b: Beam) -> Fault | None:
     if worst is None or worst[0] <= 1.0:
         return None
     ratio, r, x, n, allowed = worst
-    return s.at(m, s.g.at[(m.id, n.id)], "crushing", True,
+    return s.at(m, s.g.at[(m.id, n.id)], "crushing", False,   # soft: an NDS backstop the IRC does not require for prescriptive framing
                 f"{name(m)} presses {lb(r)} into {name(n)} over {x.area:.1f} sq in: {r / x.area:,.0f} psi across the "
                 f"grain, allowed {allowed:,.0f} psi", [n])
 
