@@ -511,3 +511,13 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
 - Still wrong or missing: dormers are taken off, not kept; near-straight walls stay as two walls a degree apart
   (the models are not snapped square); a porch is detailed as a room; no bay or picture windows; partitions are
   few, so rooms are large.
+- Karl's first note on the page (95 Columbia St, a three-decker): inside walls stood through the flat roof. Two
+  causes. A roof face under 1:12 was laid with its eave along x whatever way it fell, so low roofs sloped the
+  wrong way (a real fault in every low-slope roof). And a flat-roofed mass took its wall height from the parapet,
+  not the roof. Now a roof plane always runs with its face's fall; a flat roof's height is its largest face's;
+  bearing walls and partitions stop under the roof plane, following it where it slopes (under_roof). Checked on
+  the 20: of 1,393 points along inside walls, none above the roof over it (was 71 of 765 by a cruder check).
+- The review page is driven from the keyboard: Shift-drag marks, Enter goes to the comment and Enter saves, G
+  passes a house and jumps to the next unreviewed one, [ and ] show one storey at a time, V and T change the
+  view, 1 2 R F O I switch layers; ? lists the keys. The house list shows which are passed and which have open
+  notes.

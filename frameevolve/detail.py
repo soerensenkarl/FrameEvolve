@@ -104,6 +104,10 @@ def detail(env: Envelope, record: dict, seed: int = 0, name: str = "") -> House:
                 continue                  # a mass standing on another is part of that one's rooms
             h = level if k < n[id(m)] else E[id(m)] - (k - 1) * level
             inside(rng, house, k, j, m, h, (k - 1) * level, stair, runs[id(m)], style)
+    for w in house.walls:
+        if w.id[1] in "sp":
+            under_roof(w, ms, HEEL)
+    house.walls = [w for w in house.walls if w.height >= KNEE or w.outline]
     house.link()
     if stair:
         for f in house.floors:
@@ -327,9 +331,7 @@ def roof(rid: str, f: Face, m: Mass, ms: list[Mass]):
                 is_eave = not any(o is not m and o.shape.contains(p) and o.z(p.x, p.y) > f.z(p.x, p.y) + 6 for o in ms)
             push.append(EAVE if is_eave else 0.0)
         pts = offset(pts, push)
-        e = (gy, -gx)
-    else:
-        e = (1.0, 0.0)
+    e = (f.b / f.slope, -f.a / f.slope) if f.slope > 1e-9 else (1.0, 0.0)      # along the eave, the roof rising to its left
     low = min(pts, key=lambda p: f.z(*p))
     return plane(rid, low, (low[0] + e[0], low[1] + e[1]), f.z(*low), f.slope * 12, pts)
 
@@ -449,6 +451,39 @@ def inside(rng, house: House, k: int, j: int, m: Mass, height: float, base: floa
             house.walls.append(Wall(f"{k}p{tag}{i}", p0, p1, height, base, role="interior"))
             used.append(c)
             break
+
+
+def under_roof(w: Wall, ms: list[Mass], gap: float) -> None:
+    """Keep a wall inside under the roof: where the roof over it comes lower than its top (a flat roof inside a
+    parapet, rafters over a low top storey), its top follows the roof, `gap` under the plane."""
+    L = w.length
+    line = LineString([w.start, w.end])
+    faces = [f for m in ms for f in m.faces if f.shape.distance(line) < 1]
+    cuts = {0.0, L}
+    for f in faces:
+        part = line.intersection(f.shape.exterior)
+        for g in getattr(part, "geoms", [part]):
+            for p in getattr(g, "coords", []):
+                cuts.add(min(max(math.dist(w.start, p), 0.0), L))
+    ts = sorted(cuts)
+    pts = []
+    for a, b in zip(ts, ts[1:]):
+        if b - a < 0.5:
+            continue
+        mid = Point(w.world((a + b) / 2, 0, 0)[:2])
+        f = min(faces, key=lambda f: f.shape.distance(mid), default=None)
+        for t in (a, b):
+            x, y = w.world(t, 0, 0)[:2]
+            pts.append((t, max(0.0, min(w.height, f.z(x, y) - gap - w.base)) if f else w.height))
+    if not pts or min(z for _, z in pts) >= w.height - 0.5:
+        return
+    low = min(z for _, z in pts)
+    if max(z for _, z in pts) - low > 0.5:
+        line = [(0.0, 0.0), (round(L, 3), 0.0)] + [(round(t, 3), round(z, 3)) for t, z in reversed(pts)]
+        w.outline = [p for i, p in enumerate(line) if p != line[i - 1]]
+        w.height = max(min(pts[0][1], pts[-1][1]), low)
+    else:
+        w.height = low
 
 
 def top_over(w: Wall, u0: float, u1: float) -> float:

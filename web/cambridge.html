@@ -1,26 +1,36 @@
 <!doctype html><meta charset="utf-8"><title>Cambridge houses</title>
 <style>
  body{margin:0;font:14px system-ui;background:#f4f1ec;color:#222;overflow:hidden}
- #bar{position:fixed;top:0;left:0;right:0;padding:8px 14px;background:#fffd;display:flex;gap:10px;align-items:center;flex-wrap:wrap;z-index:1}
- select,button,input{font:inherit;padding:4px 9px} button.on{background:#333;color:#fff} #info{color:#555;flex-basis:100%}
- #notes{position:fixed;right:0;top:92px;bottom:0;width:250px;overflow:auto;background:#fffd;padding:8px;z-index:1;display:none}
+ #bar{position:fixed;top:0;left:0;right:0;padding:8px 14px;background:#fffd;display:flex;gap:8px;align-items:center;flex-wrap:wrap;z-index:2}
+ select,button,input{font:inherit;padding:4px 9px} button.on{background:#333;color:#fff} kbd{font:11px ui-monospace;background:#0001;border-radius:3px;padding:0 4px;margin-left:4px}
+ button.on kbd{background:#fff3} #info{color:#555;flex-basis:100%} .sep{width:1px;height:22px;background:#bbb} #note{flex:1;min-width:200px}
+ #notes{position:fixed;right:0;top:96px;bottom:0;width:250px;overflow:auto;background:#fffd;padding:8px;z-index:1;display:none}
  #notes.has{display:block} .n{border:1px solid #ccc;border-radius:6px;margin-bottom:8px;padding:6px;background:#fff} .n img{width:100%;cursor:zoom-in;border-radius:4px}
  .n.fixed{opacity:.6} .n .reply{color:#0a6b2d;margin-top:4px} .n small{color:#777} .n button{padding:1px 7px;float:right;margin-left:4px}
- #big{position:fixed;inset:0;background:#000c;display:none;z-index:3;align-items:center;justify-content:center} #big img{max-width:95%;max-height:95%}
- #ink{position:fixed;inset:0;pointer-events:none} #ink.on{pointer-events:auto;cursor:crosshair} #note{flex:1;min-width:220px} .sep{width:1px;height:22px;background:#bbb}
+ #big{position:fixed;inset:0;background:#000c;display:none;z-index:4;align-items:center;justify-content:center} #big img{max-width:95%;max-height:95%}
+ #ink{position:fixed;inset:0;pointer-events:none;z-index:1} #ink.on{pointer-events:auto;cursor:crosshair}
+ #help{position:fixed;left:14px;bottom:14px;background:#fffe;border:1px solid #ccc;border-radius:8px;padding:10px 14px;z-index:3;display:none;line-height:1.7}
+ #help.on{display:block} #flash{position:fixed;left:50%;top:45%;transform:translate(-50%,-50%);background:#222;color:#fff;padding:8px 16px;border-radius:8px;z-index:5;opacity:0;transition:opacity .25s;pointer-events:none}
+ #verdict{font-weight:600}
 </style>
-<div id="bar"><button id="prev">&larr;</button><select id="pick"></select><button id="next">&rarr;</button>
- <button id="raw">City model</button><button id="det" class="on">Detailed</button>
- <button id="roofs" class="on">Roofs</button><button id="floors" class="on">Floors</button><button id="outer" class="on">Outside walls</button><button id="inner" class="on">Inside walls</button>
- <span class="sep"></span><button id="pen" title="Draw on the view; the camera holds still while the pen is on">Pen</button><button id="undo">Undo</button><button id="clear">Clear</button>
- <input id="note" placeholder="What is wrong here?"><button id="save" title="Saves the view with your marks and note, for whoever fixes the problem">Save note</button>
+<div id="bar"><button id="prev">&larr;</button><select id="pick"></select><button id="next">&rarr;</button><span id="count"></span><span id="verdict"></span>
+ <span class="sep"></span><button id="raw">City model<kbd>1</kbd></button><button id="det">Detailed<kbd>2</kbd></button>
+ <button id="roofs">Roofs<kbd>R</kbd></button><button id="floors">Floors<kbd>F</kbd></button><button id="outer">Outside<kbd>O</kbd></button><button id="inner">Inside<kbd>I</kbd></button>
+ <button id="storey">All storeys<kbd>[ ]</kbd></button>
+ <span class="sep"></span><input id="note" placeholder="Shift-drag to mark, type what is wrong, Enter saves"><button id="good">Good<kbd>G</kbd></button><button id="keys">?</button>
  <span id="info"></span></div>
-<canvas id="ink"></canvas><div id="notes"></div><div id="big"><img></div>
+<canvas id="ink"></canvas><div id="notes"></div><div id="big"><img></div><div id="flash"></div>
+<div id="help"><b>Mark</b>: hold Shift and drag (or <kbd>P</kbd> for the pen) &nbsp; <kbd>Z</kbd> undo &nbsp; <kbd>C</kbd> clear<br>
+ <b>Save</b>: <kbd>Enter</kbd> goes to the comment, <kbd>Enter</kbd> again saves; <kbd>S</kbd> saves without a comment; <kbd>Esc</kbd> leaves the comment<br>
+ <b>Pass</b>: <kbd>G</kbd> marks the house good and goes to the next unreviewed one &nbsp; <kbd>N</kbd> next unreviewed<br>
+ <b>Move</b>: <kbd>&larr;</kbd> <kbd>&rarr;</kbd> or <kbd>J</kbd> <kbd>K</kbd> houses &nbsp; <kbd>V</kbd> next corner view &nbsp; <kbd>T</kbd> from above &nbsp; <kbd>[</kbd> <kbd>]</kbd> one storey at a time, <kbd>0</kbd> all<br>
+ <b>Show</b>: <kbd>1</kbd> city model &nbsp; <kbd>2</kbd> detailed &nbsp; <kbd>R</kbd> roofs &nbsp; <kbd>F</kbd> floors &nbsp; <kbd>O</kbd> outside walls &nbsp; <kbd>I</kbd> inside walls &nbsp; <kbd>?</kbd> this list</div>
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
 <script type="module">
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 const H = /*DATA*/;
+const $ = (id) => document.getElementById(id);
 const scene = new THREE.Scene(); scene.background = new THREE.Color("#f4f1ec");
 const cam = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 10, 30000); cam.up.set(0, 0, 1);
 const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); r.setPixelRatio(devicePixelRatio); r.setSize(innerWidth, innerHeight); document.body.append(r.domElement);
@@ -28,7 +38,7 @@ const ctl = new OrbitControls(cam, r.domElement);
 scene.add(new THREE.HemisphereLight("#ffffff", "#b9b2a6", 1.7)); const sun = new THREE.DirectionalLight("#fff", 1.3); sun.position.set(-600, -900, 1200); scene.add(sun);
 const COL = { wall: "#efe9de", interior: "#cfd9e2", roof: "#b98f6a", floor: "#d9c9a8", ceiling: "#e9e4da" };
 const show = { raw: false, det: true, roofs: true, floors: true, outer: true, inner: true };
-let groups = {};
+let groups = {}, parts = [], levels = [], storey = 0, view = 0, centre = new THREE.Vector3(), reach = 1000, all = [];
 const off = { polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1, side: THREE.DoubleSide };
 function edged(g, color, opacity = 1) {
   const o = new THREE.Group();
@@ -37,95 +47,129 @@ function edged(g, color, opacity = 1) {
   return o;
 }
 function surface(s) {
+  const quad = (u0, v0, u1, v1) => [[u0, v0], [u1, v0], [u1, v1], [u0, v1]].map(([u, v]) => new THREE.Vector2(u, v));
   const shape = new THREE.Shape(s.outline.map(([u, v]) => new THREE.Vector2(u, v)));
-  for (const [, u0, v0, u1, v1] of s.openings) shape.holes.push(new THREE.Path([[u0, v0], [u1, v0], [u1, v1], [u0, v1]].map(([u, v]) => new THREE.Vector2(u, v))));
+  for (const [, u0, v0, u1, v1] of s.openings) shape.holes.push(new THREE.Path(quad(u0, v0, u1, v1)));
   const g = new THREE.ShapeGeometry(shape);
   const U = new THREE.Vector3(...s.u), V = new THREE.Vector3(...s.v), m = new THREE.Matrix4().makeBasis(U, V, new THREE.Vector3().crossVectors(U, V));
   m.setPosition(...s.o); g.applyMatrix4(m);
   const o = edged(g, s.kind === "wall" ? (s.role === "interior" ? COL.interior : COL.wall) : COL[s.kind]);
   for (const [kind, u0, v0, u1, v1] of s.openings) if (kind === "window") {
-    const pane = new THREE.ShapeGeometry(new THREE.Shape([[u0, v0], [u1, v0], [u1, v1], [u0, v1]].map(([u, v]) => new THREE.Vector2(u, v)))); pane.applyMatrix4(m);
+    const pane = new THREE.ShapeGeometry(new THREE.Shape(quad(u0, v0, u1, v1))); pane.applyMatrix4(m);
     o.add(new THREE.Mesh(pane, new THREE.MeshBasicMaterial({ color: "#7fb2d9", transparent: true, opacity: 0.55, side: THREE.DoubleSide })));
   }
   return o;
 }
 function load(i) {
   for (const g of Object.values(groups)) scene.remove(g);
-  const h = H[i]; groups = { raw: new THREE.Group(), roofs: new THREE.Group(), floors: new THREE.Group(), outer: new THREE.Group(), inner: new THREE.Group() };
+  const h = H[i]; groups = { raw: new THREE.Group(), roofs: new THREE.Group(), floors: new THREE.Group(), outer: new THREE.Group(), inner: new THREE.Group() }; parts = [];
   if (h.raw) {
     const pos = []; for (const k of h.raw.f) pos.push(h.raw.v[3 * k], h.raw.v[3 * k + 1], h.raw.v[3 * k + 2]);
     const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.computeVertexNormals();
     groups.raw.add(edged(g, "#9aa7b5", 0.55));
   }
   for (const s of h.surfaces || []) {
-    const o = surface(s); o.position.z = h.lift;
+    const o = surface(s); o.position.z = h.lift; parts.push([s, o]);
     groups[s.kind === "roof" ? "roofs" : s.kind === "wall" ? (s.role === "interior" ? "inner" : "outer") : "floors"].add(o);
   }
+  levels = [...new Set((h.surfaces || []).filter((s) => s.kind === "wall").map((s) => s.z))].sort((a, b) => a - b); storey = 0;
   for (const g of Object.values(groups)) scene.add(g);
-  const box = new THREE.Box3().setFromObject(h.raw ? groups.raw : groups.outer), c = box.getCenter(new THREE.Vector3()), d = box.getSize(new THREE.Vector3()).length();
-  ctl.target.copy(c); cam.position.set(c.x + d * 0.9, c.y - d * 1.1, c.z + d * 0.8);
-  document.getElementById("info").textContent = h.info; pick.value = i; apply(); if (typeof notes === "function") notes();
+  const box = new THREE.Box3().setFromObject(h.raw ? groups.raw : groups.outer); centre = box.getCenter(new THREE.Vector3()); reach = box.getSize(new THREE.Vector3()).length();
+  look(); $("info").textContent = h.info; pick.value = i; apply(); notes();
+}
+function look(top = false) {       // a corner view, or from above
+  const a = Math.PI / 4 + view * Math.PI / 2; ctl.target.copy(centre);
+  if (top) cam.position.set(centre.x, centre.y - 1, centre.z + reach * 1.7);
+  else cam.position.set(centre.x + Math.cos(a) * reach * 1.2, centre.y - Math.sin(a) * reach * 1.2, centre.z + reach * 0.8);
 }
 function apply() {
   groups.raw.visible = show.raw;
   for (const k of ["roofs", "floors", "outer", "inner"]) groups[k].visible = show.det && show[k];
-  for (const k of Object.keys(show)) document.getElementById(k).classList.toggle("on", show[k]);
+  for (const [s, o] of parts) o.visible = !storey || (s.kind === "wall" ? s.z === levels[storey - 1] : s.kind === "floor" && s.z === levels[storey - 1]);
+  for (const k of Object.keys(show)) $(k).classList.toggle("on", show[k]);
+  $("storey").firstChild.textContent = storey ? `Storey ${storey} of ${levels.length}` : "All storeys"; $("storey").classList.toggle("on", storey > 0);
 }
-const pick = document.getElementById("pick");
+const pick = $("pick");
 H.forEach((h, i) => pick.add(new Option(h.name, i)));
-pick.onchange = () => load(+pick.value);
-for (const k of Object.keys(show)) document.getElementById(k).onclick = () => { show[k] = !show[k]; apply(); };
+pick.onchange = () => { load(+pick.value); pick.blur(); };
+for (const k of Object.keys(show)) $(k).onclick = () => { show[k] = !show[k]; apply(); };
 const step = (n) => load((+pick.value + n + H.length) % H.length);
-document.getElementById("prev").onclick = () => step(-1); document.getElementById("next").onclick = () => step(1);
-addEventListener("keydown", (e) => { if (e.target.id === "note") return; if (e.key === "ArrowRight") step(1); if (e.key === "ArrowLeft") step(-1); });
-// The pen: marks drawn over the view, saved with a note as one picture for whoever fixes the problem.
-const ink = document.getElementById("ink"), ctx = ink.getContext("2d"), note = document.getElementById("note");
-let strokes = [], line = null, all = [];
+$("prev").onclick = () => step(-1); $("next").onclick = () => step(1);
+$("storey").onclick = () => { storey = (storey + 1) % (levels.length + 1); apply(); };
+addEventListener("resize", () => { cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); r.setSize(innerWidth, innerHeight); fit(); });
+
+// The pen: marks drawn over the view (Shift-drag, or with the pen on), saved with a comment as one note.
+const ink = $("ink"), ctx = ink.getContext("2d"), note = $("note");
+let strokes = [], line = null, penOn = false;
 function fit() { ink.width = innerWidth * devicePixelRatio; ink.height = innerHeight * devicePixelRatio; ink.style.width = innerWidth + "px"; ink.style.height = innerHeight + "px"; draw(); }
 function draw(c = ctx) {
   if (c === ctx) c.clearRect(0, 0, ink.width, ink.height);
   c.lineWidth = 3 * devicePixelRatio; c.strokeStyle = "#e0192d"; c.lineCap = c.lineJoin = "round";
   for (const pts of strokes) { c.beginPath(); pts.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y))); if (pts.length === 1) c.lineTo(pts[0][0] + 0.1, pts[0][1]); c.stroke(); }
 }
-function pen(on) { ink.classList.toggle("on", on); document.getElementById("pen").classList.toggle("on", on); ctl.enabled = !on; }
+function pen(on) { ink.classList.toggle("on", on); ctl.enabled = !on; }
 const at = (e) => [e.clientX * devicePixelRatio, e.clientY * devicePixelRatio];
 ink.onpointerdown = (e) => { line = [at(e)]; strokes.push(line); ink.setPointerCapture(e.pointerId); draw(); };
 ink.onpointermove = (e) => { if (line) { line.push(at(e)); draw(); } };
 ink.onpointerup = () => { line = null; };
-document.getElementById("pen").onclick = () => pen(!ink.classList.contains("on"));
-document.getElementById("undo").onclick = () => { strokes.pop(); draw(); };
-document.getElementById("clear").onclick = () => { strokes = []; draw(); };
-document.getElementById("save").onclick = () => {
+function flash(text) { const f = $("flash"); f.textContent = text; f.style.opacity = 1; setTimeout(() => (f.style.opacity = 0), 700); }
+function save() {
+  if (!strokes.length && !note.value) return flash("Nothing to save: mark or write first");
   r.render(scene, cam);
   const out = document.createElement("canvas"), band = 64 * devicePixelRatio; out.width = ink.width; out.height = ink.height + band;
   const c = out.getContext("2d"); c.fillStyle = "#fff"; c.fillRect(0, 0, out.width, out.height);
   c.drawImage(r.domElement, 0, 0, ink.width, ink.height); draw(c);
-  const h = H[+pick.value], layers = Object.keys(show).filter((k) => show[k]).join(", ");
+  const h = H[+pick.value], layers = Object.keys(show).filter((k) => show[k]).join(", ") + (storey ? `, storey ${storey}` : "");
   c.fillStyle = "#111"; c.font = `${15 * devicePixelRatio}px system-ui`;
   c.fillText(`${h.name} (${h.id || ""})  showing: ${layers}`, 12 * devicePixelRatio, ink.height + 24 * devicePixelRatio);
   c.font = `bold ${17 * devicePixelRatio}px system-ui`; c.fillText("Note: " + (note.value || "(none)"), 12 * devicePixelRatio, ink.height + 50 * devicePixelRatio);
   const body = { house: h.id, name: h.name, note: note.value, layers, camera: [...cam.position.toArray(), ...ctl.target.toArray()], png: out.toDataURL("image/png") };
   fetch("notes", { method: "POST", body: JSON.stringify(body) }).then(notes);
-  strokes = []; note.value = ""; draw(); pen(false);
-};
-addEventListener("resize", fit); fit();
-// The notes: every saved note of the house in view, with the fixer's reply; the list of houses counts the open ones.
+  strokes = []; note.value = ""; note.blur(); draw(); penOn = false; pen(false); flash("Note saved");
+}
+const verdict = (i) => all.some((x) => x.house === H[i].id && x.status === "ok") ? "ok" : all.some((x) => x.house === H[i].id && x.status === "open") ? "open" : "";
+function unreviewed() { for (let k = 1; k <= H.length; k++) { const i = (+pick.value + k) % H.length; if (!verdict(i)) return load(i); } flash("Every house is reviewed"); }
+async function good() {
+  const h = H[+pick.value];
+  await fetch("notes", { method: "POST", body: JSON.stringify({ house: h.id, name: h.name, note: "", status: "ok" }) });
+  await notes(); flash("Marked good"); unreviewed();
+}
+// The notes of the house in view, with the fixer's reply; the list of houses shows each one's standing.
 async function notes() {
   all = await (await fetch("notes")).json();
-  [...pick.options].forEach((o, i) => { const n = all.filter((x) => x.house === H[i].id && x.status !== "fixed").length; o.text = H[i].name + (n ? `  (${n})` : ""); });
-  const mine = all.filter((x) => x.house === H[+pick.value].id), el = document.getElementById("notes");
+  [...pick.options].forEach((o, i) => { const v = verdict(i), n = all.filter((x) => x.house === H[i].id && x.status === "open").length; o.text = (v === "ok" ? "✓ " : n ? `● ` : "   ") + H[i].name + (n ? `  (${n})` : ""); });
+  const mine = all.filter((x) => x.house === H[+pick.value].id && x.status !== "ok"), el = $("notes");
+  $("count").textContent = `${[...H.keys()].filter(verdict).length} of ${H.length} reviewed`;
+  $("verdict").textContent = verdict(+pick.value) === "ok" ? "✓ good" : ""; $("verdict").style.color = "#0a6b2d";
   el.classList.toggle("has", mine.length > 0);
   el.innerHTML = mine.map((x) => `<div class="n ${x.status}"><button data-del="${x.id}">Delete</button><button data-fix="${x.id}">${x.status === "fixed" ? "Reopen" : "Done"}</button>
     <small>${x.status}</small><img src="notes/${x.id}.png"><div>${x.note.replace(/</g, "&lt;") || "<small>no comment</small>"}</div>${x.reply ? `<div class="reply">${x.reply.replace(/</g, "&lt;")}</div>` : ""}</div>`).join("");
 }
-document.getElementById("notes").onclick = (e) => {
+$("notes").onclick = (e) => {
   const t = e.target;
   if (t.dataset.del) fetch("notes/" + t.dataset.del, { method: "DELETE" }).then(notes);
   if (t.dataset.fix) fetch("notes/" + t.dataset.fix, { method: "PUT", body: JSON.stringify({ status: t.textContent === "Done" ? "fixed" : "open" }) }).then(notes);
-  if (t.tagName === "IMG") { const b = document.getElementById("big"); b.firstChild.src = t.src; b.style.display = "flex"; }
+  if (t.tagName === "IMG") { $("big").firstChild.src = t.src; $("big").style.display = "flex"; }
 };
-document.getElementById("big").onclick = (e) => { e.currentTarget.style.display = "none"; };
-addEventListener("resize", () => { cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); r.setSize(innerWidth, innerHeight); });
-load(0);
+$("big").onclick = (e) => { e.currentTarget.style.display = "none"; };
+$("good").onclick = good; $("keys").onclick = () => $("help").classList.toggle("on");
+const KEYS = {
+  ArrowRight: () => step(1), ArrowLeft: () => step(-1), k: () => step(1), j: () => step(-1), n: unreviewed, g: good,
+  1: () => { show.raw = !show.raw; apply(); }, 2: () => { show.det = !show.det; apply(); },
+  r: () => { show.roofs = !show.roofs; apply(); }, f: () => { show.floors = !show.floors; apply(); }, o: () => { show.outer = !show.outer; apply(); }, i: () => { show.inner = !show.inner; apply(); },
+  "]": () => { storey = Math.min(levels.length, storey + 1); apply(); }, "[": () => { storey = Math.max(0, storey - 1); apply(); }, 0: () => { storey = 0; apply(); },
+  v: () => { view = (view + 1) % 4; look(); }, t: () => look(true),
+  p: () => { penOn = !penOn; pen(penOn); flash(penOn ? "Pen on" : "Pen off"); }, z: () => { strokes.pop(); draw(); }, c: () => { strokes = []; draw(); },
+  s: save, Enter: () => note.focus(), "?": () => $("help").classList.toggle("on"),
+};
+addEventListener("keydown", (e) => {
+  if (e.target === note) { if (e.key === "Enter") save(); if (e.key === "Escape") note.blur(); return; }
+  if (e.key === "Shift") return pen(true);
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const run = KEYS[e.key] || KEYS[e.key.toLowerCase()];
+  if (run) { e.preventDefault(); run(); }
+});
+addEventListener("keyup", (e) => { if (e.key === "Shift" && !penOn) pen(false); });
+fit(); load(0);
 (function loop() { ctl.update(); r.render(scene, cam); requestAnimationFrame(loop); })();
 </script>

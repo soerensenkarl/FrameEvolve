@@ -195,6 +195,9 @@ def eave(m: Mass, others: list[Mass]) -> float:
     """The height a mass's walls reach: the middle, by length, of its level free edges that the roof rises from;
     for a flat roof, the roof; under a steep face (a mansard's side), that face's top: it walls a storey in."""
     levels = []
+    largest = max(m.faces, key=lambda f: f.shape.area)
+    if largest.slope < FLAT:              # a flat roof, whatever parapet stands around it
+        return largest.z(*largest.shape.representative_point().coords[0])
     for f in m.faces:
         if f.slope < FLAT:
             levels.append((f.z(*f.shape.representative_point().coords[0]), f.shape.length))

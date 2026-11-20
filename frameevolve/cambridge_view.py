@@ -2,7 +2,8 @@
 
 `python -m frameevolve.cambridge_view [count]` details a spread of houses (by roof type) and serves the page at
 http://localhost:8770, built afresh on every load. On the page a pen marks what is wrong; each note is saved in
-data/cambridge/notes as a picture (the view with the marks) and a JSON file (house, comment, status, reply).
+data/cambridge/notes as a picture (the view with the marks) and a JSON file (house, comment, status, reply); a
+house passed as good is a note with status "ok" and no picture. The page's keys are listed under "?".
 """
 from __future__ import annotations
 
@@ -43,7 +44,8 @@ def surfaces(house) -> list[dict]:
     out = []
     for x in house.surfaces:
         kind = "roof" if x.role == "roof" else x.role if x in house.floors else "wall"
-        out.append({"id": x.id, "kind": kind, "role": x.role, "o": x.origin, "u": x.eu, "v": x.ev,
+        z = x.base if kind == "wall" else x.z if kind in ("floor", "ceiling") else None
+        out.append({"id": x.id, "kind": kind, "role": x.role, "z": z, "o": x.origin, "u": x.eu, "v": x.ev,
                     "outline": [list(p) for p in x.outline_uv],
                     "openings": [[o.kind, o.u0, o.v0, o.u1, o.v1] for o in x.openings]})
     return out
@@ -114,8 +116,9 @@ def serve(count: int) -> None:
         def do_POST(self):
             d = self.body()
             name = f"{time.strftime('%Y%m%d-%H%M%S')}-{d['house']}"
-            (NOTES / f"{name}.png").write_bytes(base64.b64decode(d.pop("png").split(",", 1)[1]))
-            (NOTES / f"{name}.json").write_text(json.dumps({"id": name, **d, "status": "open", "reply": ""}, indent=1))
+            if d.get("png"):
+                (NOTES / f"{name}.png").write_bytes(base64.b64decode(d.pop("png").split(",", 1)[1]))
+            (NOTES / f"{name}.json").write_text(json.dumps({"id": name, "status": "open", "reply": "", **d}, indent=1))
             self.send(b"{}")
 
         def do_PUT(self):
