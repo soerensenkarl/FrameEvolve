@@ -115,13 +115,27 @@ function bindViewInput(canvas) {
     const mark = st.view === "faults" ? ray.intersectObjects(markGroup.children.filter((x) => x.visible), false)[0] : null;
     if (!clickMember(id, mark?.object.userData.fault)) select(id ? { kind: "member", id } : null);   // the panels, assembly and faults views take a click themselves
   });
-  // the wheel (and a trackpad's two-finger scroll or pinch) zooms at the cursor; Shift pans
+  // a mouse wheel zooms at the cursor; on a trackpad two fingers orbit and a pinch zooms; Shift pans.
+  // Telling them apart: a trackpad sends whole pixels, and its legacy wheelDelta is exactly -3 times them; a mouse
+  // wheel sends lines, fractions of a pixel, or a wheelDelta in steps of 120. A gesture keeps what it was until
+  // it rests, so a trackpad's momentum is never read as a wheel.
+  let gesture = null, lastWheel = 0;
+  const precise = (d, legacy) => d === 0 || (Number.isInteger(d) && (legacy === undefined || legacy === -3 * d));
+  const fromTrackpad = (e) => {
+    const now = performance.now();
+    if (!gesture || now - lastWheel > 250)
+      gesture = e.deltaMode === 0 && precise(e.deltaY, e.wheelDeltaY) && precise(e.deltaX, e.wheelDeltaX) ? "pad" : "mouse";
+    lastWheel = now;
+    return gesture === "pad";
+  };
   canvas.addEventListener("wheel", (e) => {
     e.preventDefault();
     const px = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1;
     const dx = e.deltaX * px, dy = e.deltaY * px;
-    if (e.shiftKey) panBy(dx, dy);
-    else if (dy) zoomAt(Math.exp(Math.sign(dy) * Math.min(0.25, Math.abs(dy) * (e.ctrlKey ? 0.01 : 0.004))), e);
+    if (e.ctrlKey) zoomAt(Math.exp(dy * 0.01), e);                       // pinch
+    else if (e.shiftKey) panBy(dx, dy);
+    else if (fromTrackpad(e)) orbitBy(dx * 0.006, dy * 0.006);
+    else if (dy) zoomAt(Math.exp(Math.sign(dy) * Math.min(0.25, Math.max(0.1, Math.abs(dy) * 0.0015))), e);   // a notch: 10 to 25%
     controls.update();
   }, { passive: false });
 }
@@ -221,6 +235,17 @@ function measureClick(e) {
 }
 
 // ---------------------------------------------------------------- the camera
+
+function orbitBy(dAz, dPol) {
+  const off = camera.position.clone().sub(controls.target);
+  const r = off.length();
+  let az = Math.atan2(off.y, off.x), pol = Math.acos(THREE.MathUtils.clamp(off.z / r, -1, 1));
+  az += dAz;
+  pol = THREE.MathUtils.clamp(pol + dPol, 0.02, Math.PI - 0.02);
+  off.set(r * Math.sin(pol) * Math.cos(az), r * Math.sin(pol) * Math.sin(az), r * Math.cos(pol));
+  camera.position.copy(controls.target).add(off);
+  camera.lookAt(controls.target);
+}
 
 function panBy(dx, dy) {
   const el = renderer.domElement;
