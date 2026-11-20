@@ -9,7 +9,7 @@ only one with nothing wrong belongs in a dataset. The checks are of the design, 
              under the wall's top
   rooms      every room of a storey can be reached, through doors, from outside or from the stair
   stair      a house of more than one storey has a stair opening in every floor
-  roof       there is a roof over all of it; no bearing wall or partition stands through the roof over it
+  roof       there is a roof over all of it and none runs out beyond the walls; no bearing wall or partition stands through the roof over it
   loads      all the load on the surfaces comes down to the ground (loads.py)
 
 `framing=True` adds whether the seed grammar frames it without a rule error. That is kept apart: the seed is
@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from shapely.geometry import LineString, Polygon
+from shapely.geometry import LineString, Point, Polygon
 from shapely.ops import polygonize, unary_union
 
 from frameevolve.builder import build
@@ -85,6 +85,10 @@ def problems(house: House, framing: bool = False) -> list[str]:
         bare = plan.difference(roofs).area / 144
         if bare > 3:
             out.append(f"roof: {bare:.0f} sq ft of the house has no roof over it")
+        hull = unary_union([Point(p) for w in house.walls for p in (w.start, w.end)]).convex_hull
+        beyond = max(Point(r.world(u, v, 0)[:2]).distance(hull) for r in house.roofs for u, v in r.outline)
+        if beyond > 30:
+            out.append(f"roof: a roof plane runs {beyond / 12:.0f} ft out beyond the walls")
     try:
         td = Takedown(house)
         lost = sum(l.sum for _, l, _ in td.lost) / td.applied.sum

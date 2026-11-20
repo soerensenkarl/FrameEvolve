@@ -6,11 +6,11 @@ From those, with a seeded random choice wherever a real house could differ:
   levels     a storey height by the house's age, as many storeys as the record says, and what is left of the
              main mass's height over the ground taken off as foundation; each mass gets the storeys its own
              eave reaches
-  roofs      every roof face a roof plane, its eave edges pushed out for an overhang
+  roofs      every roof face a roof plane, ending where its walls stand (no overhang: an eave is the framer's)
   walls      each storey's walls along the outline of every mass that reaches it: exterior where nothing or a
              lower roof is beyond, a junction wall where another mass's rooms are; none where the mass only
              stands on another's roof (a mansard's top) and is not yet clear of it. A top wall follows the
-             roof, a raised heel under the plane at an eave
+             roof and reaches its plane
   floors     a floor at every level over the masses that reach it, a ceiling over masses that top out together
   inside     bearing walls so no floor spans too far, partitions between them clear of the windows, a stair
              through every floor
@@ -40,10 +40,11 @@ from shapely.geometry import LineString, Point, Polygon, box
 from shapely.geometry.polygon import orient
 from shapely.ops import polygonize, unary_union
 
-from frameevolve.envelope import FLAT, Envelope, Face, Mass, eave, foot, free, grounded
-from frameevolve.houses import EAVE, HEAD, HEEL, SPAN, plane
+from frameevolve.envelope import FLAT, Envelope, Face, Mass, eave, foot, grounded
+from frameevolve.houses import HEAD, SPAN, plane
 from frameevolve.model import Floor, House, Opening, Wall
 
+HEEL = 0.0          # walls reach the roof plane: how deep the roof's framing is, and how it sits on the wall, is the framer's
 JOISTS = 10.875     # a floor's depth with its subfloor: a level less a wall's height
 PLATES = (97.125, 109.125, 85.125)   # wall heights: 8 and 9 ft (precut studs), and the 7 ft of low old houses
 KNEE = 24.0         # a wall lower than this is not built: the roof comes down to the floor
@@ -152,7 +153,7 @@ def detail(env: Envelope, record: dict, seed: int = 0, name: str = "", brief: di
             clean = max(getattr(clean, "geoms", [clean]), key=lambda g: g.area)
             if not clean.is_empty and clean.area > 144:
                 f.shape = Polygon(clean.exterior).simplify(0.05)
-                house.roofs.append(roof(f"r{len(house.roofs) + 1}", f, m, ms))
+                house.roofs.append(roof(f"r{len(house.roofs) + 1}", f))
     core = rooms[id(ms[0])]               # the stair goes where every floor is
     for f in house.floors:
         if f.role == "floor" and len(f.id) == 2:
@@ -430,47 +431,12 @@ def ceilings(house: House, ms: list[Mass], E, n, level: float, attic: str, main_
             taken = unary_union([taken, piece])
 
 
-def roof(rid: str, f: Face, m: Mass, ms: list[Mass]):
-    """A roof face as a roof plane, its eave edges pushed out by the overhang: the edges beside them run on to
-    the new eave line."""
+def roof(rid: str, f: Face) -> "Roof":
+    """A roof face as a roof plane, ending where its walls stand: no overhang (an eave is the framer's to add)."""
     pts = list(orient(f.shape, 1.0).exterior.coords)[:-1]
-    if f.slope >= FLAT:
-        gx, gy = f.a / f.slope, f.b / f.slope
-        push = []
-        for a, b in zip(pts, pts[1:] + pts[:1]):
-            L = math.dist(a, b)
-            out = ((b[1] - a[1]) / L, -(b[0] - a[0]) / L) if L > 1e-6 else (0, 0)
-            is_eave = L > 12 and out[0] * gx + out[1] * gy < -0.98 and free(f, a, b, m)
-            if is_eave:                    # not where the roof ends against a higher mass's wall
-                p = Point((a[0] + b[0]) / 2 + 6 * out[0], (a[1] + b[1]) / 2 + 6 * out[1])
-                is_eave = not any(o is not m and o.shape.contains(p) and o.z(p.x, p.y) > f.z(p.x, p.y) + 6 for o in ms)
-            push.append(EAVE if is_eave else 0.0)
-        pts = offset(pts, push)
     e = (f.b / f.slope, -f.a / f.slope) if f.slope > 1e-9 else (1.0, 0.0)      # along the eave, the roof rising to its left
     low = min(pts, key=lambda p: f.z(*p))
     return plane(rid, low, (low[0] + e[0], low[1] + e[1]), f.z(*low), f.slope * 12, pts)
-
-
-def offset(pts: list, push: list) -> list:
-    """A polygon with each edge moved out by its own distance: corners go to where the moved edges meet."""
-    n = len(pts)
-    lines = []
-    for i in range(n):
-        a, b = pts[i], pts[(i + 1) % n]
-        L = math.dist(a, b) or 1.0
-        ox, oy = (b[1] - a[1]) / L * push[i], -(b[0] - a[0]) / L * push[i]
-        lines.append(((a[0] + ox, a[1] + oy), (b[0] + ox, b[1] + oy)))
-    out = []
-    for i in range(n):
-        (p, q), (r, s) = lines[i - 1], lines[i]
-        d1, d2 = (q[0] - p[0], q[1] - p[1]), (s[0] - r[0], s[1] - r[1])
-        den = d1[0] * d2[1] - d1[1] * d2[0]
-        if abs(den) < 0.05 * math.hypot(*d1) * math.hypot(*d2):      # the two run on in one line
-            out += [q, r] if math.dist(q, r) > 0.01 else [r]
-            continue
-        t = ((r[0] - p[0]) * d2[1] - (r[1] - p[1]) * d2[0]) / den
-        out.append((p[0] + t * d1[0], p[1] + t * d1[1]))
-    return out
 
 
 def scan(shape: Polygon, c: float, along_x: bool) -> list[tuple]:

@@ -3,7 +3,8 @@
 The city publishes a photo mesh (an Esri I3S integrated mesh: one textured skin over everything, from aerial
 photos). It is too soft to measure openings from, but good enough to count them and say roughly where they are.
 For a detailed house, the mesh around it is brought into the house's coordinates and drawn square to each side
-(south, east, north, west: seen from -y, +x, +y, -x), nearest surface first, with a ruler from 0 to 1 along the
+(south, east, north, west: seen from -y, +x, +y, -x), nearest surface first and nothing that stands more than 18 in. in front of the house's wall there (trees, cars,
+the neighbour), with a ruler from 0 to 1 along the
 side and a line at every floor: a brief gives openings by storey and place on that ruler (detail.py).
 
 Pictures and a meta.json go to data/cambridge/evidence/<model>; mesh pieces are cached in data/cambridge/mesh.
@@ -32,7 +33,7 @@ FOOT = 0.3048006096          # a US survey foot, metres: the building models are
 SIDES = {"south": (0, -1), "east": (1, 0), "north": (0, 1), "west": (-1, 0)}     # the way each side faces
 PX = 1.0                     # inches a pixel
 DATUM = 38.5                 # the mesh stands this much higher than the models (inches): measured at ten roofs, 3.2 ft
-FRONT = 60.0                 # what stands within this of the house's near side is drawn: a porch, not the street's trees
+FRONT = 18.0                 # what stands further than this in front of the house's wall there is left out: trees, cars, the neighbour
 
 
 def get(path: str) -> bytes:
@@ -112,10 +113,17 @@ def side_photo(house, side: str, P, UV, T, textures) -> Image.Image:
     top = max(w.base + max(v for _, v in w.outline_uv) for w in walls) + 60
     low = -house.foundation - 24
     depth = [p[0] * d[0] + p[1] * d[1] for w in walls for p in (w.start, w.end)]
-    m = 24.0
+    m = 12.0
     W, H = int((r1 - r0 + 2 * m) / PX), int((top - low) / PX)
     pu, pv, pd = (P @ right - r0 + m) / PX, (P[..., 2] - low) / PX, P @ d
-    ok = (pu.max(1) > 0) & (pu.min(1) < W) & (pv.max(1) > 0) & (pv.min(1) < H) & (pd.min(1) > min(depth) - 12) & (pd.max(1) < max(depth) + FRONT)
+    limit = np.full(W, -1e9)                          # for each column of the picture, how near the viewer a surface may be
+    for w in walls:
+        a, b = sorted(((w.start[0] * right[0] + w.start[1] * right[1]) - r0 + m, (w.end[0] * right[0] + w.end[1] * right[1]) - r0 + m))
+        x0, x1 = max(0, int(a / PX) - 2), min(W, int(b / PX) + 3)
+        if x1 > x0:
+            limit[x0:x1] = np.maximum(limit[x0:x1], max(w.start[0] * d[0] + w.start[1] * d[1], w.end[0] * d[0] + w.end[1] * d[1]) + FRONT)
+    limit[limit < -1e8] = min(depth)                  # beside the house: nothing
+    ok = (pu.max(1) > 0) & (pu.min(1) < W) & (pv.max(1) > 0) & (pv.min(1) < H) & (pd.min(1) > min(depth) - 12) & (pd.min(1) < max(depth) + FRONT)
     img = np.full((H, W, 3), 235, np.uint8)
     near = np.full((H, W), -1e9)
     for k in np.nonzero(ok)[0]:
@@ -129,7 +137,7 @@ def side_photo(house, side: str, P, UV, T, textures) -> Image.Image:
         l1 = ((b[2] - b[0]) * (X - a[2]) + (a[0] - a[2]) * (Y - b[2])) / den
         l2 = 1 - l0 - l1
         z = l0 * pd[k, 0] + l1 * pd[k, 1] + l2 * pd[k, 2]
-        hit = (l0 >= -1e-3) & (l1 >= -1e-3) & (l2 >= -1e-3) & (z > near[y0:y1, x0:x1])
+        hit = (l0 >= -1e-3) & (l1 >= -1e-3) & (l2 >= -1e-3) & (z > near[y0:y1, x0:x1]) & (z < limit[None, x0:x1])
         if not hit.any():
             continue
         tex = textures[T[k]]

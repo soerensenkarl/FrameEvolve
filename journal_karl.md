@@ -703,3 +703,20 @@ what is wrong by marking it, so faults are fixed in the rules and checked again 
   (walls stop 9 in. under the roof plane, where rafters sit); I had answered the first with that explanation and
   he reopened it. The page now draws a roof with its framing depth, so nothing shows as air; the data is as
   before. Number keys now reset the layers and the storey filter.
+
+## 2026-11-20: thin roofs that end at the walls; photos cropped to the house
+
+- Karl, on the roofs: a roof is a thin surface, its depth is the framer's to decide, and the eaves must be
+  clean. So the detailer no longer bakes framing into the envelope: walls reach the roof plane (no raised heel
+  left under it), and a roof plane ends where its walls stand (no overhang pushed out). The pushed-out overhang
+  was also what made eaves untidy: where two eaves met at unequal pitches the edges ran on past each other, and
+  on a mansard a near-parallel pair of lines sent one corner 30 ft out (100 Oxford St). An eave, if wanted, is
+  to be added as geometry of its own, cleanly; not done. I had first drawn roofs with a depth on the page to
+  close the gap Karl saw under them; that was the wrong fix and is taken out.
+- check.py gains: no roof plane runs more than 30 in. out beyond the walls.
+- The side photos leave out whatever stands more than 18 in. in front of the house's own wall at that place
+  (trees, cars, the neighbour), column by column, and are cropped closer.
+- After these: 13 of 20 valid, 184 of 300 (61%). Among the 300 failing: loads 86, walls 24, rooms 16, stair 8,
+  roof 7, crash 7, standing 1. The five briefed houses: four valid as before; 22 Arlington St (mansard) now has
+  its set-back top storey's walls crossing partitions, a fault this change brought out and not yet fixed.
+- Review page: view 3 keeps the floors solid with the inside walls.
