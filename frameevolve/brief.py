@@ -93,7 +93,8 @@ def main(model: str, with_photos: bool = False) -> None:
           f"{record.get('exterior_rooftype')} roof, built {record.get('condition_yearbuilt')}")
     print(f"floors at {[round((b + house.foundation) / 12, 1) for b in levels]} ft over the ground; "
           f"top of the highest wall {max((w.base + max(v for _, v in w.outline_uv) + house.foundation) / 12 for w in outer):.1f} ft")
-    print(f"openings outside: {sum(len(w.openings) for w in outer)} placed" + (f", {asked} in the brief" if brief else " (no brief)"))
+    print(f"openings outside: {sum(len(w.openings) for w in outer)} in all" +
+          (f"; of the brief's {asked}, {house.placed} placed (the rest of those in all are made up where the brief was silent)" if brief else " (no brief)"))
     for side, d in photos.SIDES.items():
         rows = {}
         for w in outer:

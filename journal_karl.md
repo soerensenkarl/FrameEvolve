@@ -621,3 +621,41 @@ what is wrong by marking it, so faults are fixed in the rules and checked again 
   and answered on the page.
 - Not tested by Claude in a browser (no browser at hand in the session): the server is tested with requests,
   the page by Karl's use of it.
+
+## 2026-11-20: five houses briefed by agents from their photos
+
+- Method: one Claude Opus agent a house (medium effort, run in parallel from the session), given the assessor's
+  record, the four side photos, the brief format (brief.py's docstring) and a tool to try its brief:
+  `uv run python -m frameevolve.brief <model>` details the house from the brief, prints the floors, how many of
+  the brief's openings were placed, each that was not and why, and check.py's verdict, and draws each side of the
+  result on the photo's ruler (detailed_<side>.png) to hold against the photo. An agent took 1 to 4 minutes and
+  49,000 to 80,000 tokens.
+- Result (after the fixes below):
+
+  | house | floors read (ft over the ground) | brief's openings placed | valid |
+  |---|---|---|---|
+  | 95 Columbia St, three-decker, flat | 3.5, 13.3, 23.0 | 48 of 50 | yes |
+  | 25 Grozier Rd, two-family, gable | 2.5, 11.8, 21.0 | 31 of 33 | yes |
+  | 337 Huron Ave, two-family, gambrel | 3.5, 14.0, 23.0 | 24 of 25 | yes |
+  | 5 Fainwood Cir, single, hip | 4.5, 14.0 | 25 of 27 | yes |
+  | 22 Arlington St, single, mansard | 6.5, 16.5, 27.5 | 34 of 34 | no: 4% of the ceiling's load reaches no wall |
+
+- What the photos settled that the procedure had wrong: every one of the five stands on a raised basement
+  (ground floor 2.5 to 6.5 ft over the ground; the procedure's guess was 0 to 2 ft); the mansard has three
+  storeys, as the assessor says, not the four the procedure made of its height.
+- What the agents' reports made me fix in the tool: an opening that fell on no wall was dropped without a word;
+  the count of placed openings included ones the detailer made up; an opening was given to the wall nearest the
+  viewer whatever its storey, so windows over a lower wing or on a set-back storey were lost, as were those on a
+  bay's angled faces. Now an opening goes to the wall of its own storey nearest the viewer, walls up to 60
+  degrees askew included; one on a wall too short for the usual margins (a bay's face) sits in its middle; every
+  miss is listed with its reason. Also: an eave wall under a hip's corner had a saw-toothed top (the raised heel
+  was applied face by face).
+- Limits the agents named: a tree or a smear hides part of a side, and the brief cannot say "seen on half of this
+  side" (a listed storey means no openings where none are listed); dormers are taken off the envelope, so a
+  dormer's window has no wall; the floors are built at one even storey height, so a floor read at 14.0 ft may be
+  built at 13.2; the mesh shows the far side through a hole now and then.
+- The review page now builds each load with a fresh Python (a reload shows the code and briefs as they are),
+  and gives bearing walls inside a slight warm tint.
+- Karl, on what the set must be: buildable first; then, taken together, covering the design situations of
+  houses: bearing walls, beams over long spans, posts, large windows, rooms of double height, top-floor rooms
+  open to the roof, lofts. Not every house has each; the collection must.

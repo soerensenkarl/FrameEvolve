@@ -1,7 +1,8 @@
 """A page to look at Cambridge houses in 3D: each as the city's model and as the detailed House, one over the other.
 
 `python -m frameevolve.cambridge_view [count]` details a spread of houses (by roof type) and serves the page at
-http://localhost:8770, built afresh on every load. On the page a pen marks what is wrong; each note is saved in
+http://localhost:8770, built afresh by a new Python on every load: a reload shows the code and the briefs as
+they are now, with no restart. On the page a pen marks what is wrong; each note is saved in
 data/cambridge/notes as a picture (the view with the marks) and a JSON file (house, comment, status, reply); a
 house passed as good is a note with status "ok" and no picture. The page's keys are listed under "?".
 """
@@ -10,6 +11,7 @@ from __future__ import annotations
 import base64
 import json
 import random
+import subprocess
 import sys
 import time
 import traceback
@@ -113,8 +115,9 @@ def serve(count: int) -> None:
             return NOTES / (Path(self.path).stem + ".json")       # the name only: nothing outside the notes folder
 
         def do_GET(self):
-            if self.path in ("/", "/index.html"):
-                self.send(build(count).encode(), "text/html; charset=utf-8")
+            if self.path in ("/", "/index.html"):       # built by a fresh Python, so the page is the code as it is now
+                page = subprocess.run([sys.executable, "-m", "frameevolve.cambridge_view", "--build", str(count)], cwd=ROOT, capture_output=True)
+                self.send(page.stdout or b"<pre>" + page.stderr, "text/html; charset=utf-8")
             elif self.path == "/notes":
                 self.send(json.dumps(notes()).encode())
             elif self.path.startswith("/evidence/") and self.path.endswith(".jpg"):
@@ -151,4 +154,7 @@ def serve(count: int) -> None:
 
 
 if __name__ == "__main__":
-    serve(int(sys.argv[1]) if len(sys.argv) > 1 else 20)
+    if sys.argv[1:2] == ["--build"]:
+        sys.stdout.write(build(int(sys.argv[2])))
+    else:
+        serve(int(sys.argv[1]) if len(sys.argv) > 1 else 20)

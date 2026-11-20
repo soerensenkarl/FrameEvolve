@@ -56,7 +56,6 @@ class Run:
     b: tuple
     spans: list = field(default_factory=list)      # (t0, t1, the mass beyond or None)
     columns: list = field(default_factory=list)
-    seen: dict | None = None                        # from a brief: storey -> [(t, kind, width, height)]
 
     @property
     def length(self) -> float:
@@ -122,6 +121,7 @@ def detail(env: Envelope, record: dict, seed: int = 0, name: str = "", brief: di
     house.foundation = cut            # how far the ground lies under the ground floor
     house.stair = None
     house.missed = []                 # openings a brief saw that found no place
+    house.placed = 0                  # and how many of its openings did
     runs = {id(m): outline_runs(m, ms, style, rooms[id(m)]) for m in ms}
     briefed(brief, [r for rs in runs.values() for r in rs])
     top_storey = max(n.values())
@@ -162,7 +162,7 @@ def detail(env: Envelope, record: dict, seed: int = 0, name: str = "", brief: di
                 x0, y0, x1, y1 = stair.bounds
                 (u0, v0, _), (u1, v1, _) = f.local((x0, y0, f.z)), f.local((x1, y1, f.z))
                 f.openings.append(Opening(f"{f.id}o0", "stair", min(u0, u1), max(u0, u1), min(v0, v1), max(v0, v1)))
-    openings(rng, house, style, level, bool(brief.get("sides")))
+    openings(rng, house, style, level, brief.get("sides") or {})
     house.link()
     for k in range(1, top_storey + 1):
         connect(house, (k - 1) * level, stair if k > 1 else None)
@@ -268,31 +268,21 @@ SIDES = {"south": (0, -1), "east": (1, 0), "north": (0, 1), "west": (-1, 0)}    
 
 
 def briefed(brief: dict, runs: list[Run]) -> None:
-    """Hand a brief's openings to the runs they are on: a side's ruler runs from the house's left end to its
-    right as seen from outside; an opening belongs to the run facing that side that is nearest the viewer there.
-    Such a run's window places are the brief's, so partitions keep clear of them."""
+    """Give the runs facing a briefed side the brief's window places (of every storey), so that partitions keep
+    clear of where the windows will be."""
     for side, storeys in (brief.get("sides") or {}).items():
         if not storeys:
             continue
         d = SIDES[side]
         along = lambda p: -d[1] * p[0] + d[0] * p[1]
-        facing = [r for r in runs if -(r.inward[0] * d[0] + r.inward[1] * d[1]) > 0.9]
         ends = [along(p) for r in runs for p in (r.a, r.b)]
         r0, r1 = min(ends), max(ends)
-        for run in facing:
-            run.seen, run.columns = {}, []
-        for storey, items in storeys.items():
-            for item in items or []:
-                c = r0 + float(item["at"]) * (r1 - r0)
-                over = [r for r in facing if min(along(r.a), along(r.b)) - 1 <= c <= max(along(r.a), along(r.b)) + 1]
-                if not over:
-                    continue
-                run = max(over, key=lambda r: r.a[0] * d[0] + r.a[1] * d[1])
-                t = abs(c - along(run.a))
-                run.seen.setdefault(int(storey), []).append((t, item.get("kind", "window"), item.get("w"), item.get("h")))
-                run.columns.append(t)
-            for run in facing:
-                run.seen.setdefault(int(storey), [])
+        for run in runs:
+            if -(run.inward[0] * d[0] + run.inward[1] * d[1]) <= 0.5:
+                continue
+            a, b = along(run.a), along(run.b)
+            run.columns = sorted({round(abs(r0 + float(i["at"]) * (r1 - r0) - a) / abs(b - a) * run.length, 1) for items in storeys.values()
+                                  for i in items or [] if min(a, b) <= r0 + float(i["at"]) * (r1 - r0) <= max(a, b)}) if abs(b - a) > 1 else []
 
 
 def top_at(run: Run, t: float, side: float = 0.0) -> float:
@@ -305,7 +295,7 @@ def top_at(run: Run, t: float, side: float = 0.0) -> float:
     p = Point(run.at(t, 1.5))
     f = min(m.faces, key=lambda f: f.shape.distance(p))
     z = f.z(x, y)
-    if f.slope < FLAT or (f.a * n[0] + f.b * n[1]) / f.slope > 0.98:
+    if f.slope < FLAT or (f.a * n[0] + f.b * n[1]) / f.slope > 0.3:      # the roof rises from this wall, square or askew (a hip's corner)
         return z - HEEL
     return z
 
@@ -633,7 +623,7 @@ def clear(w: Wall, u0: float, u1: float, v1: float, margin: float = 12.0, tee: f
         return False
     if any(u0 - tee < t.u < u1 + tee for t in w.tees):
         return False
-    return top_over(w, u0, u1) >= v1 + 9
+    return top_over(w, u0, u1) >= v1 + 8.5
 
 
 def cut(w: Wall, kind: str, u0: float, width: float, v0: float, v1: float, **how) -> bool:
@@ -645,29 +635,51 @@ def cut(w: Wall, kind: str, u0: float, width: float, v0: float, v1: float, **how
     return True
 
 
-def openings(rng, house: House, style: Style, level: float, briefed_: bool = False) -> None:
+def openings(rng, house: House, style: Style, level: float, sides: dict) -> None:
     """Windows at each run's columns, the same columns on every storey, lower where a wall is low; a front and
     a back door; a window in a tall gable; a door or two in each wall inside. Where a brief saw a storey of a
-    run, its openings are placed instead, each moved a little if it must to clear the walls that meet the wall."""
+    side, its openings are placed instead: each on the wall of that storey nearest the viewer there, moved a
+    little if it must to clear the walls that meet the wall."""
     outer = [w for w in house.walls if w.role == "exterior"]
-    seen = lambda w: None if w.run.seen is None else w.run.seen.get(round(w.base / level) + 1)
-    for w in outer:
-        for t, kind, ww, hh in sorted(seen(w) or []):
-            u = t - w.t0
-            if not 0 < u < w.length:
-                continue
-            ww = float(ww or (36 if kind == "door" else style.width))
-            for shift in (0, 6, -6, 12, -12, 18, -18, 24, -24, 30, -30):
-                if kind == "door":
-                    if cut(w, "door", u + shift - ww / 2, ww, 0.0, min(HEAD, top_over(w, u + shift - ww / 2, u + shift + ww / 2) - 9)):
-                        break
+    storey = lambda w: round(w.base / level) + 1
+    faces = lambda w, d: -(w.normal[0] * d[0] + w.normal[1] * d[1])
+    side_of = lambda w: max(SIDES, key=lambda s: faces(w, SIDES[s]))
+    seen = lambda w: (sides.get(side_of(w)) or {}).get(str(storey(w)))      # None: the brief is silent on this wall
+    briefed_ = any(sides.values())
+    for side, storeys in sides.items():
+        d = SIDES[side]
+        along = lambda p: -d[1] * p[0] + d[0] * p[1]
+        ends = [along(p) for w in outer for p in (w.start, w.end)]
+        r0, r1 = min(ends), max(ends)
+        for k, items in (storeys or {}).items():
+            for item in items or []:
+                kind, c = item.get("kind", "window"), r0 + float(item["at"]) * (r1 - r0)
+                over = [w for w in outer if storey(w) == int(k) and faces(w, d) > 0.5
+                        and min(along(w.start), along(w.end)) - 1 <= c <= max(along(w.start), along(w.end)) + 1]
+                if not over:
+                    house.missed.append(f"{kind} at {item['at']} on the {side} side, storey {k}: no wall of that storey faces the side there")
+                    continue
+                part = lambda w: (c - along(w.start)) / (along(w.end) - along(w.start))
+                depth = lambda w: (w.start[0] + part(w) * (w.end[0] - w.start[0])) * d[0] + (w.start[1] + part(w) * (w.end[1] - w.start[1])) * d[1]
+                w = max(over, key=depth)
+                u = min(max(part(w), 0.0), 1.0) * w.length
+                ww = float(item.get("w") or (36 if kind == "door" else style.width))
+                how = {}
+                if w.length < ww + 26:            # a short wall (a bay's face): the opening in its middle, studs to each side
+                    ww, u, how = min(ww, w.length - 12), w.length / 2, {"margin": 4.5}
+                for shift in (0, 6, -6, 12, -12, 18, -18, 24, -24, 30, -30) if not how else (0,):
+                    if kind == "door":
+                        if ww >= 24 and cut(w, "door", u + shift - ww / 2, ww, 0.0, min(HEAD, top_over(w, u + shift - ww / 2, u + shift + ww / 2) - 9), **how):
+                            house.placed += 1
+                            break
+                    else:
+                        head = min(style.head, top_over(w, u + shift - ww / 2, u + shift + ww / 2) - 9)
+                        high = min(float(item.get("h") or style.height), head - 20)
+                        if ww >= 16 and high >= 22 and cut(w, "window", u + shift - ww / 2, ww, head - high, head, **how):
+                            house.placed += 1
+                            break
                 else:
-                    head = min(style.head, top_over(w, u + shift - ww / 2, u + shift + ww / 2) - 9)
-                    high = min(float(hh or style.height), head - 20)
-                    if high >= 22 and cut(w, "window", u + shift - ww / 2, ww, head - high, head):
-                        break
-            else:
-                house.missed.append(f"{kind} at {u:.0f} in. on {w.id}")
+                    house.missed.append(f"{kind} at {item['at']} on the {side} side, storey {k}: no clear place on wall {w.id} ({w.length:.0f} in. long, {top_over(w, 0, w.length):.0f} high)")
     ground = [w for w in outer if w.base == 0 and w.length >= 60 and not w.abutted and seen(w) is None]
     side = rng.choice([(0, -1), (0, 1), (1, 0), (-1, 0), (1, 0), (-1, 0)])      # the street: more often off an end
     facing = lambda w, s: -w.normal[0] * s[0] - w.normal[1] * s[1]
