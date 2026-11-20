@@ -396,3 +396,10 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
   four main walls under 10% covered), and edges of windows are soft by several inches. Karl's verdict on seeing
   it: not good enough. The photo mesh is dropped as a source of openings; the building models stay as the
   source of envelopes.
+- Other sources looked at for what the envelopes lack. Real-estate listings: scraping is against the sites' terms
+  and the photos are not ours to publish; not used. Zillow Indoor Dataset (ZInD, https://github.com/zillow/zind,
+  CVPR 2021): 1,524 real unfurnished homes across the US, 71,474 panoramas, with annotated room layouts, windows,
+  doors and openings and a 2D floor plan each; about 40 GB, free for academic non-commercial use after
+  registering and accepting Zillow's terms (redistribution rights not read yet). A candidate for grounding
+  interiors (room sizes, partition and door patterns), not tied to Cambridge. Mapillary (street-level photos,
+  CC BY-SA, camera pose per photo) is a candidate for front facades; its API needs an access token, not tried yet.
