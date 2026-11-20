@@ -3,8 +3,19 @@
 An LLM proposer edits a grammar of framing rules, a deterministic verifier scores the frames it builds, and a
 Pareto search over houses keeps what improves. The frames are meant to be built as prefab panels: wall panels,
 floor cassettes and roof panels, cut by an automated saw, trucked and lifted into place bottom up. Timber framing is the case study; the loop is the contribution.
-DESIGN.md holds the design and its reasons; JOURNAL.md is the lab journal (add to it when you decide, build or
-learn something). Imperial units, inches in code.
+DESIGN.md holds the design and its reasons. Each of us keeps a lab journal: journal_karl.md, journal_kenny.md,
+journal_joe.md (add to yours when you decide, build or learn something). Imperial units, inches in code.
+
+## Working together
+
+Three people, each with their own Claude: Karl, Kenny and Joe.
+
+- Write only in your own journal; read the others' to know what changed and why.
+- One branch per task, a pull request into `main`, merged when `uv run pytest -q` passes. Pull before you start.
+- Keep to your area and say in your journal what you are working on; ask before changing another's.
+- The simplest project possible, backend and frontend: remove before adding, and delete what is outdated without
+  asking (git history is the backup).
+- Rules everyone's Claude should follow go in this file, not in a private memory.
 
 ## Map
 

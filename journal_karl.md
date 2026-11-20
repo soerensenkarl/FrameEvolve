@@ -430,3 +430,6 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
   Structured3D, SUNCG) or floor plans (RPLAN, LIFULL, CubiCasa5K): none has envelopes or roofs. So the two real
   sources mirror each other: Cambridge has real envelopes and roofs and no insides; ZInD has real plans and
   openings and no roofs.
+- Three journals, one each (journal_karl.md, journal_kenny.md, journal_joe.md): nobody writes in another's.
+  CLAUDE.md has a short "Working together" note: own journal, a branch and a pull request per task, tests pass
+  before merging.
