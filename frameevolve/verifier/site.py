@@ -33,11 +33,14 @@ class Site:
     gaps: dict[str, float] = field(default_factory=dict)          # member id -> spacing to its neighbours, o.c.
 
     def __post_init__(self):
+        from frameevolve.verifier.kinds import kinds
         from frameevolve.verifier.physical import supported
         self.g = build_graph(self.frame.members)
         self.by_id = {m.id: m for m in self.frame.members}
         self.surfs = {x.id: x for x in self.house.surfaces}
         self.held = supported(self.g, self.by_id)
+        for mid, kind in kinds(self.house, self.frame.members).items():
+            self.by_id[mid].kind = kind
         for m in self.frame.members:
             self.on.setdefault(m.surface, []).append(m)
         for sid, ms in self.on.items():
@@ -66,7 +69,8 @@ class Site:
 # ------------------------------------------------------------------------------- words the checks share
 
 def name(m: Member) -> str:
-    return f"{m.id} ({m.role or m.rule})"
+    """A member in a message: its id and what it is by its geometry, never the grammar's label for it."""
+    return f"{m.id} ({m.kind or m.rule})"
 
 
 def axis(m: Member) -> Vec:

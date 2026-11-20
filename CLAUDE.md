@@ -17,6 +17,7 @@ learn something). Imperial units, inches in code.
 | `frameevolve/loads.py` | the load takedown on the house's surfaces, before any member: what lands on each wall, floor and beam; structural guides (beam, span) change it |
 | `frameevolve/builder.py` | `@rule(priority, match, when)`, `State` (what rules see and do: place, cut, notch, guide, assign to a panel, read loads), `build()`; the docstring lists match kinds |
 | `frameevolve/verifier/` | `verify(house, frame) -> Report`; one module per question (physical, analysis, boards, code, prefab, cost), read in the order `__init__.py` lists |
+| `frameevolve/verifier/kinds.py` | what each member is by its geometry (stud, king, jack, header, joist, rafter...); messages use these names, never the grammar's labels |
 | `frameevolve/houses.py` | procedural houses: blocks, storeys, openings, stairs, roofs; `generate(seed)`, `toy()` |
 | `frameevolve/render.py` | elevations and an axonometric as PNGs, for the proposer |
 | `frameevolve/search.py` | the GEPA-style search: `Run`, `evaluate` (separate processes, cached), Pareto set |

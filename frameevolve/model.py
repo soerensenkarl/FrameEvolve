@@ -441,6 +441,7 @@ class Member:
     cuts: list = field(default_factory=list)
     notches: list = field(default_factory=list)
     panel: str = ""
+    kind: str = ""     # what it is by its geometry (verifier/kinds.py), set when a frame is verified; not saved
 
     @property
     def width(self) -> float:

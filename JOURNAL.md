@@ -413,3 +413,13 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
   with labelled windows, doors and roofs. Real interiors: floor plans of single floors (ZInD 1,524 US homes;
   ResPlan 17,000; RPLAN 80,000; Swiss Dwellings 5,372 building floors; CubiCasa5K 5,000). Real BIM houses: a
   handful. So real envelopes plus generated or pattern-based insides remains the plan.
+
+## 2026-11-20: the verifier names the members
+
+- Worry: a grammar could game reports through the labels it gives members. The verifier already judged by
+  geometry only; now it also names by geometry (verifier/kinds.py): plates, studs, kings, jacks, cripples,
+  headers, sills, rims, joists, blocking, rafters, ridges. On six houses of the reference grammar its names
+  agree with the grammar's own for every king, jack, cripple, header, sill, plate, rim, rafter and ridge; a
+  grid stud standing beside an opening is called a king, which it is. Fault messages use these names.
+- Plan: the verifier in three plain categories, Sanity, Structure, Buildability, with Code compliance as a fourth
+  once its limits are audited. Sanity first: rule error, clash, floating, in an opening, outside its surface.
