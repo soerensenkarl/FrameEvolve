@@ -27,12 +27,17 @@ Each amendment has one verb, and may say who made it ("by"), from what ("from") 
     stair      {"at_ft": [x, y], "long": "y"}: the stair opening's corner and the way its long side runs
     void       {"at_ft": [x, y], "size_ft": [12, 14]}: a room of double height, the opening in the floor over the
                ground storey; or false for none
-    wall       {"storey", "from_ft", "to_ft", "bearing": false}: a wall inside
+    wall       {"storey", "from_ft", "to_ft", "bearing": false}: a wall inside; an end within 6 in. of a wall
+               is put on it, so places read off a plan to a tenth of a foot will do
     no_wall    {"storey", "near_ft"}: take out the wall inside that passes within 3 ft of that place
-    open       {"storey", "near_ft"}: the bearing wall there opened into posts and a beam; close: kept solid
-    door       {"storey", "near_ft", "w": 34}: a door in the wall inside nearest that place
+    open       {"storey", "near_ft"}: the bearing wall there (or the wall where two masses meet) opened into
+               posts and a beam, an opening of 8 to 16 ft in each stretch long enough; close: kept solid
+    door       {"storey", "near_ft", "w": 34}: a door in the wall inside nearest that place (a wide "w" for a
+               cased opening in a partition)
   a step replaced
-    interior   {"storey", "walls": [{"from_ft", "to_ft", "bearing"}]}: this storey's inside walls, all of them
+    interior   {"storey", "walls": [{"from_ft", "to_ft", "bearing"}]}: this storey's bearing walls and
+               partitions, all of them. The walls where two masses meet (purple on the plans) stay: they are
+               the masses' own, and are not to be given again
   and, for a house the procedure cannot do at all, in place of "amendments":
     "script": "CAM_....py"   a Python file beside the JSON with build(env, record) -> House
 
@@ -119,8 +124,8 @@ def draw_side(house, side: str, out) -> None:
 
 
 def draw_plan(house, storey: int, out) -> None:
-    """A storey's plan in feet, the house's own coordinates: outside walls black, bearing walls inside red,
-    partitions blue, windows cyan, doors orange, openings in the floor hatched."""
+    """A storey's plan in feet, the house's own coordinates: outside walls black, bearing walls inside red, the
+    walls where two masses meet purple, partitions blue, windows cyan, doors orange, openings in the floor hatched."""
     base = sorted({w.base for w in house.walls})[storey - 1]
     fig, ax = plt.subplots(figsize=(8, 7))
     for f in house.floors:
@@ -133,7 +138,7 @@ def draw_plan(house, storey: int, out) -> None:
     for w in house.walls:
         if w.base != base:
             continue
-        colour = "#222" if w.role == "exterior" else "#c0392b" if w.id[1] in "sj" else "#2a6fb0"
+        colour = "#222" if w.role == "exterior" else "#8e44ad" if w.id[1] == "j" else "#c0392b" if w.id[1] == "s" else "#2a6fb0"
         marks = [0.0] + [u for o in w.openings for u in (o.u0, o.u1)] + [w.length]
         for a, b in zip(marks[::2], marks[1::2]):
             p, q = w.world(a, 0, 0), w.world(b, 0, 0)
@@ -146,7 +151,7 @@ def draw_plan(house, storey: int, out) -> None:
     ax.grid(alpha=0.3)
     ax.set_xlabel("x, ft (south is down: the south side photo looks at this plan from below)")
     ax.set_ylabel("y, ft")
-    ax.set_title(f"storey {storey}: outside black, bearing inside red, partitions blue, windows cyan, doors orange")
+    ax.set_title(f"storey {storey}: outside black; inside: bearing red, where two masses meet purple (not replaced by 'interior'), partitions blue; windows cyan, doors orange", fontsize=7)
     fig.tight_layout()
     fig.savefig(out, dpi=80)
     plt.close(fig)

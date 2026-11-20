@@ -312,6 +312,314 @@
    },
    "by": "Claude Opus agent, from the four side photos",
    "from": "the four side photos (the city's photo mesh)"
+  },
+  {
+   "stair": {
+    "at_ft": [
+     39.0,
+     7.0
+    ],
+    "long": "y"
+   },
+   "from": "plan_1-3, the east and south photos (entry porch at the south-east), the assessor record (two-family, 14 rooms)",
+   "why": "the stair in a hall just inside the south-east entry porch, in the main block so it reaches storey 3",
+   "by": "Claude Opus agent, second pass"
+  },
+  {
+   "interior": {
+    "storey": 1,
+    "walls": [
+     {
+      "from_ft": [
+       6.6667,
+       18
+      ],
+      "to_ft": [
+       42.8333,
+       18
+      ],
+      "bearing": true
+     },
+     {
+      "from_ft": [
+       48.5,
+       24
+      ],
+      "to_ft": [
+       48.5,
+       40.1667
+      ],
+      "bearing": true
+     },
+     {
+      "from_ft": [
+       22,
+       4.6667
+      ],
+      "to_ft": [
+       22,
+       18
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       36,
+       4.6667
+      ],
+      "to_ft": [
+       36,
+       18
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       19,
+       18
+      ],
+      "to_ft": [
+       19,
+       31.5
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       31,
+       18
+      ],
+      "to_ft": [
+       31,
+       31.5
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       36,
+       18
+      ],
+      "to_ft": [
+       36,
+       31.5
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       42.8333,
+       11
+      ],
+      "to_ft": [
+       57.6667,
+       11
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       42.8333,
+       24
+      ],
+      "to_ft": [
+       57.6667,
+       24
+      ],
+      "bearing": false
+     }
+    ]
+   },
+   "from": "plan_1-3, the east and south photos (entry porch at the south-east), the assessor record (two-family, 14 rooms)",
+   "why": "the lower flat: living, dining and stair hall along the south, two bedrooms and a bath on the north, entry, kitchen and a bedroom in the wing; bearing lines kept where the procedure had them so no floor spans over 15 ft",
+   "by": "Claude Opus agent, second pass"
+  },
+  {
+   "interior": {
+    "storey": 2,
+    "walls": [
+     {
+      "from_ft": [
+       6.6667,
+       18
+      ],
+      "to_ft": [
+       42.8333,
+       18
+      ],
+      "bearing": true
+     },
+     {
+      "from_ft": [
+       48.5,
+       24
+      ],
+      "to_ft": [
+       48.5,
+       40.1667
+      ],
+      "bearing": true
+     },
+     {
+      "from_ft": [
+       22,
+       4.6667
+      ],
+      "to_ft": [
+       22,
+       18
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       36,
+       4.6667
+      ],
+      "to_ft": [
+       36,
+       18
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       19,
+       18
+      ],
+      "to_ft": [
+       19,
+       31.5
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       31,
+       18
+      ],
+      "to_ft": [
+       31,
+       31.5
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       36,
+       18
+      ],
+      "to_ft": [
+       36,
+       31.5
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       42.8333,
+       11
+      ],
+      "to_ft": [
+       57.6667,
+       11
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       42.8333,
+       24
+      ],
+      "to_ft": [
+       57.6667,
+       24
+      ],
+      "bearing": false
+     }
+    ]
+   },
+   "from": "plan_1-3, the east and south photos (entry porch at the south-east), the assessor record (two-family, 14 rooms)",
+   "why": "the upper flat laid out as the lower one, so every inside wall stands on the one below",
+   "by": "Claude Opus agent, second pass"
+  },
+  {
+   "interior": {
+    "storey": 3,
+    "walls": [
+     {
+      "from_ft": [
+       6.6667,
+       18
+      ],
+      "to_ft": [
+       42.8333,
+       18
+      ],
+      "bearing": true
+     },
+     {
+      "from_ft": [
+       22,
+       4.6667
+      ],
+      "to_ft": [
+       22,
+       18
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       36,
+       4.6667
+      ],
+      "to_ft": [
+       36,
+       18
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       24,
+       18
+      ],
+      "to_ft": [
+       24,
+       31.5
+      ],
+      "bearing": false
+     }
+    ]
+   },
+   "from": "plan_1-3, the east and south photos (entry porch at the south-east), the assessor record (two-family, 14 rooms)",
+   "why": "under the roof: three bedrooms and a store room off the stair hall, on the spine wall below",
+   "by": "Claude Opus agent, second pass"
+  },
+  {
+   "close": {
+    "storey": 1,
+    "near_ft": [
+     15,
+     18
+    ]
+   },
+   "from": "the house's type and age",
+   "why": "a 1925 two-family keeps its spine wall solid; the wide opening is the cased one between living and dining",
+   "by": "Claude Opus agent, second pass"
+  },
+  {
+   "close": {
+    "storey": 2,
+    "near_ft": [
+     15,
+     18
+    ]
+   },
+   "from": "the house's type and age",
+   "why": "a 1925 two-family keeps its spine wall solid; the wide opening is the cased one between living and dining",
+   "by": "Claude Opus agent, second pass"
   }
  ]
 }

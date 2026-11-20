@@ -263,6 +263,192 @@
    },
    "by": "Claude Opus agent, from the four side photos",
    "from": "the four side photos (the city's photo mesh)"
+  },
+  {
+   "stair": {
+    "at_ft": [
+     3.0,
+     3.5
+    ],
+    "long": "y"
+   },
+   "by": "Claude Opus agent, second pass",
+   "from": "west photo: side door with a hood at 0.71 and a landing window above it; assessor two-family",
+   "why": "the common stair to the upper flat rises along the west wall from the side door, not in the middle of a room"
+  },
+  {
+   "interior": {
+    "storey": 1,
+    "walls": [
+     {
+      "from_ft": [
+       0,
+       14.3
+      ],
+      "to_ft": [
+       42.16666,
+       14.3
+      ],
+      "bearing": true
+     },
+     {
+      "from_ft": [
+       6.5,
+       0.17
+      ],
+      "to_ft": [
+       6.5,
+       14.3
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       24,
+       0.17
+      ],
+      "to_ft": [
+       24,
+       14.3
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       12.5,
+       14.3
+      ],
+      "to_ft": [
+       12.5,
+       28.66666
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       24,
+       14.3
+      ],
+      "to_ft": [
+       24,
+       28.66666
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       31,
+       14.3
+      ],
+      "to_ft": [
+       31,
+       28.66666
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       24,
+       21
+      ],
+      "to_ft": [
+       31,
+       21
+      ],
+      "bearing": false
+     }
+    ]
+   },
+   "by": "Claude Opus agent, second pass",
+   "from": "assessor (old style two family, 11 rooms, 4 bedrooms) and plan_1",
+   "why": "one flat: side stair hall, parlor and dining on the south, two bedrooms, bath and kitchen on the north, pantry and back entry in the wing, over one east-west bearing line"
+  },
+  {
+   "interior": {
+    "storey": 2,
+    "walls": [
+     {
+      "from_ft": [
+       0,
+       14.3
+      ],
+      "to_ft": [
+       42.16666,
+       14.3
+      ],
+      "bearing": true
+     },
+     {
+      "from_ft": [
+       6.5,
+       0.17
+      ],
+      "to_ft": [
+       6.5,
+       14.3
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       24,
+       0.17
+      ],
+      "to_ft": [
+       24,
+       14.3
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       12.5,
+       14.3
+      ],
+      "to_ft": [
+       12.5,
+       28.66666
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       24,
+       14.3
+      ],
+      "to_ft": [
+       24,
+       28.66666
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       31,
+       14.3
+      ],
+      "to_ft": [
+       31,
+       28.66666
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       24,
+       21
+      ],
+      "to_ft": [
+       31,
+       21
+      ],
+      "bearing": false
+     }
+    ]
+   },
+   "by": "Claude Opus agent, second pass",
+   "from": "assessor (two units) and the storey-1 plan",
+   "why": "the upper flat repeats the lower one, so its bearing walls stand over those below"
   }
  ]
 }

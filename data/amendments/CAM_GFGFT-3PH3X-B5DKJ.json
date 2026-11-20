@@ -255,6 +255,190 @@
    },
    "by": "Claude Opus agent, from the four side photos",
    "from": "the four side photos (the city's photo mesh)"
+  },
+  {
+   "set": {
+    "attic": "ceiling"
+   },
+   "by": "Claude Opus agent, second pass",
+   "from": "assessor record (modest 1916 conventional house, hip roof) and the eaves at ~21 ft",
+   "why": "an ordinary flat ceiling over the bedrooms, the attic under the hip unused"
+  },
+  {
+   "stair": {
+    "at_ft": [
+     17.5,
+     6.5
+    ],
+    "long": "y"
+   },
+   "by": "Claude Opus agent, second pass",
+   "from": "south photo: hooded front door near the middle (x about 19 ft)",
+   "why": "a straight stair rising north from the front door in a centre hall"
+  },
+  {
+   "interior": {
+    "storey": 1,
+    "walls": [
+     {
+      "from_ft": [
+       13.5,
+       2.2
+      ],
+      "to_ft": [
+       13.5,
+       21.5
+      ],
+      "bearing": true
+     },
+     {
+      "from_ft": [
+       20.5,
+       2.2
+      ],
+      "to_ft": [
+       20.5,
+       21.5
+      ],
+      "bearing": true
+     },
+     {
+      "from_ft": [
+       0,
+       11.8
+      ],
+      "to_ft": [
+       13.5,
+       11.8
+      ],
+      "bearing": true
+     },
+     {
+      "from_ft": [
+       20.5,
+       11.8
+      ],
+      "to_ft": [
+       40.5,
+       11.8
+      ],
+      "bearing": true
+     },
+     {
+      "from_ft": [
+       31,
+       11.8
+      ],
+      "to_ft": [
+       31,
+       21.5
+      ],
+      "bearing": false
+     }
+    ]
+   },
+   "by": "Claude Opus agent, second pass",
+   "from": "plan_1, the south door, the west triple window and the north kitchen window",
+   "why": "a 7 ft centre hall with the stair from the front door; dining (W front) and living (W back), front room (E front), kitchen and pantry (E back); bearing walls on the 11.8 ft line and either side of the hall keep spans under 10 ft"
+  },
+  {
+   "interior": {
+    "storey": 2,
+    "walls": [
+     {
+      "from_ft": [
+       13.5,
+       2.2
+      ],
+      "to_ft": [
+       13.5,
+       11.8
+      ],
+      "bearing": true
+     },
+     {
+      "from_ft": [
+       13.5,
+       11.8
+      ],
+      "to_ft": [
+       13.5,
+       21.5
+      ],
+      "bearing": true
+     },
+     {
+      "from_ft": [
+       20.5,
+       2.2
+      ],
+      "to_ft": [
+       20.5,
+       21.5
+      ],
+      "bearing": true
+     },
+     {
+      "from_ft": [
+       0,
+       11.8
+      ],
+      "to_ft": [
+       6.5,
+       11.8
+      ],
+      "bearing": true
+     },
+     {
+      "from_ft": [
+       6.5,
+       11.8
+      ],
+      "to_ft": [
+       13.5,
+       11.8
+      ],
+      "bearing": true
+     },
+     {
+      "from_ft": [
+       20.5,
+       11.8
+      ],
+      "to_ft": [
+       33,
+       11.8
+      ],
+      "bearing": true
+     },
+     {
+      "from_ft": [
+       33,
+       2.2
+      ],
+      "to_ft": [
+       33,
+       21.5
+      ],
+      "bearing": false
+     }
+    ]
+   },
+   "by": "Claude Opus agent, second pass",
+   "from": "plan_2, the east storey-2 ribbon of windows, the assessor's 2 bedrooms",
+   "why": "upper hall round the stair, two bedrooms west, a small room and the bath east of the hall, and a sleeping porch across the east end behind the ribbon of windows (no wall on the 11.8 ft line there: it carries only the ceiling); bearing walls stand over those below; the hall and bedroom walls given in short pieces so each bedroom gets its own door from the hall"
+  },
+  {
+   "open": {
+    "storey": 1,
+    "near_ft": [
+     7,
+     11.8
+    ]
+   },
+   "by": "Claude Opus agent, second pass",
+   "from": "usual 1916 plan",
+   "why": "one wide cased opening between dining and living room"
   }
  ]
 }

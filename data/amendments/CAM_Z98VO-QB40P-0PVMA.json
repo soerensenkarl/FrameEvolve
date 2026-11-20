@@ -318,6 +318,293 @@
    },
    "by": "Claude Opus agent, from the four side photos",
    "from": "the four side photos (the city's photo mesh)"
+  },
+  {
+   "stair": {
+    "at_ft": [
+     4.5,
+     27.5
+    ],
+    "long": "x"
+   },
+   "by": "Claude Opus agent, second pass",
+   "from": "the plans of the procedure, the record (1862 Victorian, 12 rooms, 6 bedrooms) and the west front door",
+   "why": "a side stair hall behind the west front door (y ~29): the stair rises straight ahead (east) from just inside the door along the north wall, clear of the doors in the spine, and lands in a hall on every storey"
+  },
+  {
+   "interior": {
+    "storey": 1,
+    "walls": [
+     {
+      "from_ft": [
+       0,
+       19
+      ],
+      "to_ft": [
+       46,
+       19
+      ],
+      "bearing": true
+     },
+     {
+      "from_ft": [
+       15,
+       4
+      ],
+      "to_ft": [
+       15,
+       19
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       31,
+       4
+      ],
+      "to_ft": [
+       31,
+       19
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       15,
+       19
+      ],
+      "to_ft": [
+       15,
+       33.83
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       30,
+       19
+      ],
+      "to_ft": [
+       30,
+       33.83
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       46,
+       25
+      ],
+      "to_ft": [
+       55.5,
+       25
+      ],
+      "bearing": false
+     }
+    ]
+   },
+   "by": "Claude Opus agent, second pass",
+   "from": "the plans of the procedure, the record (1862 Victorian, 12 rooms, 6 bedrooms) and the west front door",
+   "why": "stair hall at the front (west) north corner; front and back parlours (the back one with the south bay) and a library south of the spine; dining room and kitchen north of it; the wing a back room and entry"
+  },
+  {
+   "interior": {
+    "storey": 2,
+    "walls": [
+     {
+      "from_ft": [
+       0,
+       19
+      ],
+      "to_ft": [
+       46,
+       19
+      ],
+      "bearing": true
+     },
+     {
+      "from_ft": [
+       16,
+       24
+      ],
+      "to_ft": [
+       46,
+       24
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       16,
+       24
+      ],
+      "to_ft": [
+       16,
+       33.83
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       29,
+       24
+      ],
+      "to_ft": [
+       29,
+       33.83
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       40,
+       24
+      ],
+      "to_ft": [
+       40,
+       33.83
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       15,
+       4
+      ],
+      "to_ft": [
+       15,
+       19
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       31,
+       4
+      ],
+      "to_ft": [
+       31,
+       19
+      ],
+      "bearing": false
+     }
+    ]
+   },
+   "by": "Claude Opus agent, second pass",
+   "from": "the plans of the procedure, the record (1862 Victorian, 12 rooms, 6 bedrooms) and the west front door",
+   "why": "a stair hall at the front over the one below, and a hall along the spine from it, with three bedrooms south and two rooms and a bath north, all off the hall"
+  },
+  {
+   "interior": {
+    "storey": 3,
+    "walls": [
+     {
+      "from_ft": [
+       3.17,
+       19
+      ],
+      "to_ft": [
+       43,
+       19
+      ],
+      "bearing": true
+     },
+     {
+      "from_ft": [
+       16,
+       24
+      ],
+      "to_ft": [
+       43,
+       24
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       16,
+       24
+      ],
+      "to_ft": [
+       16,
+       30.67
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       26,
+       24
+      ],
+      "to_ft": [
+       26,
+       30.67
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       17,
+       7
+      ],
+      "to_ft": [
+       17,
+       19
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       30,
+       7
+      ],
+      "to_ft": [
+       30,
+       19
+      ],
+      "bearing": false
+     }
+    ]
+   },
+   "by": "Claude Opus agent, second pass",
+   "from": "the plans of the procedure, the record (1862 Victorian, 12 rooms, 6 bedrooms) and the west front door",
+   "why": "the mansard storey: the spine over the one below, a stair hall and a hall along the spine, three bedrooms south and a bath and box room under the north slope"
+  },
+  {
+   "close": {
+    "storey": 1,
+    "near_ft": [
+     23,
+     19
+    ]
+   },
+   "by": "Claude Opus agent, second pass",
+   "from": "the procedure's plan and the age of the house",
+   "why": "an 1862 spine wall is solid studs with doors, not posts and a beam with wide openings"
+  },
+  {
+   "close": {
+    "storey": 2,
+    "near_ft": [
+     23,
+     19
+    ]
+   },
+   "by": "Claude Opus agent, second pass",
+   "from": "the procedure's plan and the age of the house",
+   "why": "an 1862 spine wall is solid studs with doors, not posts and a beam with wide openings"
+  },
+  {
+   "close": {
+    "storey": 3,
+    "near_ft": [
+     23,
+     19
+    ]
+   },
+   "by": "Claude Opus agent, second pass",
+   "from": "the procedure's plan and the age of the house",
+   "why": "an 1862 spine wall is solid studs with doors, not posts and a beam with wide openings"
   }
  ]
 }

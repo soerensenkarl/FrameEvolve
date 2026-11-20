@@ -424,6 +424,381 @@
    },
    "by": "Claude Opus agent, from the four side photos",
    "from": "the four side photos (the city's photo mesh)"
+  },
+  {
+   "stair": {
+    "at_ft": [
+     55,
+     21.5
+    ],
+    "long": "y"
+   },
+   "by": "Claude Opus agent, second pass",
+   "from": "the plan and the east photo (entry porch at the north-east corner, y 21.7-31.7)",
+   "why": "a triple-decker's common front stair, in a hall just inside the entry, not in the middle of the flats"
+  },
+  {
+   "interior": {
+    "storey": 1,
+    "walls": [
+     {
+      "from_ft": [
+       11.166667,
+       16.666667
+      ],
+      "to_ft": [
+       63.5,
+       16.666667
+      ],
+      "bearing": true
+     },
+     {
+      "from_ft": [
+       26,
+       0.333333
+      ],
+      "to_ft": [
+       26,
+       16.666667
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       46,
+       0.333333
+      ],
+      "to_ft": [
+       46,
+       16.666667
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       15,
+       16.666667
+      ],
+      "to_ft": [
+       15,
+       33.166667
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       30.5,
+       16.666667
+      ],
+      "to_ft": [
+       30.5,
+       33.166667
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       43,
+       16.666667
+      ],
+      "to_ft": [
+       43,
+       33.166667
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       54.5,
+       16.666667
+      ],
+      "to_ft": [
+       54.5,
+       33.166667
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       0,
+       24.5
+      ],
+      "to_ft": [
+       15,
+       24.5
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       7.5,
+       24.5
+      ],
+      "to_ft": [
+       7.5,
+       31.833333
+      ],
+      "bearing": false
+     }
+    ]
+   },
+   "by": "Claude Opus agent, second pass",
+   "from": "the assessor record (3 flats, 18 rooms), the window columns on the south and north photos, and the usual triple-decker plan",
+   "why": "one bearing wall down the middle (spans about 16 ft each side), front stair hall at the entry, parlor, dining and kitchen on the south, three bedrooms on the north, back hall, bath and pantry at the west, the same on every storey"
+  },
+  {
+   "interior": {
+    "storey": 2,
+    "walls": [
+     {
+      "from_ft": [
+       11.166667,
+       16.666667
+      ],
+      "to_ft": [
+       63.5,
+       16.666667
+      ],
+      "bearing": true
+     },
+     {
+      "from_ft": [
+       26,
+       0.333333
+      ],
+      "to_ft": [
+       26,
+       16.666667
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       46,
+       0.333333
+      ],
+      "to_ft": [
+       46,
+       16.666667
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       15,
+       16.666667
+      ],
+      "to_ft": [
+       15,
+       33.166667
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       30.5,
+       16.666667
+      ],
+      "to_ft": [
+       30.5,
+       33.166667
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       43,
+       16.666667
+      ],
+      "to_ft": [
+       43,
+       33.166667
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       54.5,
+       16.666667
+      ],
+      "to_ft": [
+       54.5,
+       33.166667
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       0,
+       24.5
+      ],
+      "to_ft": [
+       15,
+       24.5
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       7.5,
+       24.5
+      ],
+      "to_ft": [
+       7.5,
+       31.833333
+      ],
+      "bearing": false
+     }
+    ]
+   },
+   "by": "Claude Opus agent, second pass",
+   "from": "the assessor record (3 flats, 18 rooms), the window columns on the south and north photos, and the usual triple-decker plan",
+   "why": "one bearing wall down the middle (spans about 16 ft each side), front stair hall at the entry, parlor, dining and kitchen on the south, three bedrooms on the north, back hall, bath and pantry at the west, the same on every storey"
+  },
+  {
+   "interior": {
+    "storey": 3,
+    "walls": [
+     {
+      "from_ft": [
+       11.166667,
+       16.666667
+      ],
+      "to_ft": [
+       63.5,
+       16.666667
+      ],
+      "bearing": true
+     },
+     {
+      "from_ft": [
+       26,
+       0.333333
+      ],
+      "to_ft": [
+       26,
+       16.666667
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       46,
+       0.333333
+      ],
+      "to_ft": [
+       46,
+       16.666667
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       15,
+       16.666667
+      ],
+      "to_ft": [
+       15,
+       33.166667
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       30.5,
+       16.666667
+      ],
+      "to_ft": [
+       30.5,
+       33.166667
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       43,
+       16.666667
+      ],
+      "to_ft": [
+       43,
+       33.166667
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       54.5,
+       16.666667
+      ],
+      "to_ft": [
+       54.5,
+       33.166667
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       0,
+       24.5
+      ],
+      "to_ft": [
+       15,
+       24.5
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       7.5,
+       24.5
+      ],
+      "to_ft": [
+       7.5,
+       31.833333
+      ],
+      "bearing": false
+     }
+    ]
+   },
+   "by": "Claude Opus agent, second pass",
+   "from": "the assessor record (3 flats, 18 rooms), the window columns on the south and north photos, and the usual triple-decker plan",
+   "why": "one bearing wall down the middle (spans about 16 ft each side), front stair hall at the entry, parlor, dining and kitchen on the south, three bedrooms on the north, back hall, bath and pantry at the west, the same on every storey"
+  },
+  {
+   "close": {
+    "storey": 1,
+    "near_ft": [
+     35,
+     16.67
+    ]
+   },
+   "by": "Claude Opus agent, second pass",
+   "from": "the build year (1894) and the plan",
+   "why": "the middle bearing wall separates the living rooms from the bedrooms, so it stays a solid wall with doors"
+  },
+  {
+   "close": {
+    "storey": 2,
+    "near_ft": [
+     35,
+     16.67
+    ]
+   },
+   "by": "Claude Opus agent, second pass",
+   "from": "the build year (1894) and the plan",
+   "why": "the middle bearing wall separates the living rooms from the bedrooms, so it stays a solid wall with doors"
+  },
+  {
+   "close": {
+    "storey": 3,
+    "near_ft": [
+     35,
+     16.67
+    ]
+   },
+   "by": "Claude Opus agent, second pass",
+   "from": "the build year (1894) and the plan",
+   "why": "the middle bearing wall separates the living rooms from the bedrooms, so it stays a solid wall with doors"
   }
  ]
 }

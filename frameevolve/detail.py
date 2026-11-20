@@ -110,6 +110,16 @@ def inches(p) -> tuple:
     return (12.0 * p[0], 12.0 * p[1])
 
 
+def onto(walls: list, p: tuple, reach: float = 6.0) -> tuple:
+    """A plan point moved onto the nearest wall line if it is within reach of one: an amended wall ends on the
+    wall it meets, though its place was read off a drawing to a tenth of a foot."""
+    w = nearest(walls, p, reach)
+    if w is None:
+        return p
+    q = LineString([w.start, w.end]).interpolate(LineString([w.start, w.end]).project(Point(p)))
+    return (q.x, q.y)
+
+
 def nearest(walls: list, p: tuple, reach: float = 36.0):
     """The wall of `walls` that passes nearest a plan point, if within reach of it."""
     near = min(walls, key=lambda w: LineString([w.start, w.end]).distance(Point(p)), default=None)
@@ -131,25 +141,26 @@ def detail(env: Envelope, record: dict, seed: int = 0, name: str = "", amendment
         # the floors as seen, in feet over the ground: the ground floor's height is the foundation, the mean
         # step between floors the level, and the top storey has what is left under the eave
         seen = [12.0 * z for z in sets["floors_ft"]]
-        cut = seen[0]
+        ground = seen[0]
         level = (seen[-1] - seen[0]) / (len(seen) - 1) if len(seen) > 1 else PLATES[0] + JOISTS
         plate = level - JOISTS
-        top = eaves[id(ms[0])] - HEEL - cut - (len(seen) - 1) * level
+        top = eaves[id(ms[0])] - HEEL - ground - (len(seen) - 1) * level
         if low is not None and top > level:
             top = None
     elif low is not None and eaves[id(ms[0])] - low >= KNEE and storeys >= 2:
         # a mansard or gambrel: the storeys under its steep sides are set by where those start, their walls
         # reaching the floor the sides stand on; the storey behind the sides is as high as they are
-        level, plate, cut, top = levels(rng, low - JOISTS, storeys - 1, year)
+        level, plate, ground, top = levels(rng, low - JOISTS, storeys - 1, year)
         top = None if top == plate else top
     else:
-        level, plate, cut, top = levels(rng, eaves[id(ms[0])], storeys, year)
-    ms = [m for m in ms if eaves[id(m)] - HEEL - cut >= ROOM - HEEL]
+        level, plate, ground, top = levels(rng, eaves[id(ms[0])], storeys, year)
+    ms = [m for m in ms if eaves[id(m)] - HEEL - ground >= ROOM - HEEL]
     for m in ms:                          # the foundation is taken off: z = 0 is the ground floor
         for f in m.faces:
-            f.c -= cut
-    E = {id(m): eaves[id(m)] - HEEL - cut for m in ms}                       # each mass's wall top
-    n = {id(m): 1 + sum(E[id(m)] - k * level >= KNEE for k in range(1, 9)) for m in ms}
+            f.c -= ground
+    E = {id(m): eaves[id(m)] - HEEL - ground for m in ms}                       # each mass's wall top
+    tops = {id(m): max(f.z(x, y) for f in m.faces for x, y in f.shape.exterior.coords) for m in ms}
+    n = {id(m): 1 + sum(E[id(m)] - k * level >= KNEE and tops[id(m)] - k * level >= ROOM for k in range(1, 9)) for m in ms}   # a storey has walls, and headroom somewhere
     if sets.get("floors_ft"):
         n[id(ms[0])] = len(sets["floors_ft"])                                # every floor seen is a storey, however low its walls
     if top is not None:
@@ -170,7 +181,7 @@ def detail(env: Envelope, record: dict, seed: int = 0, name: str = "", amendment
     attic = rng.choices(["ceiling", "open", "loft"], [0.76, 0.12, 0.12])[0]
     attic = sets.get("attic", attic)
     house = House(name, [], kind=(record.get("exterior_style") or "").lower())
-    house.foundation = cut            # how far the ground lies under the ground floor
+    house.foundation = ground            # how far the ground lies under the ground floor
     house.stair = None
     house.missed = []                 # openings an amendment asked for that found no place
     house.placed = 0                  # and how many of its openings did
@@ -234,9 +245,11 @@ def detail(env: Envelope, record: dict, seed: int = 0, name: str = "", amendment
             am.failed(i, "a double-height room there is not inside the floor, or is on the stair")
 
     def height(k: int, p: tuple) -> float:
-        """How high a wall inside stands on storey k at a plan point: to the floor above, or its mass's top."""
+        """How high an amended wall inside stands on storey k at a plan point: to the floor above, or, on its
+        mass's top storey, to the ceiling if there is one and else as high as the roof lets it (under_roof)."""
         m = next((m for m in ms if n[id(m)] >= k and m.shape.contains(Point(p))), ms[0])
-        return level if k < n[id(m)] else E[id(m)] - (k - 1) * level
+        ceiling = next((f.z for f in house.floors if f.role == "ceiling" and Polygon(f.outline).buffer(1).contains(Point(p))), None)
+        return level if k < n[id(m)] else (ceiling - (k - 1) * level if ceiling is not None else tops[id(m)] - (k - 1) * level)
     replaced = {int(a["storey"]) for _, a in am.of("interior")}
     walled = {k: {id(w.run.mass) for w in house.walls if round(w.base / level) + 1 == k} for k in range(1, top_storey + 1)}
     for k in range(1, top_storey + 1):
@@ -250,15 +263,18 @@ def detail(env: Envelope, record: dict, seed: int = 0, name: str = "", amendment
                 continue
             h = level if k < n[id(m)] else E[id(m)] - (k - 1) * level
             inside(rng, house, k, j, region, h, (k - 1) * level, [x for x in (stair, void if k == 2 else None) if x is not None], runs[id(m)], style, span)
-    added = 0
+    added, built = 0, {}
     for i, a in [(i, {**w, "storey": a["storey"]}) for i, a in am.of("interior") for w in a.get("walls", [])] + am.of("wall"):
-        k, p, q = int(a["storey"]), inches(a["from_ft"]), inches(a["to_ft"])
+        k = int(a["storey"])
+        there = [w for w in house.walls if w.base == (k - 1) * level]
+        p, q = (onto(there, inches(a["from_ft"])), onto(there, inches(a["to_ft"])))
         if not 1 <= k <= top_storey or math.dist(p, q) < 24:
             am.failed(i, "no such storey, or the wall is under 2 ft long")
             continue
         added += 1
-        house.walls.append(Wall(f"{k}{'s' if a.get('bearing') else 'p'}x{added}", p, q, height(k, ((p[0] + q[0]) / 2, (p[1] + q[1]) / 2)),
-                                (k - 1) * level, role="interior"))
+        w = Wall(f"{k}{'s' if a.get('bearing') else 'p'}x{added}", p, q, height(k, ((p[0] + q[0]) / 2, (p[1] + q[1]) / 2)), (k - 1) * level, role="interior")
+        built.setdefault(i, []).append(w)
+        house.walls.append(w)
     for i, a in am.of("no_wall"):
         w = nearest([w for w in house.walls if w.id[1] in "sp" and w.base == (int(a["storey"]) - 1) * level], inches(a["near_ft"]))
         if w is None:
@@ -270,6 +286,13 @@ def detail(env: Envelope, record: dict, seed: int = 0, name: str = "", amendment
             under_roof(w, ms, HEEL)
     house.walls = [w for w in house.walls if not w.outline or stand(w, 2 * KNEE if w.id[1] in "sp" else KNEE)]
     house.walls = [w for w in house.walls if w.height >= KNEE]
+    for i, ws in built.items():           # an amended wall with no room to stand under the roof is said to be gone
+        gone = [w for w in ws if w not in house.walls]
+        if gone:
+            am.note(i, f"{len(ws) - len(gone)} of {len(ws)} walls built: the roof leaves under 4 ft for the rest" if len(ws) > len(gone)
+                    else "not applied: the roof leaves under 4 ft for a wall there")
+        elif len(ws) > 1:
+            am.note(i, f"{len(ws)} of {len(ws)} walls built")
     house.link()
     if stair:
         for f in house.floors:
@@ -284,15 +307,19 @@ def detail(env: Envelope, record: dict, seed: int = 0, name: str = "", amendment
             (u0, v0, _), (u1, v1, _) = f.local((x0, y0, f.z)), f.local((x1, y1, f.z))
             f.openings.append(Opening(f"{f.id}o{len(f.openings)}", "void", min(u0, u1), max(u0, u1), min(v0, v1), max(v0, v1)))
             house.has.add("double height")
-    forced = {}                           # bearing walls an amendment opens into posts and a beam, or keeps solid
+    forced, asked = {}, {}                # bearing walls an amendment opens into posts and a beam, or keeps solid
     for verb in ("open", "close"):
         for i, a in am.of(verb):
-            w = nearest([w for w in house.walls if w.id[1] == "s" and w.base == (int(a["storey"]) - 1) * level], inches(a["near_ft"]))
+            w = nearest([w for w in house.walls if w.id[1] in "sj" and w.role == "interior" and w.base == (int(a["storey"]) - 1) * level], inches(a["near_ft"]))
             if w is None:
                 am.failed(i, "no bearing wall inside within 3 ft of that place on that storey")
             else:
                 forced[w.id] = verb == "open"
+                asked[w.id] = i
     tally = openings(rng, house, style, level, sides, forced)
+    for w in house.walls:
+        if forced.get(w.id) and not any(o.width >= 96 for o in w.openings):
+            am.failed(asked[w.id], f"no stretch of wall {w.id} between the walls that meet it is 11 ft 4 in. long, the least for an opening of 8 ft between piers")
     for key, i in gave.items():
         placed, asked = tally.get(key, (0, 0))
         am.note(i, f"{placed} of {asked} placed" if asked else "applied: none there")
@@ -778,7 +805,7 @@ def openings(rng, house: House, style: Style, level: float, sides: dict, forced:
         r0, r1 = min(ends), max(ends)
         for k, items in (storeys or {}).items():
             tally[(side, str(k))] = [0, len(items or [])]
-            for item in items or []:
+            for item in sorted(items or [], key=lambda item: item.get("kind") != "door"):     # doors first: a house needs its door more than one window
                 kind, c = item.get("kind", "window"), r0 + float(item["at"]) * (r1 - r0)
                 over = [w for w in outer if storey(w) == int(k) and faces(w, d) > 0.5
                         and min(along(w.start), along(w.end)) - 1 <= c <= max(along(w.start), along(w.end)) + 1]
@@ -787,26 +814,28 @@ def openings(rng, house: House, style: Style, level: float, sides: dict, forced:
                     continue
                 part = lambda w: (c - along(w.start)) / (along(w.end) - along(w.start))
                 depth = lambda w: (w.start[0] + part(w) * (w.end[0] - w.start[0])) * d[0] + (w.start[1] + part(w) * (w.end[1] - w.start[1])) * d[1]
-                w = max(over, key=depth)
-                u = min(max(part(w), 0.0), 1.0) * w.length
-                ww = float(item.get("w") or (36 if kind == "door" else style.width))
-                how = {}
-                if w.length < ww + 26:            # a short wall (a bay's face): the opening in its middle, studs to each side
-                    ww, u, how = min(ww, w.length - 12), w.length / 2, {"margin": 4.5}
-                for shift in (0, 6, -6, 12, -12, 18, -18, 24, -24, 30, -30) if not how else (0,):
-                    if kind == "door":
-                        if ww >= 24 and cut(w, "door", u + shift - ww / 2, ww, 0.0, min(HEAD, top_over(w, u + shift - ww / 2, u + shift + ww / 2) - 9), **how):
-                            house.placed += 1
-                            tally[(side, str(k))][0] += 1
+                done = False
+                for w in sorted(over, key=depth, reverse=True):      # the wall nearest the viewer; one behind it if that one cannot take it (a set-back storey)
+                    u = min(max(part(w), 0.0), 1.0) * w.length
+                    ww = float(item.get("w") or (36 if kind == "door" else style.width))
+                    how, centred = {"tee": 4.0}, False      # an opening that was seen may stand right beside a wall that meets its wall
+                    if w.length < ww + 26:            # a short wall (a bay's face): the opening in its middle, studs to each side
+                        ww, u, how, centred = min(ww, w.length - 12), w.length / 2, {"margin": 4.5, "tee": 4.0}, True
+                    for shift in (0, 6, -6, 12, -12, 18, -18, 24, -24, 30, -30) if not centred else (0,):
+                        if kind == "door":
+                            done = ww >= 24 and cut(w, "door", u + shift - ww / 2, ww, 0.0, min(HEAD, top_over(w, u + shift - ww / 2, u + shift + ww / 2) - 9), **how)
+                        else:
+                            head = min(style.head, top_over(w, u + shift - ww / 2, u + shift + ww / 2) - 9)
+                            high = min(float(item.get("h") or style.height), head - 20)
+                            done = ww >= 16 and high >= 22 and cut(w, "window", u + shift - ww / 2, ww, head - high, head, **how)
+                        if done:
                             break
-                    else:
-                        head = min(style.head, top_over(w, u + shift - ww / 2, u + shift + ww / 2) - 9)
-                        high = min(float(item.get("h") or style.height), head - 20)
-                        if ww >= 16 and high >= 22 and cut(w, "window", u + shift - ww / 2, ww, head - high, head, **how):
-                            house.placed += 1
-                            tally[(side, str(k))][0] += 1
-                            break
-                else:
+                    if done:
+                        house.placed += 1
+                        tally[(side, str(k))][0] += 1
+                        break
+                if not done:
+                    w = max(over, key=depth)
                     house.missed.append(f"{kind} at {item['at']} on the {side} side, storey {k}: no clear place on wall {w.id} ({w.length:.0f} in. long, {top_over(w, 0, w.length):.0f} high)")
     ground = [w for w in outer if w.base == 0 and w.length >= 60 and not w.abutted and seen(w) is None]
     side = rng.choice([(0, -1), (0, 1), (1, 0), (-1, 0), (1, 0), (-1, 0)])      # the street: more often off an end
@@ -859,7 +888,7 @@ def openings(rng, house: House, style: Style, level: float, sides: dict, forced:
             continue
         bearing = w.id[1] in "sj"
         dice = rng.random() < (0.4 if w.base == 0 else 0.1)
-        if w.id[1] == "s" and w.height >= HEAD + 9 and forced.get(w.id, dice):
+        if w.height >= HEAD + 9 and (forced.get(w.id, dice) if w.id[1] == "s" else forced.get(w.id, False)):
             # a bearing line opened up: a beam on posts, a pier left at each end and where a wall meets it
             marks = [0.0] + [t.u for t in w.tees] + [w.length]
             for a, b in zip(marks, marks[1:]):

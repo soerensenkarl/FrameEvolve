@@ -42,6 +42,7 @@ def test_amendments_change_what_the_procedure_made_and_say_what_came_of_them(mod
         {"openings": {"side": "south", "storey": 2, "items": []}},
         {"wall": {"storey": 1, "from_ft": [10, 0], "to_ft": [10, 13], "bearing": False}},
         {"no_wall": {"storey": 2, "near_ft": [300, 300]}},
+        {"door": {"storey": 1, "near_ft": [10, 6], "w": 30}},
         {"nonsense": 1},
     ]
     house = detail(envelope.envelope(model), RECORD, 0, "t", amendments)
@@ -51,6 +52,7 @@ def test_amendments_change_what_the_procedure_made_and_say_what_came_of_them(mod
     assert sorted(south(1)) == ["door", "window"] and south(2) == []
     assert results[1] == "2 of 2 placed" and results[2].startswith("applied")
     assert any(w.id.startswith("1px") and w.start == (120.0, 0.0) for w in house.walls)
-    assert results[4].startswith("not applied") and results[5].startswith("not understood")
+    assert results[4].startswith("not applied") and results[6].startswith("not understood")
+    assert results[5] == "applied" and any(o.kind == "door" and o.width == 30 for w in house.walls if w.id.startswith("1px") for o in w.openings)
     assert plain.foundation != house.foundation
     assert not problems(house)

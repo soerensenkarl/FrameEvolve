@@ -749,3 +749,38 @@ what is wrong by marking it, so faults are fixed in the rules and checked again 
   (2 tests; the suite: 84 pass).
 - A fault the mansard brought out, fixed: a mass's inside walls were laid across a set-back storey that has
   walls of its own. All five amended houses now pass every check; 184 of 300 unamended (61%).
+
+## 2026-11-20: a second pass of agents: the inside and the structure, by amendment
+
+- Method: again one Claude Opus agent a house (medium effort), now given the plan drawings, the photos, the
+  assessor's rooms, bedrooms and units, what its house type is like inside, and the rule that the house must end
+  valid. Each added amendments after the first pass's (3 to 7 each: a stair, an interior a storey, close) and
+  took 3 to 6 1/2 minutes and 77,000 to 96,000 tokens.
+- What every agent found wrong with the general procedure's plan: the stair in the middle of a room, far from the
+  entrance; storeys that should be alike (stacked flats) laid out differently; rooms as long strips (a
+  three-decker cut into four strips 8 ft deep by three bearing walls; a wing cut into corridors 6 ft wide) or one
+  room 40 ft long; bearing walls opened into posts and a beam in houses of 1862 to 1925.
+- Result: all five valid.
+
+  | house | what the pass made of it | rooms: record, made |
+  |---|---|---|
+  | 95 Columbia St, three-decker | one bearing wall down the middle; kitchen, dining, parlour south, three bedrooms north, a stair hall by the entry; the same on each storey | 18, 21 |
+  | 25 Grozier Rd, two-family | stair in a hall by the entry porch; both flats alike on a spine; four rooms under the roof | 14, about 18 |
+  | 337 Huron Ave, two-family | stair in a hall by the side door; the same flat on storeys 1 and 2; one room under the gambrel | 11, 11 |
+  | 5 Fainwood Cir, single | a centre hall 7 ft wide with a straight stair behind the front door; a cased opening between dining and living; a sleeping porch upstairs; a flat ceiling | 5, 5 or 6 a storey |
+  | 22 Arlington St, single, mansard | a side stair hall inside the west door; a solid spine on three storeys; bedrooms off a hall along it | 12, about 14 |
+
+- What their reports made me fix: a door amendment crashed (a name in detail() hid the function that cuts
+  openings); a wall end read off a plan to a tenth of a foot fell an inch outside the floor and the wall "stood
+  on no floor" (ends within 6 in. of a wall are now put on it); walls amended into a storey under a gambrel were
+  dropped without a word (they now stand as high as the roof lets them, and the amendment says how many were
+  built); "open" was said to be applied where no stretch of wall was long enough (it now says so), and now works
+  on the walls where two masses meet; the plans show those walls in their own colour, since "interior" does not
+  replace them; an opening seen on a set-back storey tries the wall behind when the wall in front is too low (the
+  mansard's dormer windows, 0 of 9 before, now placed); a seen opening may stand right beside a wall that meets
+  its wall, and doors are placed before windows; a mass's storey needs headroom somewhere (an entry box had a
+  "second storey" 2 ft high, and a door opening onto it).
+- What cannot be said yet, by their reports: which end of a stair is the bottom, or a landing; a door from one
+  named room to another (the procedure adds doors until every room is reached, so some bedrooms open through
+  others); windows in dormers (dormers are taken off). The rooms made run a little over the record's count.
+- After the fixes: the five amended houses valid; 185 of 300 unamended (62%); 84 tests pass.
