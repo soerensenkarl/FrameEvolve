@@ -27,7 +27,7 @@
  <b>Pass</b>: <kbd>G</kbd> marks the house good and goes to the next unreviewed one &nbsp; <kbd>N</kbd> next unreviewed<br>
  <b>Move</b>: <kbd>&larr;</kbd> <kbd>&rarr;</kbd> or <kbd>J</kbd> <kbd>K</kbd> houses &nbsp; <kbd>V</kbd> next corner view &nbsp; <kbd>T</kbd> from above &nbsp; <kbd>[</kbd> <kbd>]</kbd> one storey at a time, <kbd>0</kbd> all<br>
  <b>Views</b>: <kbd>1</kbd> city model &nbsp; <kbd>2</kbd> detailed &nbsp; <kbd>3</kbd> inside walls, the outside ghosted &nbsp; <kbd>4</kbd> roof off &nbsp; <kbd>5</kbd> top storey off too &nbsp; <kbd>6</kbd> the next one, and so on<br>
- <b>Colours</b>: <span style="background:#e0703a;color:#fff;padding:0 6px;border-radius:3px">bearing walls inside</span> <span style="background:#cfd9e2;padding:0 6px;border-radius:3px">partitions</span> <span style="background:#efe9de;padding:0 6px;border-radius:3px">outside walls</span><br>
+ <b>Colours</b>: <span style="background:#e6c3a5;padding:0 6px;border-radius:3px">bearing walls inside</span> <span style="background:#cfd9e2;padding:0 6px;border-radius:3px">partitions</span> <span style="background:#efe9de;padding:0 6px;border-radius:3px">outside walls</span><br>
  <b>Layers</b>: <kbd>R</kbd> roofs &nbsp; <kbd>F</kbd> floors &nbsp; <kbd>O</kbd> outside walls &nbsp; <kbd>I</kbd> inside walls &nbsp; <kbd>E</kbd> photos of the four sides &nbsp; <kbd>?</kbd> this list</div>
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
 <script type="module">
@@ -40,7 +40,7 @@ const cam = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 10, 30000)
 const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); r.setPixelRatio(devicePixelRatio); r.setSize(innerWidth, innerHeight); document.body.append(r.domElement);
 const ctl = new OrbitControls(cam, r.domElement);
 scene.add(new THREE.HemisphereLight("#ffffff", "#b9b2a6", 1.7)); const sun = new THREE.DirectionalLight("#fff", 1.3); sun.position.set(-600, -900, 1200); scene.add(sun);
-const COL = { wall: "#efe9de", interior: "#cfd9e2", bearing: "#e0703a", roof: "#b98f6a", floor: "#d9c9a8", ceiling: "#e9e4da" };
+const COL = { wall: "#efe9de", interior: "#cfd9e2", bearing: "#e6c3a5", roof: "#b98f6a", floor: "#d9c9a8", ceiling: "#e9e4da" };
 const show = { roofs: true, floors: true, outer: true, inner: true };
 let mode = 2;      // 1 the city's model, 2 the detailed house, 3 its inside with the outside ghosted, 4 without the roof, 5 and up without the top storeys too
 let groups = {}, parts = [], levels = [], storey = 0, view = 0, centre = new THREE.Vector3(), reach = 1000, all = [];
