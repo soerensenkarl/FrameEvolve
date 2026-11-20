@@ -12,6 +12,8 @@
  #help{position:fixed;left:14px;bottom:14px;background:#fffe;border:1px solid #ccc;border-radius:8px;padding:10px 14px;z-index:3;display:none;line-height:1.7}
  #help.on{display:block} #flash{position:fixed;left:50%;top:45%;transform:translate(-50%,-50%);background:#222;color:#fff;padding:8px 16px;border-radius:8px;z-index:5;opacity:0;transition:opacity .25s;pointer-events:none}
  #verdict{font-weight:600}
+ #photos{position:fixed;left:0;right:0;bottom:0;display:none;gap:6px;padding:6px;background:#000a;z-index:3;justify-content:center}
+ #photos.on{display:flex} #photos figure{margin:0;color:#fff;font-size:12px;text-align:center} #photos img{max-height:38vh;max-width:24vw;display:block}
 </style>
 <div id="bar"><button id="prev">&larr;</button><select id="pick"></select><button id="next">&rarr;</button><span id="count"></span><span id="verdict"></span>
  <span class="sep"></span><button id="raw">City model<kbd>1</kbd></button><button id="det">Detailed<kbd>2</kbd></button>
@@ -19,12 +21,12 @@
  <button id="storey">All storeys<kbd>[ ]</kbd></button>
  <span class="sep"></span><input id="note" placeholder="Shift-drag to mark, type what is wrong, Enter saves"><button id="good">Good<kbd>G</kbd></button><button id="keys">?</button>
  <span id="info"></span></div>
-<canvas id="ink"></canvas><div id="notes"></div><div id="big"><img></div><div id="flash"></div>
+<div id="photos"></div><canvas id="ink"></canvas><div id="notes"></div><div id="big"><img></div><div id="flash"></div>
 <div id="help"><b>Mark</b>: hold Shift and drag (or <kbd>P</kbd> for the pen) &nbsp; <kbd>Z</kbd> undo &nbsp; <kbd>C</kbd> clear<br>
  <b>Save</b>: <kbd>Enter</kbd> goes to the comment, <kbd>Enter</kbd> again saves; <kbd>S</kbd> saves without a comment; <kbd>Esc</kbd> leaves the comment<br>
  <b>Pass</b>: <kbd>G</kbd> marks the house good and goes to the next unreviewed one &nbsp; <kbd>N</kbd> next unreviewed<br>
  <b>Move</b>: <kbd>&larr;</kbd> <kbd>&rarr;</kbd> or <kbd>J</kbd> <kbd>K</kbd> houses &nbsp; <kbd>V</kbd> next corner view &nbsp; <kbd>T</kbd> from above &nbsp; <kbd>[</kbd> <kbd>]</kbd> one storey at a time, <kbd>0</kbd> all<br>
- <b>Show</b>: <kbd>1</kbd> city model &nbsp; <kbd>2</kbd> detailed &nbsp; <kbd>R</kbd> roofs &nbsp; <kbd>F</kbd> floors &nbsp; <kbd>O</kbd> outside walls &nbsp; <kbd>I</kbd> inside walls &nbsp; <kbd>?</kbd> this list</div>
+ <b>Show</b>: <kbd>1</kbd> city model &nbsp; <kbd>2</kbd> detailed &nbsp; <kbd>R</kbd> roofs &nbsp; <kbd>F</kbd> floors &nbsp; <kbd>O</kbd> outside walls &nbsp; <kbd>I</kbd> inside walls &nbsp; <kbd>E</kbd> photos of the four sides &nbsp; <kbd>?</kbd> this list</div>
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
 <script type="module">
 import * as THREE from "three";
@@ -76,6 +78,7 @@ function load(i) {
   for (const g of Object.values(groups)) scene.add(g);
   const box = new THREE.Box3().setFromObject(h.raw ? groups.raw : groups.outer); centre = box.getCenter(new THREE.Vector3()); reach = box.getSize(new THREE.Vector3()).length();
   look(); $("info").textContent = h.info; pick.value = i; apply(); notes();
+  $("photos").innerHTML = ["south", "east", "north", "west"].map((s) => `<figure><img src="evidence/${h.id}/${s}.jpg" onerror="this.parentNode.style.display='none'">${s}</figure>`).join("");
 }
 function look(top = false) {       // a corner view, or from above
   const a = Math.PI / 4 + view * Math.PI / 2; ctl.target.copy(centre);
@@ -160,6 +163,7 @@ const KEYS = {
   "]": () => { storey = Math.min(levels.length, storey + 1); apply(); }, "[": () => { storey = Math.max(0, storey - 1); apply(); }, 0: () => { storey = 0; apply(); },
   v: () => { view = (view + 1) % 4; look(); }, t: () => look(true),
   p: () => { penOn = !penOn; pen(penOn); flash(penOn ? "Pen on" : "Pen off"); }, z: () => { strokes.pop(); draw(); }, c: () => { strokes = []; draw(); },
+  e: () => $("photos").classList.toggle("on"),
   s: save, Enter: () => note.focus(), "?": () => $("help").classList.toggle("on"),
 };
 addEventListener("keydown", (e) => {

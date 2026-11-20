@@ -563,3 +563,22 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
   (which side is the street, windows a storey on each face, doors, porch or room), so the procedural house comes
   close to the real one. Photos too soft to measure from are good enough to count from; the detailer places
   what is counted, and check.py stays the judge.
+
+## 2026-11-20: a brief per house, read off photos of its sides
+
+- photos.py draws the city's photo mesh square to each of a detailed house's four sides, nearest surface first,
+  with a ruler from 0 to 1 along the side and heights over the ground in feet (data/cambridge/evidence/<model>;
+  about 5 s a house once the mesh is cached). Needs pyproj (added). cambridge.py now records each model's own
+  position (model_lat, model_lon), from which the model files' offset is found.
+- Correction to the entry of 2026-11-19: the mesh and the models do not line up in height. The mesh stands
+  3.2 ft higher (measured at ten roofs: 3.2, 3.2, 3.4, 3.2, 3.2 where no chimney or tree is in the way), a
+  constant taken as a difference of height datum (DATUM in photos.py). In plan they do line up.
+- detail() takes a brief: the floors' heights over the ground as seen, and for each side and storey the
+  openings, each at a place on the side's ruler with a kind and a rough size. The detailer follows it where it
+  speaks and makes up the rest; an opening is moved up to 30 in. to clear the walls that meet its wall, and one
+  that finds no place is listed (house.missed). check.py judges the result as before.
+- First brief, written by Claude in the session from the four photos of 25 Grozier Rd: the photos show a
+  raised basement, two full storeys and a third under the roof, where the procedure alone had put three
+  storeys on the ground. From the brief: floors at 3.3, 13.3 and 23.3 ft, 27 of 36 seen openings placed (5 found
+  no place, 4 fell on no wall facing that side), the house passes every check. The photos are soft but rows,
+  counts and places of windows read clearly on three sides; the fourth is half behind a tree.

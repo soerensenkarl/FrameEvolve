@@ -68,7 +68,9 @@ def build(count: int = 20) -> str:
             vs = [env.place(tuple(map(float, l.split()[1:4]))) for l in path.read_text().splitlines() if l.startswith("v ")]
             tris = [[int(x.split("/")[0]) - 1 for x in l.split()[1:4]] for l in path.read_text().splitlines() if l.startswith("f ")]
             item["raw"] = {"v": [round(c, 1) for v in vs for c in v], "f": [i for t in tris for i in t]}
-            house = detail(env, h, 0, h["model"])
+            brief = cambridge.OUT / "briefs" / f"{h['model']}.json"
+            house = detail(env, h, 0, h["model"], json.loads(brief.read_text()) if brief.exists() else None)
+            item["briefed"] = brief.exists()
             item["lift"] = house.foundation
             item["surfaces"] = surfaces(house)
             wrong = problems(house)
@@ -77,7 +79,8 @@ def build(count: int = 20) -> str:
             item["info"] += (f'. Detailed: {len({w.base for w in house.walls})} storeys, {len(house.walls)} walls, '
                              f'{sum(len(w.openings) for w in house.walls)} openings, {len(house.roofs)} roof planes; '
                              f'taken off: {env.dropped or "nothing"}. '
-                             + ("VALID: passes every check." if not wrong else "NOT VALID: " + "; ".join(wrong[:4])))
+                             + ("VALID: passes every check." if not wrong else "NOT VALID: " + "; ".join(wrong[:4]))
+                             + (" Detailed from a BRIEF read off photos." if item["briefed"] else ""))
         except Exception:
             item["problems"] = ["detailing failed: " + traceback.format_exc().splitlines()[-1]]
         data.append(item)
@@ -113,6 +116,9 @@ def serve(count: int) -> None:
                 self.send(build(count).encode(), "text/html; charset=utf-8")
             elif self.path == "/notes":
                 self.send(json.dumps(notes()).encode())
+            elif self.path.startswith("/evidence/") and self.path.endswith(".jpg"):
+                f = cambridge.OUT / "evidence" / Path(self.path).parent.name / Path(self.path).name
+                self.send(f.read_bytes(), "image/jpeg") if f.exists() else self.send(b"", code=404)
             elif self.path.endswith(".png") and self.note().with_suffix(".png").exists():
                 self.send(self.note().with_suffix(".png").read_bytes(), "image/png")
             else:

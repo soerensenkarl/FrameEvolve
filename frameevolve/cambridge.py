@@ -97,7 +97,8 @@ def download() -> list[dict]:
         (OUT / "models" / f"{mid}.obj").write_bytes(z.read(obj))
         kept.append({"model": mid, "tile": m["tile"], "height_ft": round(float(m["Height_Ft"]), 2),
                      "ground_ft": round(float(m["Ground_Elev_Ft"]), 2), "model_date": m["Model_Date"],
-                     "off_m": round(metres(m["lat"], m["lon"], float(h["latitude"]), float(h["longitude"])), 1), **h})
+                     "off_m": round(metres(m["lat"], m["lon"], float(h["latitude"]), float(h["longitude"])), 1),
+                     "model_lat": m["lat"], "model_lon": m["lon"], **h})
     (OUT / "houses.json").write_text(json.dumps(kept, indent=1))
     shared = sum(len(p) for p in by_model.values() if len(p) > 1)
     print(f"{len(houses)} assessed houses, {len(models)} models in {len(names)} tiles; "
