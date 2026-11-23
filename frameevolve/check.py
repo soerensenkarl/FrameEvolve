@@ -9,6 +9,7 @@ only one with nothing wrong belongs in a dataset. The checks are of the design, 
              under the wall's top
   rooms      every room of a storey can be reached, through doors, from outside or from the stair
   stair      a house of more than one storey has a stair opening in every floor
+  meeting    every edge of a roof plane lies along another roof plane's edge, a wall's top, or a wall's face
   roof       there is a roof over all of it and none runs out beyond the walls; no bearing wall or partition stands through the roof over it
   loads      all the load on the surfaces comes down to the ground (loads.py)
 
@@ -31,6 +32,40 @@ from frameevolve.model import House
 SEED = Path(__file__).resolve().parents[1] / "grammars" / "seed.py"
 SLIVER = 12.0      # a wall shorter than this is a fault of the envelope, not a wall
 LOST = 0.005       # the share of the load that may go astray
+
+
+def unmet(house: House, near: float = 0.1) -> list[tuple]:
+    """The roof edges that meet nothing, as (roof id, end, end, inches unmet): every edge of a roof plane should
+    lie along an edge of another roof plane (a ridge, a hip, a valley), along the top of a wall, or against a
+    wall's face. Measured at three points an edge, to a tenth of an inch."""
+    def off(p, a, b):
+        ab = [b[i] - a[i] for i in range(3)]
+        L2 = sum(x * x for x in ab) or 1e-12
+        t = min(1.0, max(0.0, sum((p[i] - a[i]) * ab[i] for i in range(3)) / L2))
+        return sum((p[i] - a[i] - t * ab[i]) ** 2 for i in range(3)) ** 0.5
+    edges = {r.id: [(r.world(*a, 0), r.world(*b, 0)) for a, b in zip(r.outline, r.outline[1:] + r.outline[:1])] for r in house.roofs}
+    tops = []
+    for w in house.walls:
+        line = [w.world(u, v, 0) for u, v in w.outline_uv[2:]]
+        tops += list(zip(line, line[1:]))
+    out = []
+    for r in house.roofs:
+        for a, b in edges[r.id]:
+            L = sum((b[i] - a[i]) ** 2 for i in range(3)) ** 0.5
+            loose = 0.0
+            for t in (0.2, 0.5, 0.8):
+                p = tuple(a[i] + t * (b[i] - a[i]) for i in range(3))
+                met = any(off(p, c, d) < near for q, es in edges.items() if q != r.id for c, d in es) or any(off(p, c, d) < near for c, d in tops)
+                if not met:                    # against the face of a wall that goes on up past it
+                    for w in house.walls:
+                        u, v, d = w.local(p)
+                        if abs(d) < near and -near <= u <= w.length + near and -near <= v <= top_over(w, max(u - 0.5, 0), min(u + 0.5, w.length)) + near:
+                            met = True
+                            break
+                loose += 0.0 if met else L / 3
+            if loose:
+                out.append((r.id, a, b, loose))
+    return out
 
 
 def problems(house: House, framing: bool = False) -> list[str]:
@@ -89,6 +124,9 @@ def problems(house: House, framing: bool = False) -> list[str]:
         beyond = max(Point(r.world(u, v, 0)[:2]).distance(hull) for r in house.roofs for u, v in r.outline)
         if beyond > 30:
             out.append(f"roof: a roof plane runs {beyond / 12:.0f} ft out beyond the walls")
+    loose = sum(x[3] for x in unmet(house))
+    if loose > 6:
+        out.append(f"meeting: {loose:.0f} in. of roof edge meets neither another roof plane nor a wall")
     try:
         td = Takedown(house)
         lost = sum(l.sum for _, l, _ in td.lost) / td.applied.sum

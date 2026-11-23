@@ -16,6 +16,7 @@ from pathlib import Path
 
 from shapely import affinity
 from shapely.geometry import LineString, Point, Polygon, box
+from shapely.geometry.polygon import orient
 from shapely.ops import unary_union
 
 FLAT = 1 / 12        # a roof face under 1:12 is flat: no eave, no ceiling under it
@@ -378,7 +379,7 @@ def square(ms: list[Mass]) -> None:
     """Square the masses' outlines up: an edge nearly along x or y is made to run along it, and edges along one
     axis that lie within SNAP of each other, on any mass, are put in one line. So walls that the model has a
     degree off square, or jogged by a few inches, come out straight, and two masses still meet on one line.
-    Each mass's roof faces are then run on to its squared outline, so no wall stands outside its roof."""
+    Each mass's roof faces are then recut to the squared outline (recut), so roofs and walls meet on one line."""
     true = {id(m): _piece(unary_union([f.shape.buffer(0.25, join_style=2) for f in m.faces]).buffer(-0.25, join_style=2)) for m in ms}
     lines = {"h": [], "v": []}
     for shape in true.values():
@@ -446,10 +447,89 @@ def square(ms: list[Mass]) -> None:
             new = shape
         m.area = new if new.geom_type == "Polygon" and new.area > 0.7 * shape.area else shape
         m.shape = Polygon(m.area.exterior)
-        bare = m.area.difference(unary_union([f.shape.buffer(0.3) for f in m.faces]))      # the roof runs on to the squared outline
-        for piece in getattr(bare, "geoms", [bare]):
-            if piece.geom_type == "Polygon" and piece.area > 4:
-                close_over(piece, m.faces)
+        level_eaves(m)
+        recut(m)
+
+
+def level_eaves(m: Mass) -> None:
+    """Put a mass's eaves that are within 3 in. of each other at one height, on a quarter inch: the model has
+    the two eaves of one roof an inch apart, and a wall top and a ceiling can only be at one height. Each face is
+    raised or lowered so that its plane passes through the squared wall line at that height."""
+    found = defaultdict(list)                         # face -> (height of its plane over an eave edge, the edge's length)
+    for ring in [m.area.exterior, *m.area.interiors]:
+        pts = list(orient(Polygon(ring), 1.0).exterior.coords) if ring is m.area.exterior else list(ring.coords)
+        turn = 1.0 if ring is m.area.exterior else -1.0 * (1.0 if Polygon(ring).exterior.is_ccw else -1.0)
+        for a, b in zip(pts, pts[1:]):
+            L = math.dist(a, b)
+            if L < 12:
+                continue
+            nx, ny = -(b[1] - a[1]) / L * turn, (b[0] - a[0]) / L * turn        # into the mass
+            mid = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+            inside = Point(mid[0] + 2 * nx, mid[1] + 2 * ny)
+            f = min(m.faces, key=lambda f: f.shape.distance(inside))
+            if f.slope >= FLAT and (f.a * nx + f.b * ny) / f.slope > 0.98:
+                found[id(f)].append((f.z(*mid), L))
+    eaves = sorted((max(v, key=lambda x: x[1])[0], sum(L for _, L in v), k) for k, v in found.items())
+    groups: list[list] = []
+    for z, L, k in eaves:
+        if groups and z - groups[-1][0][0] <= 3:
+            groups[-1].append((z, L, k))
+        else:
+            groups.append([(z, L, k)])
+    by_id = {id(f): f for f in m.faces}
+    for g in groups:
+        target = round(4 * sum(z * L for z, L, _ in g) / sum(L for _, L, _ in g)) / 4
+        for z, _, k in g:
+            by_id[k].c += target - z
+
+
+def recut(m: Mass) -> None:
+    """Cut a mass's roof faces again, exactly: each face is the part of the mass's squared ground that lies on
+    its own side of every line where its plane meets a neighbouring face's plane (a ridge, a hip, a valley). So
+    two faces share their seam to the last digit, a face ends on the very line its wall stands on, and three
+    faces that meet do so in one point. What was read off the model only says which faces are neighbours and
+    which side of a seam each lies on."""
+    was = [f.shape for f in m.faces]
+    far = 1e5
+    cells = []
+    for i, f in enumerate(m.faces):
+        cell = m.area.intersection(was[i].buffer(SNAP + 6, join_style=2))       # never far from where the model had it
+        for j, g in enumerate(m.faces):
+            a, b, c = f.a - g.a, f.b - g.b, f.c - g.c                           # the two planes are level where a x + b y + c = 0
+            n = math.hypot(a, b)
+            if g is f or n < 1e-9:
+                continue
+            seam = was[i].buffer(1.5).intersection(was[j].exterior)
+            if seam.is_empty or seam.length < 8:
+                continue
+            mids = [x.interpolate(0.5, normalized=True) for x in getattr(seam, "geoms", [seam]) if x.geom_type == "LineString" and x.length >= 8]
+            if not any(abs(f.z(p.x, p.y) - g.z(p.x, p.y)) <= 4 for p in mids):
+                continue                                                         # they meet nowhere: one stands over the other all along
+            q = max(was[i].exterior.coords, key=lambda q: abs(a * q[0] + b * q[1] + c))     # a corner of the face well off the seam
+            sign = 1.0 if a * q[0] + b * q[1] + c > 0 else -1.0
+            px, py, tx, ty, nx, ny = -a * c / n ** 2, -b * c / n ** 2, -b / n, a / n, sign * a / n, sign * b / n
+            cell = cell.intersection(Polygon([(px + far * tx, py + far * ty), (px - far * tx, py - far * ty),
+                                              (px - far * tx + far * nx, py - far * ty + far * ny), (px + far * tx + far * nx, py + far * ty + far * ny)]))
+        cells.append(_piece(cell) if not cell.is_empty else cell)
+    taken = Polygon()
+    for i in sorted(range(len(cells)), key=lambda i: -cells[i].area):       # what two faces both claim goes to the larger
+        cells[i] = cells[i].difference(taken) if not taken.is_empty else cells[i]
+        cells[i] = _piece(cells[i]) if not cells[i].is_empty else cells[i]
+        if not cells[i].is_empty and cells[i].geom_type == "Polygon":
+            taken = unary_union([taken, cells[i]])
+    keep = [i for i in range(len(cells)) if cells[i].geom_type == "Polygon" and cells[i].area >= 144]
+    if not keep:
+        return                                                               # nothing came of it: the faces stay as they were
+    m.faces = [m.faces[i] for i in keep]
+    for f, i in zip(m.faces, keep):
+        f.shape = Polygon([(round(x, 4), round(y, 4)) for x, y in cells[i].exterior.coords])
+    bare = m.area.difference(unary_union([f.shape for f in m.faces]))        # ground no face reached goes to the face it lies along most
+    for piece in getattr(bare, "geoms", [bare]):
+        if piece.geom_type == "Polygon" and piece.area > 1:
+            f = max(m.faces, key=lambda f: f.shape.exterior.intersection(piece.buffer(0.05)).length)
+            grown = unary_union([f.shape, piece.buffer(1e-4, join_style=2)])
+            if grown.geom_type == "Polygon":
+                f.shape = Polygon([(round(x, 4), round(y, 4)) for x, y in grown.exterior.coords]).simplify(1e-3)
 
 
 def _piece(shape) -> Polygon:

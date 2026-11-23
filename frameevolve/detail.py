@@ -12,8 +12,9 @@ From those, with a seeded random choice wherever a real house could differ:
              stands on another's roof (a mansard's top) and is not yet clear of it. A top wall follows the
              roof and reaches its plane
   floors     a floor at every level over the masses that reach it, a ceiling over masses that top out together
-  inside     bearing walls so no floor spans too far, partitions between them clear of the windows, a stair
-             through every floor
+  inside     bearing walls dividing the depth evenly so no floor spans too far; a stair by the front door, along a
+             wall, in a hall of its own; partitions dividing each bay into rooms 11 to 15 ft wide, clear of the
+             windows; stacked flats laid out alike
   openings   windows in columns that line up over the storeys, set between the bearing walls; a front and a
              back door; a window in a tall gable; doors inside until every room can be reached
 
@@ -103,6 +104,34 @@ class Amendments:
 
     def note(self, i: int, what: str) -> None:
         self.result[i] = what
+
+
+def entrance(rng, house: House, sides: dict) -> tuple | None:
+    """The plan point of the front door, chosen before the inside is laid out: the door an amendment saw on the
+    ground storey, or else a place on a ground wall facing the street (more often off an end of the house). Kept
+    on the house (house.entry: wall, place along it) for the front door to be cut there."""
+    ground = [w for w in house.walls if w.role == "exterior" and w.base == 0]
+    house.entry = None
+    for side, storeys in sides.items():
+        for item in (storeys or {}).get("1") or []:
+            if item.get("kind") == "door":
+                d = SIDES[side]
+                along = lambda p: -d[1] * p[0] + d[0] * p[1]
+                ends = [along(p) for w in house.walls if w.role == "exterior" for p in (w.start, w.end)]
+                c = min(ends) + float(item["at"]) * (max(ends) - min(ends))
+                over = [w for w in ground if -(w.normal[0] * d[0] + w.normal[1] * d[1]) > 0.5 and min(along(w.start), along(w.end)) <= c <= max(along(w.start), along(w.end))]
+                if over:
+                    w = max(over, key=lambda w: w.start[0] * d[0] + w.start[1] * d[1])
+                    t = (c - along(w.start)) / (along(w.end) - along(w.start))
+                    return (w.start[0] + t * (w.end[0] - w.start[0]), w.start[1] + t * (w.end[1] - w.start[1]))
+    side = rng.choice([(0, -1), (0, 1), (1, 0), (-1, 0), (1, 0), (-1, 0)])
+    walls = sorted([w for w in ground if w.length >= 60 and not w.abutted], key=lambda w: (-round(-w.normal[0] * side[0] - w.normal[1] * side[1], 1), -w.length))
+    if not walls:
+        return None
+    w = walls[0]
+    u = w.length * rng.choice([0.25, 0.5, 0.75])
+    house.entry = (w, u)
+    return w.world(u, 0, 0)[:2]
 
 
 def inches(p) -> tuple:
@@ -209,21 +238,18 @@ def detail(env: Envelope, record: dict, seed: int = 0, name: str = "", amendment
         here = [m for m in ms if n[id(m)] >= k]
         storey_walls(house, k, here, runs, E, n, carried, level)
         if k > 1:
-            for j, piece in enumerate(pieces(unary_union([m.shape.buffer(0.5, join_style=2) for m in here]).buffer(-0.5, join_style=2))):
+            for j, piece in enumerate(pieces(joined([m.shape for m in here]))):
                 house.floors.append(Floor(f"f{k}" + "abcdefgh"[j - 1] * (j > 0), ring(piece), (k - 1) * level))
     ceilings(house, ms, E, n, level, attic, spines(rooms[id(ms[0])], span))
     for m in ms:
         for f in m.faces:
-            clean = f.shape.buffer(-0.75, join_style=2).buffer(0.75, join_style=2)     # no spike or sliver thinner than 1 1/2 in.
-            clean = max(getattr(clean, "geoms", [clean]), key=lambda g: g.area)
-            if not clean.is_empty and clean.area > 144:
-                f.shape = Polygon(clean.exterior).simplify(0.05)
-                house.roofs.append(roof(f"r{len(house.roofs) + 1}", f))
+            house.roofs.append(roof(f"r{len(house.roofs) + 1}", f))
     core = rooms[id(ms[0])]               # the stair goes where every floor is
     for f in house.floors:
         if f.role == "floor" and len(f.id) == 2:
             core = core.intersection(Polygon(f.outline))
-    stair = house.stair = hole_place(rng, rooms[id(ms[0])], core, span, STAIR) if n[id(ms[0])] > 1 else None
+    entry = entrance(rng, house, sides)   # where the front door is: the stair goes by it
+    stair = house.stair = hole_place(rng, rooms[id(ms[0])], core, span, STAIR, entry) if n[id(ms[0])] > 1 else None
     void = None                           # a room of double height: an opening in the floor over the ground storey
     if stair is not None and rng.random() < (0.2 if year >= 1960 else 0.07):
         void = hole_place(rng, rooms[id(ms[0])], core.difference(stair.buffer(48)), span, VOID)
@@ -252,6 +278,10 @@ def detail(env: Envelope, record: dict, seed: int = 0, name: str = "", amendment
         return level if k < n[id(m)] else (ceiling - (k - 1) * level if ceiling is not None else tops[id(m)] - (k - 1) * level)
     replaced = {int(a["storey"]) for _, a in am.of("interior")}
     walled = {k: {id(w.run.mass) for w in house.walls if round(w.base / level) + 1 == k} for k in range(1, top_storey + 1)}
+    hall = hall_of(rooms[id(ms[0])], stair, span) if stair is not None else None
+    units = int(float(record.get("interior_numunits") or 1))
+    alike = set(range(1, min(units, top_storey) + 1)) if units > 1 else set()      # stacked flats are laid out alike
+    plans: dict = {}
     for k in range(1, top_storey + 1):
         for j, m in enumerate(ms):
             if n[id(m)] < k or k in replaced or (carried[id(m)] and id(m) not in walled[k]):
@@ -262,7 +292,8 @@ def detail(env: Envelope, record: dict, seed: int = 0, name: str = "", amendment
             if region.is_empty or region.area < 30 * 144:
                 continue
             h = level if k < n[id(m)] else E[id(m)] - (k - 1) * level
-            inside(rng, house, k, j, region, h, (k - 1) * level, [x for x in (stair, void if k == 2 else None) if x is not None], runs[id(m)], style, span)
+            inside(rng, house, k, j, region, h, (k - 1) * level, [x for x in (stair, void if k == 2 else None) if x is not None], runs[id(m)], style, span,
+                   hall if j == 0 else None, plans.setdefault(j, {}) if k in alike else None)
     added, built = 0, {}
     for i, a in [(i, {**w, "storey": a["storey"]}) for i, a in am.of("interior") for w in a.get("walls", [])] + am.of("wall"):
         k = int(a["storey"])
@@ -351,6 +382,7 @@ class Style:
         self.head = HEAD if plate < 105 or rng.random() < 0.4 else rng.choice([90.0, 96.0])
         self.pitch = rng.uniform(84, 126)       # about how far apart the windows stand
         self.late = not old
+        self.open = 0.1 if year < 1940 else 0.35 if year < 1980 else 0.6     # how often a bearing line on the ground storey is posts and a beam
 
 
 def levels(rng, eave_z: float, storeys: float, year: int) -> tuple[float, float, float, float]:
@@ -375,6 +407,14 @@ def levels(rng, eave_z: float, storeys: float, year: int) -> tuple[float, float,
     return (lv, p, cut, p) if cut >= 0 else (lv, p, 0.0, p + cut)
 
 
+def joined(shapes: list[Polygon]):
+    """Shapes that share edges, as one: exactly where they share them to the digit (squared masses do), and by
+    closing the hairline between them where they do not (walls off the square)."""
+    exact = unary_union(shapes)
+    closed = unary_union([s.buffer(0.5, join_style=2) for s in shapes]).buffer(-0.5, join_style=2)
+    return exact if len(getattr(exact, "geoms", [exact])) <= len(getattr(closed, "geoms", [closed])) else closed
+
+
 def pieces(shape) -> list[Polygon]:
     return [Polygon(g.exterior) for g in sorted(getattr(shape, "geoms", [shape]), key=lambda g: -g.area) if g.area > 20 * 144]
 
@@ -387,7 +427,7 @@ def ring(shape: Polygon) -> list[tuple]:
         a, b = pts[i - 1], pts[(i + 1) % len(pts)]
         cross = (p[0] - a[0]) * (b[1] - p[1]) - (p[1] - a[1]) * (b[0] - p[0])
         if abs(cross) > 0.02 * math.dist(a, p) * math.dist(p, b) and math.dist(a, p) > 0.5:
-            out.append((round(p[0], 3), round(p[1], 3)))
+            out.append((round(p[0], 4), round(p[1], 4)))
     return out
 
 
@@ -473,27 +513,27 @@ def top_at(run: Run, t: float, side: float = 0.0) -> float:
 
 
 def profile(run: Run, t0: float, t1: float) -> list[tuple]:
-    """The wall top from t0 to t1 along a run as (t, z) points: straight between the points where the roof face
-    over the wall changes, found by stepping along it."""
+    """The wall top from t0 to t1 along a run as (t, z) points: it changes at the corners the roof faces over
+    the wall have on the run, and between two of them it is that face's plane, so wall and roof share the edge."""
     faces = run.mass.faces
-
-    def over(t: float) -> int:
-        p = Point(run.at(min(max(t, 0.01), run.length - 0.01), 1.5))
-        return min(range(len(faces)), key=lambda i: faces[i].shape.distance(p))
-    ts = [t0 + (t1 - t0) * i / max(1, round((t1 - t0) / 6)) for i in range(max(1, round((t1 - t0) / 6)) + 1)]
-    cuts = [t0]
-    for a, b in zip(ts, ts[1:]):
-        fa, fb = over(a), over(b)
-        if fa != fb:
-            for _ in range(6):
-                mid = (a + b) / 2
-                a, b = (mid, b) if over(mid) == fa else (a, mid)
-            cuts.append((a + b) / 2)
-    cuts.append(t1)
+    line = LineString([run.a, run.b])
+    cuts = {t0, t1}
+    for f in faces:
+        for p in f.shape.exterior.coords:
+            if line.distance(Point(p)) < 0.02:
+                t = line.project(Point(p))
+                if t0 + 0.02 < t < t1 - 0.02:
+                    cuts.add(round(t, 4))
+    cuts = sorted(cuts)
     out = []
     for a, b in zip(cuts, cuts[1:]):
-        if b - a > 0.5:
-            out += [(a, top_at(run, a, 0.3)), (b, top_at(run, b, -0.3))]
+        if b - a < 0.02:
+            continue
+        mid = Point(run.at((a + b) / 2))
+        f = min(faces, key=lambda f: (f.shape.exterior.distance(mid), f.shape.distance(Point(run.at((a + b) / 2, 1.5)))))
+        n = run.inward
+        heel = HEEL if f.slope < FLAT or (f.a * n[0] + f.b * n[1]) / f.slope > 0.3 else 0.0
+        out += [(a, f.z(*run.at(a)) - heel), (b, f.z(*run.at(b)) - heel)]
     return out or [(t0, top_at(run, t0, 0.3)), (t1, top_at(run, t1, -0.3))]
 
 
@@ -514,7 +554,7 @@ def storey_walls(house: House, k: int, here: list[Mass], runs, E, n, carried, le
                     pts = [(t, min(z, level)) for t, z in pts]
                     if min(z for _, z in pts) > level - 3:
                         pts = [(t0, level), (t1, level)]
-                elif all(abs(z - (E[id(m)] - base)) < 3 for _, z in pts):
+                elif all(abs(z - (E[id(m)] - base)) < 0.05 for _, z in pts):
                     pts = [(t0, E[id(m)] - base), (t1, E[id(m)] - base)]
                 pts = [(t, max(z, 0.0)) for t, z in pts]
                 high = max(z for _, z in pts)
@@ -578,8 +618,11 @@ def ceilings(house: House, ms: list[Mass], E, n, level: float, attic: str, main_
 
 
 def roof(rid: str, f: Face) -> "Roof":
-    """A roof face as a roof plane, ending where its walls stand: no overhang (an eave is the framer's to add)."""
+    """A roof face as a roof plane, ending where its walls stand: no overhang (an eave is the framer's to add).
+    Its corners are the face's own, untouched, so it meets its neighbours and its walls exactly."""
     pts = list(orient(f.shape, 1.0).exterior.coords)[:-1]
+    pts = [p for i, p in enumerate(pts) if abs((p[0] - pts[i - 1][0]) * (pts[(i + 1) % len(pts)][1] - p[1]) -
+                                               (p[1] - pts[i - 1][1]) * (pts[(i + 1) % len(pts)][0] - p[0])) > 1e-6]     # corners, not points along an edge
     e = (f.b / f.slope, -f.a / f.slope) if f.slope > 1e-9 else (1.0, 0.0)      # along the eave, the roof rising to its left
     low = min(pts, key=lambda p: f.z(*p))
     return plane(rid, low, (low[0] + e[0], low[1] + e[1]), f.z(*low), f.slope * 12, pts)
@@ -599,51 +642,93 @@ def scan(shape: Polygon, c: float, along_x: bool) -> list[tuple]:
 
 
 def spines(shape: Polygon, span: float = SPAN) -> tuple[bool, list[float]]:
-    """Where a mass's rooms need bearing walls so that no floor in it spans further than `span`: (they run along x,
-    their places). They run the long way; each is put in the middle of the deepest stretches left."""
+    """Where a mass's rooms need bearing walls so that no floor in it spans further than `span` (and a foot: a
+    house 33 ft deep has one bearing wall down its middle, not three): (they run along x, their places). They
+    run the long way and divide the depth evenly."""
     x0, y0, x1, y1 = shape.bounds
     along_x = x1 - x0 >= y1 - y0
     lo, hi = (x0, x1) if along_x else (y0, y1)
-    if min(x1 - x0, y1 - y0) <= span:
-        return along_x, []
+    limit = span + 12
     at: list[float] = []
     for _ in range(3):
         deep = []
         for c in [lo + 12 * i for i in range(1, int((hi - lo) // 12))]:
             for a, b in scan(shape, c, not along_x):
                 marks = [a] + sorted(s for s in at if a < s < b) + [b]
-                deep += [(p + q) / 2 for p, q in zip(marks, marks[1:]) if q - p > span]
+                deep += [(p, q) for p, q in zip(marks, marks[1:]) if q - p > limit]
         if not deep:
             break
-        deep.sort()
-        at.append(2.0 * round(deep[len(deep) // 2] / 2))
-    return along_x, sorted(at)
+        deep.sort(key=lambda s: s[0] + s[1])
+        p, q = deep[len(deep) // 2]                    # the commonest deep stretch, divided evenly
+        bays = math.ceil((q - p) / limit)
+        at += [2.0 * round((p + (q - p) * i / bays) / 2) for i in range(1, bays)]
+    return along_x, sorted(set(at))
 
 
-def hole_place(rng, shape: Polygon, core: Polygon, span: float, size: tuple):
+def hole_place(rng, shape: Polygon, core: Polygon, span: float, size: tuple, near: tuple | None = None):
     """An opening in the floors (a stair, a double-height room) in the main mass where every floor is (`core`),
-    clear of the outline and the bearing walls; its long side across them if it fits."""
+    clear of the outline and the bearing walls: of the places it fits, the one nearest `near` (the entrance) that
+    lies along a wall, not out in the middle of a room."""
     along_x, at = spines(shape, span)
     room = core.buffer(-18)
+    room = max(getattr(room, "geoms", [room]), key=lambda g: g.area)      # the largest piece, where the floor narrows to nothing
     if room.is_empty:
         return None
     x0, y0, x1, y1 = room.bounds
-    for i in range(800):
-        w, d = size if along_x == (i < 400) else size[::-1]
+    best, score = None, 1e18
+    for i in range(600):
+        w, d = size if i % 2 else size[::-1]
         if x1 - x0 <= w or y1 - y0 <= d:
             continue
-        x, y = 2.0 * round(rng.uniform(x0, x1 - w) / 2), 2.0 * round(rng.uniform(y0, y1 - d) / 2)
+        x, y = rng.uniform(x0, x1 - w), rng.uniform(y0, y1 - d)
+        if i % 3 == 0:                                   # against an outside wall
+            x, y = rng.choice([(x0, y), (x1 - w, y), (x, y0), (x, y1 - d)])
+        elif i % 3 == 1 and at:                          # against a bearing wall
+            side = rng.choice(at)
+            x, y = ((x, rng.choice([side + 12, side - 12 - d])) if along_x else (rng.choice([side + 12, side - 12 - w]), y))
+        x, y = 2.0 * round(x / 2), 2.0 * round(y / 2)
         r = box(x, y, x + w, y + d)
         lo, hi = (y, y + d) if along_x else (x, x + w)
-        if room.contains(r) and all(not (lo - 12 < s < hi + 12) for s in at):
-            return r
+        if not room.contains(r) or any(lo - 11 < s < hi + 11 for s in at):
+            continue
+        hug = min([room.exterior.distance(r)] + [min(abs(lo - s), abs(hi - s)) - 12 for s in at])
+        cost = 3 * hug + (math.dist(r.centroid.coords[0], near) if near else 0.0)
+        if cost < score:
+            best, score = r, cost
+    return best
+
+
+def hall_of(shape: Polygon, stair, span: float):
+    """The wall that makes a hall of the strip the stair stands in: along the stair's long side, 3 1/2 ft clear
+    of it on its open side, from one bearing line to the next. None where the stair has no such side (it lies
+    along the bearing walls, or the room beyond would be under 5 ft)."""
+    along_x, at = spines(shape, span)
+    x0, y0, x1, y1 = stair.bounds
+    upright = (y1 - y0) > (x1 - x0)                    # the stair's long side runs along y
+    if upright != along_x:
+        return None                                    # it lies along the bearing walls: the bay is its hall
+    mid = ((y0 + y1) / 2) if upright else ((x0 + x1) / 2)
+    lo, hi = (x0, x1) if upright else (y0, y1)
+    stretch = next(((a, b) for a, b in scan(shape, mid, upright) if a <= lo and hi <= b), None)
+    if stretch is None:
+        return None
+    left, right = lo - stretch[0], stretch[1] - hi
+    c = hi + 42 if left <= right else lo - 42          # on the side away from the wall the stair lies along
+    if max(left, right) < 42 + 60:
+        return None
+    for a, b in scan(shape, c, not upright):
+        marks = [a] + [s for s in at if a < s < b] + [b]
+        for p, q in zip(marks, marks[1:]):
+            if p <= mid <= q:
+                return ((c, p), (c, q)) if upright else ((p, c), (q, c))
     return None
 
 
-def inside(rng, house: House, k: int, j: int, shape: Polygon, height: float, base: float, holes: list, runs, style: Style, span: float) -> None:
-    """A mass's walls inside on storey k: its bearing walls, and partitions from one bearing line to the next,
-    clear of the openings in the floor (the stair, a double-height room) and of the windows in the walls they
-    end on."""
+def inside(rng, house: House, k: int, j: int, shape: Polygon, height: float, base: float, holes: list, runs, style: Style, span: float,
+           hall=None, plan: dict | None = None) -> None:
+    """A mass's walls inside on storey k: its bearing walls; the stair hall's wall; and partitions that divide
+    each bay between bearing lines into rooms 11 to 15 ft wide, clear of the openings in the floor and of the
+    windows in the walls they end on. `plan` keeps the partitions for the storeys laid out alike (stacked flats)."""
     if height < KNEE:
         return
     along_x, at = spines(shape, span)
@@ -652,35 +737,42 @@ def inside(rng, house: House, k: int, j: int, shape: Polygon, height: float, bas
         for q, (a, b) in enumerate(scan(shape, s, along_x)):
             if b - a >= 48:
                 p0, p1 = ((a, s), (b, s)) if along_x else ((s, a), (s, b))
-                house.walls.append(Wall(f"{k}s{tag}{'abc'[i]}{q or ''}", p0, p1, height, base, role="interior"))
-    x0, y0, x1, y1 = shape.bounds
-    lo, hi = (x0, x1) if along_x else (y0, y1)
-    windows = [r.at(t) for r in runs for t in r.columns]
-    want = max(0, min(4, round(shape.area / 144 / 320) - 1 + rng.choice([-1, 0, 0, 1])))
-    used: list[float] = []
-    for i in range(want):
-        for _ in range(60):
-            if hi - lo < 150:
-                break
-            c = 2.0 * round(rng.uniform(lo + 72, hi - 72) / 2)
-            if any(abs(c - u) < 72 for u in used):
-                continue
-            bays = []
-            for a, b in scan(shape, c, not along_x):
-                marks = [a] + [s for s in at if a < s < b] + [b]
-                bays += [(p, q) for p, q in zip(marks, marks[1:]) if q - p >= 60]
-            if not bays:
-                continue
-            a, b = rng.choice(bays)
-            p0, p1 = ((c, a), (c, b)) if along_x else ((a, c), (b, c))
-            line = LineString([p0, p1])
-            if any(line.distance(x) < 30 for x in holes):
-                continue
-            if any(Point(p).distance(line) < style.width / 2 + 20 for p in windows):
-                continue
+                house.walls.append(Wall(f"{k}s{tag}{'abcdefgh'[i]}{q or ''}", p0, p1, height, base, role="interior"))
+    if hall is not None:
+        house.walls.append(Wall(f"{k}ph{tag}", hall[0], hall[1], height, base, role="interior"))
+        holes = holes + [LineString(hall).buffer(1)]
+    if plan is not None and "walls" in plan:
+        for i, (p0, p1) in enumerate(plan["walls"]):
             house.walls.append(Wall(f"{k}p{tag}{i}", p0, p1, height, base, role="interior"))
-            used.append(c)
-            break
+        return
+    x0, y0, x1, y1 = shape.bounds
+    windows = [r.at(t) for r in runs for t in r.columns]
+    lines = [(y0 if along_x else x0)] + at + [(y1 if along_x else x1)]
+    made = []
+    for lo, hi in zip(lines, lines[1:]):
+        if hi - lo < 60:
+            continue
+        mid = (lo + hi) / 2
+        for a, b in scan(shape, mid, along_x):           # the bay's length, and the rooms it divides into
+            rooms = max(1, round((b - a) / rng.uniform(132, 186)))
+            for i in range(1, rooms):
+                for shift in (0, 12, -12, 24, -24, 36, -36):
+                    c = 2.0 * round((a + (b - a) * i / rooms + shift) / 2)
+                    across = None
+                    for p, q in scan(shape, c, not along_x):
+                        marks = [p] + [s for s in at if p < s < q] + [q]
+                        across = next(((u, v) for u, v in zip(marks, marks[1:]) if u <= mid <= v), across)
+                    if across is None or across[1] - across[0] < 48:
+                        continue
+                    p0, p1 = ((c, across[0]), (c, across[1])) if along_x else ((across[0], c), (across[1], c))
+                    line = LineString([p0, p1])
+                    if any(line.distance(x) < 30 for x in holes) or any(Point(p).distance(line) < style.width / 2 + 8 for p in windows):
+                        continue
+                    made.append((p0, p1))
+                    house.walls.append(Wall(f"{k}p{tag}{len(made) - 1}", p0, p1, height, base, role="interior"))
+                    break
+    if plan is not None:
+        plan["walls"] = made
 
 
 def under_roof(w: Wall, ms: list[Mass], gap: float) -> None:
@@ -841,6 +933,10 @@ def openings(rng, house: House, style: Style, level: float, sides: dict, forced:
     side = rng.choice([(0, -1), (0, 1), (1, 0), (-1, 0), (1, 0), (-1, 0)])      # the street: more often off an end
     facing = lambda w, s: -w.normal[0] * s[0] - w.normal[1] * s[1]
     have = sum(o.kind == "door" for w in outer for o in w.openings)
+    if house.entry is not None and not have and house.entry[0] in ground:
+        w, u = house.entry
+        have += any(cut(w, "door", u + shift - 19, 38, 0.0, HEAD) for shift in (0, 12, -12, 24, -24, 36, -36))
+        side = max(SIDES.values(), key=lambda d: facing(w, d))
     for s, door in ((side, 38), ((-side[0], -side[1]), 34)):
         if (door == 34 and rng.random() > 0.8) or have >= (1 if door == 38 else 2) or (briefed_ and have):
             continue
@@ -887,7 +983,7 @@ def openings(rng, house: House, style: Style, level: float, sides: dict, forced:
         if w.role != "interior" or w.length < 60:
             continue
         bearing = w.id[1] in "sj"
-        dice = rng.random() < (0.4 if w.base == 0 else 0.1)
+        dice = rng.random() < (style.open if w.base == 0 else style.open / 4)
         if w.height >= HEAD + 9 and (forced.get(w.id, dice) if w.id[1] == "s" else forced.get(w.id, False)):
             # a bearing line opened up: a beam on posts, a pier left at each end and where a wall meets it
             marks = [0.0] + [t.u for t in w.tees] + [w.length]

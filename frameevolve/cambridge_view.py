@@ -1,10 +1,11 @@
-"""A page to look at Cambridge houses in 3D: each as the city's model and as the detailed House, one over the other.
+"""The input houses page: Cambridge houses in 3D, each as the city's model and as the detailed House.
 
-`python -m frameevolve.cambridge_view [count]` details a spread of houses (by roof type) and serves the page at
-http://localhost:8770, built afresh by a new Python on every load: a reload shows the code and the briefs as
-they are now, with no restart. On the page a pen marks what is wrong; each note is saved in
-data/cambridge/notes as a picture (the view with the marks) and a JSON file (house, comment, status, reply); a
-house passed as good is a note with status "ok" and no picture. The page's keys are listed under "?".
+The workbench serves it at /houses/ (server.py hands everything under that to respond()). The page is built
+afresh by a new Python on every load, so a reload shows the code and the amendments as they are now, with no
+restart. On the page a pen marks what is wrong; each note is saved in data/cambridge/notes as a picture (the view
+with the marks) and a JSON file (house, comment, status, reply); a house passed as good is a note with status
+"ok" and no picture. The page's keys are listed under Shortcuts. `python -m frameevolve.cambridge_view [count]`
+prints the page.
 """
 from __future__ import annotations
 
@@ -15,7 +16,6 @@ import subprocess
 import sys
 import time
 import traceback
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from frameevolve import amend, cambridge, envelope
@@ -55,7 +55,6 @@ def surfaces(house) -> list[dict]:
 
 
 NOTES = cambridge.OUT / "notes"
-PORT = 8770
 
 
 def build(count: int = 20) -> str:
@@ -96,66 +95,37 @@ def notes() -> list[dict]:
     return [json.loads(p.read_text()) for p in sorted(NOTES.glob("*.json"))]
 
 
-def serve(count: int) -> None:
-    """The page and its notes: GET / builds the page; notes are listed, added, changed and deleted under /notes."""
+def respond(method: str, path: str, body: dict | None = None, count: int = 20) -> tuple[int, bytes, str]:
+    """The page and its notes, for the workbench to serve under /houses/: (status, body, content type). "" is
+    the page, built by a fresh Python so it is the code as it is now; notes are listed, added, changed and
+    deleted under notes; a house's side photos are under evidence."""
     NOTES.mkdir(parents=True, exist_ok=True)
-
-    class Handler(BaseHTTPRequestHandler):
-        def send(self, body: bytes, kind: str = "application/json", code: int = 200) -> None:
-            self.send_response(code)
-            self.send_header("Content-Type", kind)
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(body)
-
-        def body(self) -> dict:
-            return json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-
-        def note(self) -> Path:
-            return NOTES / (Path(self.path).stem + ".json")       # the name only: nothing outside the notes folder
-
-        def do_GET(self):
-            if self.path in ("/", "/index.html"):       # built by a fresh Python, so the page is the code as it is now
-                page = subprocess.run([sys.executable, "-m", "frameevolve.cambridge_view", "--build", str(count)], cwd=ROOT, capture_output=True)
-                self.send(page.stdout or b"<pre>" + page.stderr, "text/html; charset=utf-8")
-            elif self.path == "/notes":
-                self.send(json.dumps(notes()).encode())
-            elif self.path.startswith("/evidence/") and self.path.endswith(".jpg"):
-                f = cambridge.OUT / "evidence" / Path(self.path).parent.name / Path(self.path).name
-                self.send(f.read_bytes(), "image/jpeg") if f.exists() else self.send(b"", code=404)
-            elif self.path.endswith(".png") and self.note().with_suffix(".png").exists():
-                self.send(self.note().with_suffix(".png").read_bytes(), "image/png")
-            else:
-                self.send(b"{}", code=404)
-
-        def do_POST(self):
-            d = self.body()
-            name = f"{time.strftime('%Y%m%d-%H%M%S')}-{d['house']}"
-            if d.get("png"):
-                (NOTES / f"{name}.png").write_bytes(base64.b64decode(d.pop("png").split(",", 1)[1]))
-            (NOTES / f"{name}.json").write_text(json.dumps({"id": name, "status": "open", "reply": "", **d}, indent=1))
-            self.send(b"{}")
-
-        def do_PUT(self):
-            p = self.note()
-            p.write_text(json.dumps({**json.loads(p.read_text()), **self.body()}, indent=1))
-            self.send(b"{}")
-
-        def do_DELETE(self):
-            for p in (self.note(), self.note().with_suffix(".png")):
-                p.unlink(missing_ok=True)
-            self.send(b"{}")
-
-        def log_message(self, *args):
-            pass
-
-    print(f"http://localhost:{PORT}")
-    ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+    note = NOTES / (Path(path).stem + ".json")            # the name only: nothing outside the notes folder
+    if method == "GET" and path in ("", "index.html"):
+        page = subprocess.run([sys.executable, "-m", "frameevolve.cambridge_view", str(count)], cwd=ROOT, capture_output=True)
+        return 200, page.stdout or b"<pre>" + page.stderr, "text/html; charset=utf-8"
+    if method == "GET" and path == "notes":
+        return 200, json.dumps(notes()).encode(), "application/json"
+    if method == "GET" and path.startswith("evidence/") and path.endswith(".jpg"):
+        f = cambridge.OUT / "evidence" / Path(path).parent.name / Path(path).name
+        return (200, f.read_bytes(), "image/jpeg") if f.exists() else (404, b"", "image/jpeg")
+    if method == "GET" and path.endswith(".png") and note.with_suffix(".png").exists():
+        return 200, note.with_suffix(".png").read_bytes(), "image/png"
+    if method == "POST" and path == "notes":
+        name = f"{time.strftime('%Y%m%d-%H%M%S')}-{body['house']}"
+        if body.get("png"):
+            (NOTES / f"{name}.png").write_bytes(base64.b64decode(body.pop("png").split(",", 1)[1]))
+        (NOTES / f"{name}.json").write_text(json.dumps({"id": name, "status": "open", "reply": "", **body}, indent=1))
+        return 200, b"{}", "application/json"
+    if method == "PUT" and note.exists():
+        note.write_text(json.dumps({**json.loads(note.read_text()), **body}, indent=1))
+        return 200, b"{}", "application/json"
+    if method == "DELETE":
+        for f in (note, note.with_suffix(".png")):
+            f.unlink(missing_ok=True)
+        return 200, b"{}", "application/json"
+    return 404, b"{}", "application/json"
 
 
 if __name__ == "__main__":
-    if sys.argv[1:2] == ["--build"]:
-        sys.stdout.write(build(int(sys.argv[2])))
-    else:
-        serve(int(sys.argv[1]) if len(sys.argv) > 1 else 20)
+    sys.stdout.write(build(int(sys.argv[1]) if len(sys.argv) > 1 else 20))
