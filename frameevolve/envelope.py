@@ -1,0 +1,554 @@
+"""A building model as an envelope: its flat roof faces, grouped into the masses the building is made of.
+
+The city's models are roofs dropped to the ground: every plan point has one roof over it, and walls stand where
+the roof ends or steps. So a model is read as its roof faces (a plane and a shape in plan each); faces that meet
+along an edge in space (a ridge, a hip, a valley) are one mass, and where the roof steps there are two: a main
+block, a wing, a bay, a porch, a dormer. What a framed House cannot say is taken off here: a chimney is dropped,
+a dormer is closed over by the roof it stands on, and what is too low to stand in (steps, a deck) is left out.
+The envelope is turned so its walls run along x and y, its lowest ground at z = 0. Inches.
+"""
+from __future__ import annotations
+
+import math
+from collections import defaultdict
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from shapely import affinity
+from shapely.geometry import LineString, Point, Polygon, box
+from shapely.geometry.polygon import orient
+from shapely.ops import unary_union
+
+FLAT = 1 / 12        # a roof face under 1:12 is flat: no eave, no ceiling under it
+STEEP = 2.0          # a roof face over 24:12 is the side of a mansard or a gambrel: it walls a storey in
+WELD = 0.5           # vertices closer than this are one, inches
+CHIMNEY = 36 * 144   # a mass smaller than this in plan is a chimney or a vent, square inches
+DORMER = 200 * 144   # a mass smaller than this that mostly stands on other roofs is a dormer
+TRIM = 24.0          # a strip of roof narrower than this is trim (a cornice, a gutter edge), not a roof
+LOW = 78.0           # a mass whose roof starts lower than this over the ground is not a room: steps, a deck
+SQUARE = math.tan(math.radians(3))   # an outline edge within 3 degrees of x or y is made to run along it
+SNAP = 12.0          # edges along one axis closer than this are put in one line: no jog shorter than a wall can be
+Pt = tuple[float, float]
+
+
+@dataclass
+class Face:
+    """A flat roof face: its plane z = a x + b y + c and its shape in plan."""
+    a: float
+    b: float
+    c: float
+    shape: Polygon
+    mass: int = -1
+
+    def z(self, x: float, y: float) -> float:
+        return self.a * x + self.b * y + self.c
+
+    @property
+    def slope(self) -> float:
+        return math.hypot(self.a, self.b)
+
+    @property
+    def edges(self) -> list[tuple[Pt, Pt]]:
+        """The edges of its outline, counter-clockwise: the face lies to the left of each."""
+        ring = list(self.shape.exterior.coords)
+        return list(zip(ring, ring[1:]))
+
+
+@dataclass
+class Mass:
+    """Roof faces that meet in space, and the ground they cover: `area`, squared up, with any hole another
+    mass stands in; `shape`, the same without holes."""
+    faces: list[Face]
+    shape: Polygon = field(default=None)
+    area: Polygon = field(default=None)
+
+    def z(self, x: float, y: float) -> float:
+        """The roof's height over a point of the mass (or just beside it)."""
+        p = Point(x, y)
+        return min(self.faces, key=lambda f: f.shape.distance(p)).z(x, y)
+
+
+def read(path) -> tuple[list, list]:
+    """An OBJ file's vertices (welded, inches, z from the lowest) and triangles."""
+    vs, index, tris = [], {}, []
+    raw = []
+    for line in Path(path).read_text().splitlines():
+        p = line.split()
+        if p[:1] == ["v"]:
+            raw.append(tuple(12 * float(x) for x in p[1:4]))
+        elif p[:1] == ["f"]:
+            ids = [int(x.split("/")[0]) - 1 for x in p[1:]]
+            tris += [(ids[0], ids[i], ids[i + 1]) for i in range(1, len(ids) - 1)]
+    z0 = min(v[2] for v in raw)
+    remap = []
+    for x, y, z in raw:
+        key = (round(x / WELD), round(y / WELD), round((z - z0) / WELD))
+        if key not in index:
+            index[key] = len(vs)
+            vs.append((x, y, z - z0))
+        remap.append(index[key])
+    tris = [tuple(remap[i] for i in t) for t in tris]
+    return vs, [t for t in tris if len(set(t)) == 3]
+
+
+def _normal(a, b, c):
+    u, v = (b[0] - a[0], b[1] - a[1], b[2] - a[2]), (c[0] - a[0], c[1] - a[1], c[2] - a[2])
+    return (u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0])
+
+
+def roof_faces(vs, tris) -> list[Face]:
+    """The model's roof triangles joined into flat faces: neighbours across an edge that lie in one plane."""
+    roofs = []
+    for t in tris:
+        n = _normal(*(vs[i] for i in t))
+        size = math.sqrt(sum(x * x for x in n))
+        if size > 1e-6 and n[2] / size > 0.05:
+            roofs.append((t, tuple(x / size for x in n), size / 2))
+    by_edge = defaultdict(list)
+    for k, (t, _, _) in enumerate(roofs):
+        for i in range(3):
+            by_edge[frozenset((t[i], t[(i + 1) % 3]))].append(k)
+    group = list(range(len(roofs)))
+
+    def find(k):
+        while group[k] != k:
+            group[k] = group[group[k]]
+            k = group[k]
+        return k
+    for ks in by_edge.values():
+        for k in ks[1:]:
+            n, m = roofs[ks[0]][1], roofs[k][1]
+            if sum(a * b for a, b in zip(n, m)) > 1 - 2e-4:      # within about a degree
+                group[find(k)] = find(ks[0])
+    sets = defaultdict(list)
+    for k in range(len(roofs)):
+        sets[find(k)].append(k)
+    out = []
+    for ks in sets.values():
+        shape = unary_union([Polygon([vs[i][:2] for i in roofs[k][0]]) for k in ks]).buffer(0)
+        if shape.geom_type != "Polygon" or shape.area < 144:
+            shape = max(getattr(shape, "geoms", [shape]), key=lambda g: g.area) if not shape.is_empty else shape
+            if shape.is_empty or shape.area < 144:
+                continue
+        area = sum(roofs[k][2] for k in ks)
+        n = [sum(roofs[k][1][i] * roofs[k][2] for k in ks) / area for i in range(3)]
+        pts = [vs[i] for k in ks for i in roofs[k][0]]
+        c = sum(n[0] * p[0] + n[1] * p[1] + n[2] * p[2] for p in pts) / len(pts)
+        out.append(Face(-n[0] / n[2], -n[1] / n[2], c / n[2], Polygon(shape.exterior).buffer(0)))
+    return [f for f in out if f.shape.geom_type == "Polygon"]
+
+
+def _along(e, g, tol=1.5) -> float:
+    """How far two plan edges run along each other, in opposite directions (as the two sides of a shared edge do)."""
+    (ax, ay), (bx, by) = e
+    L = math.hypot(bx - ax, by - ay)
+    if L < 1e-6:
+        return 0.0
+    ux, uy = (bx - ax) / L, (by - ay) / L
+    ts = []
+    for px, py in g:
+        if abs((px - ax) * -uy + (py - ay) * ux) > tol:
+            return 0.0
+        ts.append((px - ax) * ux + (py - ay) * uy)
+    if ts[0] < ts[1]:
+        return 0.0
+    return max(0.0, min(L, ts[0]) - max(0.0, ts[1]))
+
+
+def masses(faces: list[Face]) -> list[Mass]:
+    """Faces grouped into masses: two faces are one mass where their outlines share an edge at one height."""
+    group = list(range(len(faces)))
+
+    def find(k):
+        while group[k] != k:
+            group[k] = group[group[k]]
+            k = group[k]
+        return k
+    for i, f in enumerate(faces):
+        for j in range(i + 1, len(faces)):
+            g = faces[j]
+            if find(i) == find(j) or f.shape.distance(g.shape) > 1:
+                continue
+            for e in f.edges:
+                for h in g.edges:
+                    if _along(e, h) > 6:
+                        mx, my = (max(min(e[0][0], e[1][0]), min(h[0][0], h[1][0])) + min(max(e[0][0], e[1][0]), max(h[0][0], h[1][0]))) / 2, \
+                                 (max(min(e[0][1], e[1][1]), min(h[0][1], h[1][1])) + min(max(e[0][1], e[1][1]), max(h[0][1], h[1][1]))) / 2
+                        if abs(f.z(mx, my) - g.z(mx, my)) < 3:
+                            group[find(j)] = find(i)
+                            break
+                else:
+                    continue
+                break
+    sets = defaultdict(list)
+    for k, f in enumerate(faces):
+        sets[find(k)].append(f)
+    out = [Mass(fs) for fs in sets.values()]
+    for k, m in enumerate(out):
+        m.shape = _solid(unary_union([f.shape.buffer(0.25, join_style=2) for f in m.faces]).buffer(-0.25, join_style=2))
+        for f in m.faces:
+            f.mass = k
+    return out
+
+
+def _solid(shape) -> Polygon:
+    """The largest piece of a shape, without its holes."""
+    piece = max(getattr(shape, "geoms", [shape]), key=lambda g: g.area)
+    return Polygon(piece.exterior)
+
+
+def eave(m: Mass, others: list[Mass]) -> float:
+    """The height a mass's walls reach: the middle, by length, of its level free edges that the roof rises from;
+    for a flat roof, the roof; under a steep face (a mansard's side), that face's top: it walls a storey in."""
+    levels = []
+    largest = max(m.faces, key=lambda f: f.shape.area)
+    if largest.slope < FLAT:              # a flat roof, whatever parapet stands around it
+        return largest.z(*largest.shape.representative_point().coords[0])
+    for f in m.faces:
+        if f.slope < FLAT:
+            levels.append((f.z(*f.shape.representative_point().coords[0]), f.shape.length))
+            continue
+        for (a, b) in f.edges:
+            za, zb = f.z(*a), f.z(*b)
+            L = math.dist(a, b)
+            if L < 6 or abs(za - zb) > 1.5 or not free(f, a, b, m):
+                continue
+            c = f.shape.centroid
+            if f.z(c.x, c.y) > (za + zb) / 2 + 1:
+                top = max(f.z(x, y) for x, y in f.shape.exterior.coords)
+                levels.append((top if f.slope >= STEEP else (za + zb) / 2, L))
+    if not levels:
+        return min(f.z(x, y) for f in m.faces for x, y in f.shape.exterior.coords)
+    levels.sort()
+    half, run = sum(L for _, L in levels) / 2, 0.0
+    for z, L in levels:
+        run += L
+        if run >= half:
+            return z
+    return levels[-1][0]
+
+
+def foot(m: Mass) -> float | None:
+    """Where a mansard's or gambrel's steep sides start, if most of the mass's eaves are under such sides."""
+    steep, other = [], 0.0
+    for f in m.faces:
+        if f.slope < FLAT:
+            continue
+        for (a, b) in f.edges:
+            za, zb = f.z(*a), f.z(*b)
+            L = math.dist(a, b)
+            c = f.shape.centroid
+            if L < 6 or abs(za - zb) > 1.5 or not free(f, a, b, m) or f.z(c.x, c.y) <= (za + zb) / 2 + 1:
+                continue
+            if f.slope >= STEEP:
+                steep.append(((za + zb) / 2, L))
+            else:
+                other += L
+    if not steep or sum(L for _, L in steep) < other:
+        return None
+    steep.sort()
+    half, run = sum(L for _, L in steep) / 2, 0.0
+    for z, L in steep:
+        run += L
+        if run >= half:
+            return z
+    return steep[-1][0]
+
+
+def free(f: Face, a: Pt, b: Pt, m: Mass) -> bool:
+    """True if edge a-b of face f is on the edge of its mass: no other face of the mass along it. (Touching,
+    not a point beyond: a mansard's steep side is only inches wide in plan.)"""
+    L = math.dist(a, b)
+    quarter = [Point(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t) for t in (0.3, 0.5, 0.7)]
+    return not any(g is not f and all(g.shape.distance(p) < 1.0 for p in quarter) for g in m.faces)
+
+
+@dataclass
+class Envelope:
+    masses: list[Mass]
+    turn: float              # the angle the model was turned by, radians, about `about`, before `shift` was taken off
+    about: Pt
+    shift: Pt
+    dropped: dict            # what was taken off, by kind: chimney, dormer, low
+    z0: float = 0.0          # the model's lowest point, inches
+
+    def place(self, p) -> tuple:
+        """A point of the model (feet, as in its file) in the envelope's coordinates."""
+        x, y, z = 12 * p[0], 12 * p[1], 12 * p[2] - self.z0
+        c, s = math.cos(self.turn), math.sin(self.turn)
+        dx, dy = x - self.about[0], y - self.about[1]
+        return (self.about[0] + dx * c - dy * s - self.shift[0], self.about[1] + dx * s + dy * c - self.shift[1], z)
+
+
+def grounded(m: Mass, all_: Polygon) -> float:
+    """The share of a mass's outline that is the building's outline: where its walls reach the ground."""
+    edge = m.shape.exterior
+    return edge.intersection(all_.exterior.buffer(1.0)).length / edge.length
+
+
+def close_over(ground: Polygon, faces: list[Face]) -> None:
+    """Give a piece of ground with no roof of its own (a dormer taken off, a strip of trim, a gap in the model) to
+    the roof faces around it: each point to the face that is lowest there, as the roof would run on without it
+    (faces meeting in a hip or a ridge)."""
+    near = [f for f in faces if f.shape.distance(ground) < 1.5]
+    if not near:
+        return
+    hole = ground.buffer(0.75, join_style=2)
+    far = 1e5
+    for f in near:
+        part = hole
+        for g in near:
+            if g is f:
+                continue
+            a, b, c = f.a - g.a, f.b - g.b, f.c - g.c          # f is the lower where a x + b y + c <= 0
+            n = math.hypot(a, b)
+            if n < 1e-9:
+                if c > 0:
+                    part = Polygon()
+                continue
+            px, py = -a * c / n ** 2, -b * c / n ** 2            # a point on the line where the two are level
+            tx, ty = -b / n, a / n
+            half = Polygon([(px + far * tx, py + far * ty), (px - far * tx, py - far * ty),
+                            (px - far * tx - far * a / n, py - far * ty - far * b / n),
+                            (px + far * tx - far * a / n, py + far * ty - far * b / n)])
+            part = part.intersection(half)
+        if not part.is_empty and part.area > 1:
+            f.shape = _solid(unary_union([f.shape, part]).buffer(0))
+
+
+def whole_roof(vs, tris, faces: list[Face]) -> list[Face]:
+    """The faces that are roofs, covering all the model's ground: strips of trim are taken out, and any ground
+    left without a face over it (those strips, faces too small or too steep to read) goes to the faces around."""
+    ground = unary_union([Polygon([vs[i][:2] for i in t]).buffer(0) for t in tris]).buffer(0.5, join_style=2).buffer(-0.5, join_style=2)
+    wide = [f for f in faces if 2 * f.shape.area / f.shape.length >= TRIM / 2] or faces
+    if len(wide) < len(faces) and sum(f.shape.area for f in wide) > 0.5 * sum(f.shape.area for f in faces):
+        faces = wide
+    bare = ground.difference(unary_union([f.shape.buffer(0.3) for f in faces]))
+    for piece in sorted(getattr(bare, "geoms", [bare]), key=lambda g: -g.area):
+        if piece.geom_type == "Polygon" and piece.area > 36:
+            close_over(piece, faces)
+    return faces
+
+
+def envelope(path) -> Envelope:
+    """Read a building model: its masses with chimneys dropped, dormers closed over and low things left out,
+    turned square to x and y with its longest roof's eave along x, shifted to start at the origin."""
+    vs, tris = read(path)
+    ms = masses(whole_roof(vs, tris, roof_faces(vs, tris)))
+    if not ms:
+        raise ValueError("no roof faces")
+    dropped = defaultdict(int)
+    while True:                           # take off the smallest thing that is not a room, until none is left
+        all_ = _solid(unary_union([m.shape.buffer(0.5, join_style=2) for m in ms]).buffer(-0.5, join_style=2))
+        small = [m for m in sorted(ms, key=lambda m: m.shape.area) if len(ms) > 1 and
+                 (m.shape.area < CHIMNEY or (m.shape.area < DORMER and grounded(m, all_) < 0.5))]
+        if not small:
+            break
+        m = small[0]
+        ms.remove(m)
+        if grounded(m, all_) < 0.5:
+            close_over(m.shape, [f for k in ms for f in k.faces])
+            dropped["chimney" if m.shape.area < CHIMNEY else "dormer"] += 1
+        else:
+            dropped["chimney"] += 1
+        for k in ms:
+            k.shape = _solid(unary_union([f.shape.buffer(0.25, join_style=2) for f in k.faces]).buffer(-0.25, join_style=2))
+    low = [m for m in ms if eave(m, ms) < LOW]
+    if len(low) < len(ms):
+        dropped["low"] = len(low)
+        ms = [m for m in ms if m not in low]
+    main = max(ms, key=lambda m: m.shape.area)
+    f = max(main.faces, key=lambda f: f.shape.area)
+    angle = -math.atan2(f.a, -f.b) if f.slope >= FLAT else -_longest(main.shape)
+    about = main.shape.centroid.coords[0]
+    for m in ms:
+        m.shape = affinity.rotate(m.shape, angle, origin=about, use_radians=True)
+        for g in m.faces:
+            turn(g, angle, about)
+    x0, y0 = unary_union([m.shape for m in ms]).bounds[:2]
+    for m in ms:
+        m.shape = affinity.translate(m.shape, -x0, -y0)
+        for g in m.faces:
+            g.shape = affinity.translate(g.shape, -x0, -y0)
+            g.c += g.a * x0 + g.b * y0
+    square(ms)
+    return Envelope(ms, angle, about, (x0, y0), dict(dropped), 12 * min(float(l.split()[3]) for l in Path(path).read_text().splitlines() if l.startswith('v ')))
+
+
+def square(ms: list[Mass]) -> None:
+    """Square the masses' outlines up: an edge nearly along x or y is made to run along it, and edges along one
+    axis that lie within SNAP of each other, on any mass, are put in one line. So walls that the model has a
+    degree off square, or jogged by a few inches, come out straight, and two masses still meet on one line.
+    Each mass's roof faces are then recut to the squared outline (recut), so roofs and walls meet on one line."""
+    true = {id(m): _piece(unary_union([f.shape.buffer(0.25, join_style=2) for f in m.faces]).buffer(-0.25, join_style=2)) for m in ms}
+    lines = {"h": [], "v": []}
+    for shape in true.values():
+        for ring in [shape.exterior, *shape.interiors]:
+            pts = list(ring.coords)
+            for a, b in zip(pts, pts[1:]):
+                dx, dy, L = abs(b[0] - a[0]), abs(b[1] - a[1]), math.dist(a, b)
+                if L >= 2 and dy <= dx * SQUARE:
+                    lines["h"].append(((a[1] + b[1]) / 2, L))
+                elif L >= 2 and dx <= dy * SQUARE:
+                    lines["v"].append(((a[0] + b[0]) / 2, L))
+    at = {}
+    for k, values in lines.items():           # lines closer than SNAP become one, the longest edges weighing most
+        groups = [[v * L, L] for v, L in sorted(values)]
+        while len(groups) > 1:
+            gaps = [(groups[i + 1][0] / groups[i + 1][1] - groups[i][0] / groups[i][1], i) for i in range(len(groups) - 1)]
+            gap, i = min(gaps)
+            if gap >= SNAP:
+                break
+            groups[i] = [groups[i][0] + groups[i + 1][0], groups[i][1] + groups[i + 1][1]]
+            del groups[i + 1]
+        at[k] = [round(vL / L / 2) * 2.0 for vL, L in groups]      # on whole 2 in., as a builder would set out
+    snap = lambda k, v: min(at[k], key=lambda c: abs(c - v))
+
+    def squared(ring) -> list:
+        pts = [p for i, p in enumerate(list(ring.coords)[:-1])]
+        pts = [p for i, p in enumerate(pts) if math.dist(p, pts[i - 1]) >= 2] or pts
+        kinds = []
+        for a, b in zip(pts, pts[1:] + pts[:1]):
+            dx, dy = abs(b[0] - a[0]), abs(b[1] - a[1])
+            kinds.append(("h", snap("h", (a[1] + b[1]) / 2)) if dy <= dx * SQUARE else
+                         ("v", snap("v", (a[0] + b[0]) / 2)) if dx <= dy * SQUARE else ("d", 0.0))
+        out = []
+        for i, p in enumerate(pts):
+            (k0, v0), (k1, v1) = kinds[i - 1], kinds[i]
+            if k0 == k1 == "h":
+                out += [] if v0 == v1 else [(p[0], v0), (p[0], v1)]
+            elif k0 == k1 == "v":
+                out += [] if v0 == v1 else [(v0, p[1]), (v1, p[1])]
+            elif {k0, k1} == {"h", "v"}:
+                out.append((v0, v1) if k0 == "v" else (v1, v0))
+            else:
+                out.append((p[0], v0 if k0 == "h" else v1 if k1 == "h" else p[1]) if "h" in (k0, k1) else
+                           (v0 if k0 == "v" else v1 if k1 == "v" else p[0], p[1]))
+        return trim(out)
+
+    def trim(pts: list) -> list:
+        """Without the edges too short to be a wall: the corner that changes the shape least goes."""
+        pts = list(pts)
+        while len(pts) > 4:
+            i = min(range(len(pts)), key=lambda i: math.dist(pts[i], pts[(i + 1) % len(pts)]))
+            if math.dist(pts[i], pts[(i + 1) % len(pts)]) >= SNAP:
+                break
+            lost = lambda j: abs((pts[j][0] - pts[j - 1][0]) * (pts[(j + 1) % len(pts)][1] - pts[j][1]) -
+                                 (pts[j][1] - pts[j - 1][1]) * (pts[(j + 1) % len(pts)][0] - pts[j][0]))
+            del pts[min((i, (i + 1) % len(pts)), key=lost)]
+        return pts
+    for m in ms:
+        shape = true[id(m)]
+        try:
+            holes = [squared(r) for r in shape.interiors if Polygon(r).area >= DORMER]      # a smaller hole is no room
+            new = Polygon(squared(shape.exterior), [r for r in holes if len(r) >= 3]).buffer(0)
+            new = _piece(new)
+        except Exception:
+            new = shape
+        m.area = new if new.geom_type == "Polygon" and new.area > 0.7 * shape.area else shape
+        m.shape = Polygon(m.area.exterior)
+        level_eaves(m)
+        recut(m)
+
+
+def level_eaves(m: Mass) -> None:
+    """Put a mass's eaves that are within 3 in. of each other at one height, on a quarter inch: the model has
+    the two eaves of one roof an inch apart, and a wall top and a ceiling can only be at one height. Each face is
+    raised or lowered so that its plane passes through the squared wall line at that height."""
+    found = defaultdict(list)                         # face -> (height of its plane over an eave edge, the edge's length)
+    for ring in [m.area.exterior, *m.area.interiors]:
+        pts = list(orient(Polygon(ring), 1.0).exterior.coords) if ring is m.area.exterior else list(ring.coords)
+        turn = 1.0 if ring is m.area.exterior else -1.0 * (1.0 if Polygon(ring).exterior.is_ccw else -1.0)
+        for a, b in zip(pts, pts[1:]):
+            L = math.dist(a, b)
+            if L < 12:
+                continue
+            nx, ny = -(b[1] - a[1]) / L * turn, (b[0] - a[0]) / L * turn        # into the mass
+            mid = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+            inside = Point(mid[0] + 2 * nx, mid[1] + 2 * ny)
+            f = min(m.faces, key=lambda f: f.shape.distance(inside))
+            if f.slope >= FLAT and (f.a * nx + f.b * ny) / f.slope > 0.98:
+                found[id(f)].append((f.z(*mid), L))
+    eaves = sorted((max(v, key=lambda x: x[1])[0], sum(L for _, L in v), k) for k, v in found.items())
+    groups: list[list] = []
+    for z, L, k in eaves:
+        if groups and z - groups[-1][0][0] <= 3:
+            groups[-1].append((z, L, k))
+        else:
+            groups.append([(z, L, k)])
+    by_id = {id(f): f for f in m.faces}
+    for g in groups:
+        target = round(4 * sum(z * L for z, L, _ in g) / sum(L for _, L, _ in g)) / 4
+        for z, _, k in g:
+            by_id[k].c += target - z
+
+
+def recut(m: Mass) -> None:
+    """Cut a mass's roof faces again, exactly: each face is the part of the mass's squared ground that lies on
+    its own side of every line where its plane meets a neighbouring face's plane (a ridge, a hip, a valley). So
+    two faces share their seam to the last digit, a face ends on the very line its wall stands on, and three
+    faces that meet do so in one point. What was read off the model only says which faces are neighbours and
+    which side of a seam each lies on."""
+    was = [f.shape for f in m.faces]
+    far = 1e5
+    cells = []
+    for i, f in enumerate(m.faces):
+        cell = m.area.intersection(was[i].buffer(SNAP + 6, join_style=2))       # never far from where the model had it
+        for j, g in enumerate(m.faces):
+            a, b, c = f.a - g.a, f.b - g.b, f.c - g.c                           # the two planes are level where a x + b y + c = 0
+            n = math.hypot(a, b)
+            if g is f or n < 1e-9:
+                continue
+            seam = was[i].buffer(1.5).intersection(was[j].exterior)
+            if seam.is_empty or seam.length < 8:
+                continue
+            mids = [x.interpolate(0.5, normalized=True) for x in getattr(seam, "geoms", [seam]) if x.geom_type == "LineString" and x.length >= 8]
+            if not any(abs(f.z(p.x, p.y) - g.z(p.x, p.y)) <= 4 for p in mids):
+                continue                                                         # they meet nowhere: one stands over the other all along
+            q = max(was[i].exterior.coords, key=lambda q: abs(a * q[0] + b * q[1] + c))     # a corner of the face well off the seam
+            sign = 1.0 if a * q[0] + b * q[1] + c > 0 else -1.0
+            px, py, tx, ty, nx, ny = -a * c / n ** 2, -b * c / n ** 2, -b / n, a / n, sign * a / n, sign * b / n
+            cell = cell.intersection(Polygon([(px + far * tx, py + far * ty), (px - far * tx, py - far * ty),
+                                              (px - far * tx + far * nx, py - far * ty + far * ny), (px + far * tx + far * nx, py + far * ty + far * ny)]))
+        cells.append(_piece(cell) if not cell.is_empty else cell)
+    taken = Polygon()
+    for i in sorted(range(len(cells)), key=lambda i: -cells[i].area):       # what two faces both claim goes to the larger
+        cells[i] = cells[i].difference(taken) if not taken.is_empty else cells[i]
+        cells[i] = _piece(cells[i]) if not cells[i].is_empty else cells[i]
+        if not cells[i].is_empty and cells[i].geom_type == "Polygon":
+            taken = unary_union([taken, cells[i]])
+    keep = [i for i in range(len(cells)) if cells[i].geom_type == "Polygon" and cells[i].area >= 144]
+    if not keep:
+        return                                                               # nothing came of it: the faces stay as they were
+    m.faces = [m.faces[i] for i in keep]
+    for f, i in zip(m.faces, keep):
+        f.shape = Polygon([(round(x, 4), round(y, 4)) for x, y in cells[i].exterior.coords])
+    bare = m.area.difference(unary_union([f.shape for f in m.faces]))        # ground no face reached goes to the face it lies along most
+    for piece in getattr(bare, "geoms", [bare]):
+        if piece.geom_type == "Polygon" and piece.area > 1:
+            f = max(m.faces, key=lambda f: f.shape.exterior.intersection(piece.buffer(0.05)).length)
+            grown = unary_union([f.shape, piece.buffer(1e-4, join_style=2)])
+            if grown.geom_type == "Polygon":
+                f.shape = Polygon([(round(x, 4), round(y, 4)) for x, y in grown.exterior.coords]).simplify(1e-3)
+
+
+def _piece(shape) -> Polygon:
+    """The largest piece of a shape, holes kept."""
+    return max(getattr(shape, "geoms", [shape]), key=lambda g: g.area)
+
+
+def _longest(shape: Polygon) -> float:
+    """The direction of a shape's longest edge, radians."""
+    ring = list(shape.exterior.coords)
+    a, b = max(zip(ring, ring[1:]), key=lambda e: math.dist(*e))
+    return math.atan2(b[1] - a[1], b[0] - a[0])
+
+
+def turn(f: Face, angle: float, about: Pt) -> None:
+    """Turn a face about a point in plan."""
+    c, s = math.cos(angle), math.sin(angle)
+    ox, oy = about
+    a, b = f.a * c - f.b * s, f.a * s + f.b * c
+    f.c += f.a * ox + f.b * oy - a * ox - b * oy
+    f.a, f.b = a, b
+    f.shape = affinity.rotate(f.shape, angle, origin=about, use_radians=True)
