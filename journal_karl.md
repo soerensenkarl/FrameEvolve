@@ -784,3 +784,24 @@ what is wrong by marking it, so faults are fixed in the rules and checked again 
   named room to another (the procedure adds doors until every room is reached, so some bedrooms open through
   others); windows in dormers (dormers are taken off). The rooms made run a little over the record's count.
 - After the fixes: the five amended houses valid; 185 of 300 unamended (62%); 84 tests pass.
+
+## 2026-11-23: the input houses page is part of the workbench
+
+- The workbench serves the houses page at /houses/ (server.py hands everything under it to
+  cambridge_view.respond), with "Input houses" in its top bar; the page's own server on port 8770 is gone. Its
+  3D view has the workbench's hand (view3d.js): no glide, two fingers on a trackpad orbit, Shift pans, a pinch
+  zooms, a mouse wheel zooms at the cursor, told apart the same way.
+- A fault worth knowing: the page is built by a new Python on every load, and from the second load on that
+  Python died at once (exit -11, a segmentation fault). The server's own process had by then loaded shapely,
+  numpy and matplotlib (through cambridge_view's imports), and on macOS a process with those loaded and threads
+  running cannot safely start another. The geometry libraries are now imported only inside build(), which runs
+  in the new Python; the server's process never loads them. A failed build now says its exit code on the page.
+- The branch is brought up to main (the IRC verifier work). 88 tests pass.
+- In progress, not finished: roofs and walls meeting exactly (Karl: "really high quality snapping or meeting
+  surfaces"). Roof faces are recut from their planes and the squared wall lines (envelope.recut), eaves of one
+  mass are put at one height (level_eaves), wall tops are read from the faces' own corners, and a new check,
+  "meeting", measures roof edge that lies along neither another roof plane's edge, a wall's top nor a wall's
+  face. It passes plain gables and fails most other houses for now: where a roof steps inside one mass (a
+  gablet over a hip end, 19 Whitney Ave) no wall stands at the step, and faces that step keep their old,
+  unsquared boundary. Next: square every face's outline with the same lines as the walls, let a face grow only
+  across its seams, and stand a wall at every step (on the ceiling where there is one).

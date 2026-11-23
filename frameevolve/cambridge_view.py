@@ -18,8 +18,7 @@ import time
 import traceback
 from pathlib import Path
 
-from frameevolve import amend, cambridge, envelope
-from frameevolve.check import problems
+from frameevolve import cambridge
 
 ROOT = Path(__file__).resolve().parents[1]
 WOOD = ("Frame-Clapbrd", "Wood Shingle", "Aluminum-Vinyl", "Asbstos Shingl", "Ashalt Shingle")
@@ -58,6 +57,8 @@ NOTES = cambridge.OUT / "notes"
 
 
 def build(count: int = 20) -> str:
+    from frameevolve import amend, envelope      # the geometry libraries: only in the Python that builds the page, never in
+    from frameevolve.check import problems       # the server's own, which could not start another Python after loading them
     houses = json.loads((cambridge.OUT / "houses.json").read_text())
     data = []
     for h in sample(houses, count):
@@ -103,7 +104,7 @@ def respond(method: str, path: str, body: dict | None = None, count: int = 20) -
     note = NOTES / (Path(path).stem + ".json")            # the name only: nothing outside the notes folder
     if method == "GET" and path in ("", "index.html"):
         page = subprocess.run([sys.executable, "-m", "frameevolve.cambridge_view", str(count)], cwd=ROOT, capture_output=True)
-        return 200, page.stdout or b"<pre>" + page.stderr, "text/html; charset=utf-8"
+        return 200, page.stdout or f"<pre>The page could not be built (exit {page.returncode}).\n".encode() + page.stderr, "text/html; charset=utf-8"
     if method == "GET" and path == "notes":
         return 200, json.dumps(notes()).encode(), "application/json"
     if method == "GET" and path.startswith("evidence/") and path.endswith(".jpg"):
