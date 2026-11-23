@@ -552,3 +552,4 @@ body[data-tab=view3d] #stageTools .only3d { display: inline-flex; }
 body.page-other #stageTools, body.verifier-mode #stageTools, body.page-other #status { display: none; }
 .no3d { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); max-width: 460px; background: var(--panel);
   border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; font-size: 13px; line-height: 1.55; color: #3d3c38; z-index: 4; }
+#stageTools > .chk { padding: 0 2px; font-size: 12px; cursor: pointer; }

@@ -568,14 +568,17 @@ export function look3d() {
   const show = $("#showFaults").checked && done && st.fault == null && st.view !== "assembly" && !(st.view === "panels" && rel);
   gapGroup.visible = markGroup.visible = show;
   for (const o of [...gapGroup.children, ...markGroup.children]) o.visible = shown3d(o.userData.surface);
-  // the house's surfaces: strong on the bare house, faint once framing exists
+  // the frame can be hidden to see the house's surfaces alone; they are strong on the bare house or with the
+  // frame hidden, faint once framing shows
+  const frame = $("#showFrame").checked;
+  group.visible = frame;
   const on = $("#showSurfaces").checked;
   for (const s of surfs) {
     const active = isActive(s.surface);
     const vis = on && shown3d(s.surface);
     s.mesh.visible = s.line.visible = s.label.visible = vis;
-    s.mesh.material.opacity = st.at === 0 ? 0.32 : active ? 0.2 : done ? 0.06 : 0.1;
-    s.line.material.opacity = st.at === 0 ? 0.9 : active ? 0.8 : done ? 0.3 : 0.45;
+    s.mesh.material.opacity = st.at === 0 || !frame ? 0.32 : active ? 0.2 : done ? 0.06 : 0.1;
+    s.line.material.opacity = st.at === 0 || !frame ? 0.9 : active ? 0.8 : done ? 0.3 : 0.45;
     s.label.element.classList.toggle("active", active);
     s.label.element.classList.toggle("faint", done && st.at > 0);
     for (const o of s.opLabels) {
