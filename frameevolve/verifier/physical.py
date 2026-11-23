@@ -14,7 +14,7 @@ from frameevolve.graph import GROUND, Graph
 from frameevolve.model import STOCK, Floor, Member, Roof, Wall
 from frameevolve.units import ftin, inches
 from frameevolve.verifier.report import Fault
-from frameevolve.verifier.site import Site, axis, column, level, name, on_edge, vertical
+from frameevolve.verifier.site import Site, axis, column, level, name, nominal, on_edge, vertical
 
 MAX_CLEAR_FLAT = 24.0    # a plate laid flat, between supports: the 24" module
 # A beam on edge in a wall (not a header over an opening; those are in code.py), clear span by depth: IRC Table
@@ -163,11 +163,13 @@ def spans(s: Site) -> list[Fault]:
                 out.append(s.at(m, point((reach + s0) / 2), "span", True,
                                 f"{name(m)} spans {ftin(gap)} clear between supports, limit {ftin(limit)} for {kind}"))
             reach = max(reach, s1)
+        # R502.3.3: a floor joist may cantilever up to its nominal depth
+        most = nominal(m) if (floor and not flat and w.role != "ceiling") else MAX_OVERHANG
         for over in (sup[0][0] - a0, a1 - max(s1 for _, s1, _ in sup)):
-            if over > MAX_OVERHANG + EPS:
+            if over > most + EPS:
                 x = a0 + over / 2 if over == sup[0][0] - a0 else a1 - over / 2
                 out.append(s.at(m, point(x), "overhang", True,
-                                f"{name(m)} runs {ftin(over)} past its last support, limit {inches(MAX_OVERHANG)}"))
+                                f"{name(m)} runs {ftin(over)} past its last support, limit {inches(most)}"))
     return out
 
 
