@@ -245,6 +245,27 @@ Pareto search keeps the grammars that do well across many houses.
 - Next: hips, sheds and dormers; then angled bays, turrets and porches. See the reference photos in
   `reference_houses/`.
 
+## Real houses
+
+- A second source of houses beside the generator: Cambridge, MA's own. The assessor's record says what a house
+  is; the city's 3D building model (LoD2: flat roof faces dropped to the ground) gives its envelope
+  (`cambridge.py`, `envelope.py`). Reason: a generator's houses are only as varied as its vocabulary.
+- What no source records (storeys, floors, walls inside, a stair, openings) is made up to fit by one general
+  procedure (`detail.py`), seeded, and judged by rule: a house belongs in a dataset only if nothing keeps it from
+  being built (`check.py`). A roof is a thin plane ending at its walls, and walls reach it: the depth of framing
+  and any overhang are the framer's.
+- Like a building code and its local amendments: the general procedure covers most houses, and what one house
+  needs different is written in its own short file (`amend.py`, `data/amendments/`): a setting for the procedure,
+  a change to what it made, a step replaced, or, at the last, a script of its own. Reason: no one procedure fits
+  every house, and a full script per house would have to be rewritten whenever the procedure improves. An
+  amendment names a place, never the procedure's name for a thing, and one that no longer applies says so.
+- Amendments are written by an agent from evidence: the city's photo mesh drawn square to each side of the house
+  with a ruler (`photos.py`). The photos are too soft to measure from but good enough to count from; the
+  procedure places what is counted.
+- The set is chosen for coverage (`dataset.py`): bearing walls, posts and a beam, long spans, wide openings,
+  open porches, stairs, double height, rooms open to the roof, lofts, knee walls, every roof form. No house has
+  all; the set must.
+
 ## Scope now
 
 - Houses: two or three storeys; box, L, T, ell and U plans; partitions, stairs, doors and windows; gable

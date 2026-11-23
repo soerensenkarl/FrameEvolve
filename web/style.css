@@ -19,7 +19,8 @@ header { display: flex; align-items: stretch; gap: 18px; padding: 0 14px; height
 .brand { font-weight: 650; letter-spacing: .02em; align-self: center; color: #fff; }
 #appNav { display: flex; gap: 2px; }
 #appNav button { border: none; border-radius: 0; background: none; color: #a9adb4; padding: 0 12px; font-size: 13.5px; border-bottom: 2px solid transparent; }
-#appNav button:hover { color: #fff; }
+#appNav a { color: #a9adb4; padding: 0 12px; font-size: 13.5px; text-decoration: none; align-self: center; }
+#appNav button:hover, #appNav a:hover { color: #fff; }
 #appNav button.on { color: #fff; border-bottom-color: #6ea0f5; }
 #toolbar { position: relative; display: flex; align-items: center; gap: 10px; padding: 7px 14px; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; row-gap: 6px; }
 #toolbar label { color: var(--muted); display: flex; gap: 6px; align-items: center; }

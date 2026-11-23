@@ -31,6 +31,13 @@ Three people, each with their own Claude: Karl, Kenny and Joe.
 | `frameevolve/verifier/kinds.py` | what each member is by its geometry (stud, king, jack, header, joist, rafter...); messages use these names, never the grammar's labels |
 | `frameevolve/houses.py` | procedural houses: blocks, storeys, openings, stairs, roofs; `generate(seed)`, `toy()` |
 | `frameevolve/cambridge.py` | real houses: downloads Cambridge's one- to three-family houses (assessor records joined to the city's 3D building models) into `data/cambridge/`, not in git |
+| `frameevolve/envelope.py` | a building model read as an envelope: roof faces grouped into masses, squared up, chimneys and dormers taken off |
+| `frameevolve/detail.py` | the general procedure that details an envelope into a House (levels, walls, floors, bearing walls, partitions, stair, openings), following a house's amendments |
+| `frameevolve/amend.py` | a house's amendments to the general procedure: the format, the files (`data/amendments/<model>.json`, in git), and `python -m frameevolve.amend <model>` to try them |
+| `frameevolve/check.py` | is a detailed house a buildable design: `problems(house)` |
+| `frameevolve/photos.py` | photos of a house's four sides from the city's photo mesh, with a ruler: what amendments are read from |
+| `frameevolve/dataset.py` | the design situations a house has, and a set of houses chosen to cover them |
+| `frameevolve/cambridge_view.py`, `web/cambridge.html` | the houses review page (http://localhost:8770): city model against detailed house, notes by pen |
 | `frameevolve/render.py` | elevations and an axonometric as PNGs, for the proposer |
 | `frameevolve/search.py` | the GEPA-style search: `Run`, `evaluate` (separate processes, cached), Pareto set |
 | `frameevolve/proposer.py` | the Claude proposer (Agent SDK on the subscription, or the API) and its tools |

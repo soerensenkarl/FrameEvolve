@@ -213,6 +213,8 @@ class Takedown:
                 A = area(w.outline_uv)
                 faces.append((w.base, w.base + max(v for _, v in w.outline_uv), A * abs(w.normal[0]), A * abs(w.normal[1])))
         for r in self.house.roofs:
+            if not r.slope:
+                continue          # a level roof faces no wind
             sin = r.slope / math.sqrt(1 + r.slope ** 2)
             A, up = area(r.outline) * sin, math.hypot(r.ev[0], r.ev[1])
             faces.append((r.z, r.z + r.size[1] * sin, A * abs(r.ev[0]) / up, A * abs(r.ev[1]) / up))

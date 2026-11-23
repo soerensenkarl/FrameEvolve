@@ -1,0 +1,625 @@
+{
+ "house": "CAM_PQMNN-X8MJG-L862N",
+ "address": "25 Grozier Rd",
+ "notes": "Three full storeys of windows on the main block (sills at about 5, 14.5 and 23.5 ft), floor to floor about 9.3 ft; a small basement window near the ground on the south is not a storey. South: the stretch 0.62-0.75 at storey 1 is smeared (an entry porch); the left wing 0-0.1 shows no windows; the right wing 0.73-1.0 has one small high window. East: front porch with two arched doors at 0-0.25; storey 3 is hidden behind the lower hip roof, so left out; lower right of storey 1 partly behind a bush. North: a large tree hides 0.2-0.72 at all storeys, so the openings there are not recorded (the detailer will invent them); storey 3 left of 0.72 only glimpsed. West: a balcony with railing at storey 3 in front of a wide opening (likely a door); the right end 0.86-1.0 is smeared, storey 1 partly behind a fence. The wide opening behind the west balcony is recorded as a 60 in window (a door would not place).",
+ "amendments": [
+  {
+   "set": {
+    "floors_ft": [
+     2.5,
+     11.8,
+     21.0
+    ]
+   },
+   "by": "Claude Opus agent, from the four side photos",
+   "from": "the four side photos (the city's photo mesh)",
+   "why": "the floors as the window rows show them"
+  },
+  {
+   "openings": {
+    "side": "south",
+    "storey": 1,
+    "items": [
+     {
+      "at": 0.22,
+      "kind": "window",
+      "w": 34,
+      "h": 58
+     },
+     {
+      "at": 0.487,
+      "kind": "window",
+      "w": 36,
+      "h": 58
+     },
+     {
+      "at": 0.574,
+      "kind": "window",
+      "w": 34,
+      "h": 58
+     }
+    ]
+   },
+   "by": "Claude Opus agent, from the four side photos",
+   "from": "the four side photos (the city's photo mesh)"
+  },
+  {
+   "openings": {
+    "side": "south",
+    "storey": 2,
+    "items": [
+     {
+      "at": 0.22,
+      "kind": "window",
+      "w": 38,
+      "h": 58
+     },
+     {
+      "at": 0.48,
+      "kind": "window",
+      "w": 38,
+      "h": 58
+     },
+     {
+      "at": 0.574,
+      "kind": "window",
+      "w": 38,
+      "h": 58
+     },
+     {
+      "at": 0.69,
+      "kind": "window",
+      "w": 28,
+      "h": 58
+     },
+     {
+      "at": 0.74,
+      "kind": "window",
+      "w": 44,
+      "h": 28
+     }
+    ]
+   },
+   "by": "Claude Opus agent, from the four side photos",
+   "from": "the four side photos (the city's photo mesh)"
+  },
+  {
+   "openings": {
+    "side": "south",
+    "storey": 3,
+    "items": [
+     {
+      "at": 0.127,
+      "kind": "window",
+      "w": 28,
+      "h": 52
+     },
+     {
+      "at": 0.69,
+      "kind": "window",
+      "w": 48,
+      "h": 55
+     }
+    ]
+   },
+   "by": "Claude Opus agent, from the four side photos",
+   "from": "the four side photos (the city's photo mesh)"
+  },
+  {
+   "openings": {
+    "side": "east",
+    "storey": 1,
+    "items": [
+     {
+      "at": 0.055,
+      "kind": "door",
+      "w": 30,
+      "h": 80
+     },
+     {
+      "at": 0.215,
+      "kind": "door",
+      "w": 34,
+      "h": 80
+     },
+     {
+      "at": 0.5,
+      "kind": "window",
+      "w": 90,
+      "h": 50
+     },
+     {
+      "at": 0.854,
+      "kind": "window",
+      "w": 80,
+      "h": 50
+     }
+    ]
+   },
+   "by": "Claude Opus agent, from the four side photos",
+   "from": "the four side photos (the city's photo mesh)"
+  },
+  {
+   "openings": {
+    "side": "east",
+    "storey": 2,
+    "items": [
+     {
+      "at": 0.208,
+      "kind": "window",
+      "w": 28,
+      "h": 58
+     },
+     {
+      "at": 0.5,
+      "kind": "window",
+      "w": 80,
+      "h": 60
+     },
+     {
+      "at": 0.854,
+      "kind": "window",
+      "w": 80,
+      "h": 60
+     }
+    ]
+   },
+   "by": "Claude Opus agent, from the four side photos",
+   "from": "the four side photos (the city's photo mesh)"
+  },
+  {
+   "openings": {
+    "side": "north",
+    "storey": 1,
+    "items": [
+     {
+      "at": 0.09,
+      "kind": "window",
+      "w": 32,
+      "h": 50
+     },
+     {
+      "at": 0.765,
+      "kind": "window",
+      "w": 40,
+      "h": 55
+     },
+     {
+      "at": 0.94,
+      "kind": "window",
+      "w": 33,
+      "h": 55
+     }
+    ]
+   },
+   "by": "Claude Opus agent, from the four side photos",
+   "from": "the four side photos (the city's photo mesh)"
+  },
+  {
+   "openings": {
+    "side": "north",
+    "storey": 2,
+    "items": [
+     {
+      "at": 0.09,
+      "kind": "window",
+      "w": 32,
+      "h": 44
+     },
+     {
+      "at": 0.215,
+      "kind": "window",
+      "w": 44,
+      "h": 26
+     },
+     {
+      "at": 0.78,
+      "kind": "window",
+      "w": 35,
+      "h": 54
+     },
+     {
+      "at": 0.945,
+      "kind": "window",
+      "w": 50,
+      "h": 54
+     }
+    ]
+   },
+   "by": "Claude Opus agent, from the four side photos",
+   "from": "the four side photos (the city's photo mesh)"
+  },
+  {
+   "openings": {
+    "side": "west",
+    "storey": 1,
+    "items": [
+     {
+      "at": 0.083,
+      "kind": "window",
+      "w": 30,
+      "h": 55
+     },
+     {
+      "at": 0.42,
+      "kind": "window",
+      "w": 30,
+      "h": 54
+     },
+     {
+      "at": 0.705,
+      "kind": "window",
+      "w": 26,
+      "h": 54
+     }
+    ]
+   },
+   "by": "Claude Opus agent, from the four side photos",
+   "from": "the four side photos (the city's photo mesh)"
+  },
+  {
+   "openings": {
+    "side": "west",
+    "storey": 2,
+    "items": [
+     {
+      "at": 0.125,
+      "kind": "window",
+      "w": 65,
+      "h": 56
+     },
+     {
+      "at": 0.45,
+      "kind": "window",
+      "w": 85,
+      "h": 50
+     },
+     {
+      "at": 0.705,
+      "kind": "window",
+      "w": 32,
+      "h": 60
+     }
+    ]
+   },
+   "by": "Claude Opus agent, from the four side photos",
+   "from": "the four side photos (the city's photo mesh)"
+  },
+  {
+   "openings": {
+    "side": "west",
+    "storey": 3,
+    "items": [
+     {
+      "at": 0.3,
+      "kind": "window",
+      "w": 32,
+      "h": 50
+     },
+     {
+      "at": 0.45,
+      "kind": "window",
+      "w": 60,
+      "h": 60
+     },
+     {
+      "at": 0.71,
+      "kind": "window",
+      "w": 30,
+      "h": 45
+     }
+    ]
+   },
+   "by": "Claude Opus agent, from the four side photos",
+   "from": "the four side photos (the city's photo mesh)"
+  },
+  {
+   "stair": {
+    "at_ft": [
+     39.0,
+     7.0
+    ],
+    "long": "y"
+   },
+   "from": "plan_1-3, the east and south photos (entry porch at the south-east), the assessor record (two-family, 14 rooms)",
+   "why": "the stair in a hall just inside the south-east entry porch, in the main block so it reaches storey 3",
+   "by": "Claude Opus agent, second pass"
+  },
+  {
+   "interior": {
+    "storey": 1,
+    "walls": [
+     {
+      "from_ft": [
+       6.6667,
+       18
+      ],
+      "to_ft": [
+       42.8333,
+       18
+      ],
+      "bearing": true
+     },
+     {
+      "from_ft": [
+       48.5,
+       24
+      ],
+      "to_ft": [
+       48.5,
+       40.1667
+      ],
+      "bearing": true
+     },
+     {
+      "from_ft": [
+       22,
+       4.6667
+      ],
+      "to_ft": [
+       22,
+       18
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       36,
+       4.6667
+      ],
+      "to_ft": [
+       36,
+       18
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       19,
+       18
+      ],
+      "to_ft": [
+       19,
+       31.5
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       31,
+       18
+      ],
+      "to_ft": [
+       31,
+       31.5
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       36,
+       18
+      ],
+      "to_ft": [
+       36,
+       31.5
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       42.8333,
+       11
+      ],
+      "to_ft": [
+       57.6667,
+       11
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       42.8333,
+       24
+      ],
+      "to_ft": [
+       57.6667,
+       24
+      ],
+      "bearing": false
+     }
+    ]
+   },
+   "from": "plan_1-3, the east and south photos (entry porch at the south-east), the assessor record (two-family, 14 rooms)",
+   "why": "the lower flat: living, dining and stair hall along the south, two bedrooms and a bath on the north, entry, kitchen and a bedroom in the wing; bearing lines kept where the procedure had them so no floor spans over 15 ft",
+   "by": "Claude Opus agent, second pass"
+  },
+  {
+   "interior": {
+    "storey": 2,
+    "walls": [
+     {
+      "from_ft": [
+       6.6667,
+       18
+      ],
+      "to_ft": [
+       42.8333,
+       18
+      ],
+      "bearing": true
+     },
+     {
+      "from_ft": [
+       48.5,
+       24
+      ],
+      "to_ft": [
+       48.5,
+       40.1667
+      ],
+      "bearing": true
+     },
+     {
+      "from_ft": [
+       22,
+       4.6667
+      ],
+      "to_ft": [
+       22,
+       18
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       36,
+       4.6667
+      ],
+      "to_ft": [
+       36,
+       18
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       19,
+       18
+      ],
+      "to_ft": [
+       19,
+       31.5
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       31,
+       18
+      ],
+      "to_ft": [
+       31,
+       31.5
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       36,
+       18
+      ],
+      "to_ft": [
+       36,
+       31.5
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       42.8333,
+       11
+      ],
+      "to_ft": [
+       57.6667,
+       11
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       42.8333,
+       24
+      ],
+      "to_ft": [
+       57.6667,
+       24
+      ],
+      "bearing": false
+     }
+    ]
+   },
+   "from": "plan_1-3, the east and south photos (entry porch at the south-east), the assessor record (two-family, 14 rooms)",
+   "why": "the upper flat laid out as the lower one, so every inside wall stands on the one below",
+   "by": "Claude Opus agent, second pass"
+  },
+  {
+   "interior": {
+    "storey": 3,
+    "walls": [
+     {
+      "from_ft": [
+       6.6667,
+       18
+      ],
+      "to_ft": [
+       42.8333,
+       18
+      ],
+      "bearing": true
+     },
+     {
+      "from_ft": [
+       22,
+       4.6667
+      ],
+      "to_ft": [
+       22,
+       18
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       36,
+       4.6667
+      ],
+      "to_ft": [
+       36,
+       18
+      ],
+      "bearing": false
+     },
+     {
+      "from_ft": [
+       24,
+       18
+      ],
+      "to_ft": [
+       24,
+       31.5
+      ],
+      "bearing": false
+     }
+    ]
+   },
+   "from": "plan_1-3, the east and south photos (entry porch at the south-east), the assessor record (two-family, 14 rooms)",
+   "why": "under the roof: three bedrooms and a store room off the stair hall, on the spine wall below",
+   "by": "Claude Opus agent, second pass"
+  },
+  {
+   "close": {
+    "storey": 1,
+    "near_ft": [
+     15,
+     18
+    ]
+   },
+   "from": "the house's type and age",
+   "why": "a 1925 two-family keeps its spine wall solid; the wide opening is the cased one between living and dining",
+   "by": "Claude Opus agent, second pass"
+  },
+  {
+   "close": {
+    "storey": 2,
+    "near_ft": [
+     15,
+     18
+    ]
+   },
+   "from": "the house's type and age",
+   "why": "a 1925 two-family keeps its spine wall solid; the wide opening is the cased one between living and dining",
+   "by": "Claude Opus agent, second pass"
+  }
+ ]
+}

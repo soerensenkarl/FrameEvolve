@@ -458,3 +458,350 @@ proposal and burns iterations (it should wait for the reset); a-images and p3 we
   be filtered when sampling. Storeys: 2 to 3 for all but about 530.
 - Not checked yet: how often the nearest model is the wrong building (a neighbour, or a large garage), and
   semi-detached pairs that are one model but two records were dropped with the townhouses.
+
+## 2026-11-20: a first detailing of real envelopes, on 20 houses (branch cambridge-houses)
+
+- envelope.py reads a building model as its flat roof faces (a plane and a shape in plan each) and groups them
+  into masses: faces that meet along an edge at one height are one mass; where the roof steps there are two
+  (main block, wing, bay, porch, dormer). Taken off, because a House cannot say them yet: masses under 25 sq ft
+  (chimneys), masses under 200 sq ft that mostly stand on other roofs (dormers; the faces around them are grown
+  over the hole, each point to the face lowest there), masses whose roof starts under 6 ft 6 in (steps, decks).
+  The envelope is turned so the largest roof face's eave runs along x. Needs shapely (added).
+- detail.py makes a House of an envelope and the assessor's record, seeded: a storey height by age (8 or 9 ft
+  walls), the record's count of full storeys, the rest of the main eave's height taken off as foundation; every
+  roof face a roof plane with a 12 in. overhang at its eaves; per storey, exterior walls around the masses that
+  reach it and junction walls between them, top walls following the roof with a 9 in. raised heel at eaves; a
+  floor a level, a ceiling a mass; bearing walls where a mass is deeper than 16 ft, partitions between bearing
+  lines, a stair; windows in columns that line up over the storeys, a front and a back door, a gable window,
+  doors inside.
+- cambridge_view.py writes out/cambridge.html: a spread of houses by roof type, each as the city's model and as
+  the detailed House, switchable.
+- On the first 20 (all roof types): all detail without an error. The seed grammar builds all 20, 14 without a
+  rule error (the errors: members asked for on surfaces at odd angles). The load takedown crashes on 13 with a
+  division by zero, not looked into yet. Known wrong: some junction walls show on the outside; mansards and
+  gambrels are read as steep roofs, so their top storey is under the roof; saltbox-like masses get the lower
+  eave everywhere.
+
+## 2026-11-20: reviewing the detailed houses; a second pass
+
+- A review page for it: `uv run python -m frameevolve.cambridge_view 20` serves http://localhost:8770, the page
+  built afresh on each load. A pen marks what is wrong on the 3D view; a note is saved (data/cambridge/notes: a
+  picture of the view with the marks, and the house, comment, status and reply as JSON) and listed beside its
+  house, so problems are reported by scribbling and answered in place.
+- I went through the 20 on sheets (a plan a storey, a roof plan, four elevations each). Faults found, each fixed
+  in the rule that caused it, not house by house:
+
+  | fault seen | cause | fix |
+  |---|---|---|
+  | a ring of outside walls inside a mansard, on every storey | a mass standing on another's roof got walls to the ground; what lies beyond a wall was found from mass outlines, which had lost their holes | a mass with under a quarter of its outline on the ground has walls only where it is clear of the roofs around it; what lies beyond a wall is read from the roof faces themselves |
+  | walls between two masses drawn as inside walls where they show above the lower roof | every shared edge was a junction wall | a shared wall is a junction only where the other mass's roof is over its top; otherwise exterior, marked abutted (no windows) |
+  | mansard and gambrel top storey missing or under the roof | their steep sides were read as roof, so the eave was a storey low | a face over 24:12 walls a storey in: the eave is its top |
+  | a three-decker given four storeys, a cape one storey on a 12 ft foundation | storeys chosen mostly by height | the assessor's count holds; one more only for a recorded half storey; a 7 ft wall height for low houses; tall foundations cost |
+  | long walls without windows; windows only where no inside wall happened to land | columns were set before the inside walls and then blocked by them | columns are set in each stretch between the bearing walls and mass junctions; partitions keep clear of the columns |
+  | no windows in low top storeys | the head height was fixed | a window's head and height come down under a low wall top |
+  | rooms with no door | doors were random | after the random doors, rooms are found (the regions the walls close) and doors added until each is reached from an outside door or the stair |
+  | overlapping ceilings | one a mass | masses that top out together share one ceiling |
+
+- Framework: the wind calculation divided by zero on a level roof (loads.py); a level roof now faces no wind.
+- The 20 after the second pass: storeys match the assessor's count on all but a mansard (4 for 3: its top is
+  modelled as a set-back storey); every multi-storey house has its stair. Loads reach the ground in full on 14
+  (was 6, with 13 crashes); on 6 between 1 and 26% is lost (floor edges with no wall under them, under roofs that
+  come down to the floor). The seed builds all 20, 14 without a rule error (rims and rafters on surfaces at odd
+  angles).
+- Still wrong or missing: dormers are taken off, not kept; near-straight walls stay as two walls a degree apart
+  (the models are not snapped square); a porch is detailed as a room; no bay or picture windows; partitions are
+  few, so rooms are large.
+- Karl's first note on the page (95 Columbia St, a three-decker): inside walls stood through the flat roof. Two
+  causes. A roof face under 1:12 was laid with its eave along x whatever way it fell, so low roofs sloped the
+  wrong way (a real fault in every low-slope roof). And a flat-roofed mass took its wall height from the parapet,
+  not the roof. Now a roof plane always runs with its face's fall; a flat roof's height is its largest face's;
+  bearing walls and partitions stop under the roof plane, following it where it slopes (under_roof). Checked on
+  the 20: of 1,393 points along inside walls, none above the roof over it (was 71 of 765 by a cruder check).
+- The review page is driven from the keyboard: Shift-drag marks, Enter goes to the comment and Enter saves, G
+  passes a house and jumps to the next unreviewed one, [ and ] show one storey at a time, V and T change the
+  view, 1 2 R F O I switch layers; ? lists the keys. The house list shows which are passed and which have open
+  notes.
+
+## 2026-11-20: a house must be a buildable design: check.py
+
+- Karl's order of importance: first that no house is an invalid or broken design, then that they are richly
+  detailed and varied. So every detailed house is checked by rule (check.py), and only one with nothing wrong
+  belongs in the dataset: every wall above the ground floor stands on a floor; no two walls of a storey cross or
+  lie along each other, none is a sliver under 12 in.; every opening is clear of its wall's ends, the other
+  openings, the walls that meet it and the wall's top; every room is reached through doors from outside or from
+  the stair; a stair opening in every floor; no bearing wall or partition through the roof; all load reaches
+  the ground (under 0.5% astray). Whether the seed frames it is reported apart: the seed cannot frame the
+  pointed end of a hip plane, which is the search's to learn, not the house's fault.
+- First run: 6 of 20 valid. Causes found and fixed in the rules:
+  - Slivers and walls a degree off square came from the models. envelope.square() now squares the masses'
+    outlines: an edge within 3 degrees of x or y runs along it; lines along one axis within 12 in. of each other,
+    on any mass, become one line on a whole 2 in.; edges still under 12 in. are taken out. Roof faces are left
+    as they are, so a wall may stand a few inches off its roof's edge.
+  - Rooms cut off behind a lower wing: a door may now go through any wall with a room on both sides.
+  - Bearing walls and partitions were laid across the ground of other masses standing inside a mass: a mass's
+    rooms are now its ground less that of other masses with their own walls.
+  - A mansard or gambrel: the storeys under its steep sides are set by where those sides start, so their walls
+    reach the floor the sides stand on; a ceiling is only laid where walls hold at least 30% of its edge.
+  - The stair is placed where every floor is, not anywhere in the main mass.
+  - A wall whose top follows the roof is cut back to where it stands 24 in. (48 in. inside) or more.
+- Now 16 of 20 valid, and 183 of 300 on a wider spread (61%). What fails among the 300: loads 94 (a floor or
+  roof edge with no wall under it: set-back top storeys, roofs that come down to a floor), walls 19, rooms 9,
+  stair 8, the detailing crashing 5, standing 1.
+- Four more notes from Karl on the page (a gap and stacked strips at a flat roof's edge, a nick at a gable's
+  peak, an overhang sticking out at a gambrel's break, a slot between two roofs). Causes and fixes, all in
+  envelope.py: a strip of roof under 2 ft wide is trim (a cornice), taken out; any ground of the model left with
+  no roof face over it (trim, faces too small or steep to read) goes to the faces around, the lowest there
+  winning, as for a dormer (whole_roof); an edge is shared, not an eave, whenever another face of the mass
+  touches it (a steep side is inches wide in plan, so a point 2 in. beyond missed it); after squaring, each
+  mass's roof faces are run on to its squared outline. check.py gains: no more than 3 sq ft of the house without
+  a roof over it. Roof outlines are cleaned of spikes thinner than 1 1/2 in., which made the model's seam
+  finding fail (27 of 300).
+- Under the stricter check: 15 of 20, 180 of 300 (60%). Failing among the 300: loads 88, walls 25, rooms 16,
+  the detailing crashing 9, stair 7, roof 6, standing 1.
+- Next, Karl's idea: per house, gather what is known (assessor's record, a flat photo of each face from the
+  city's photo mesh, a street photo where Mapillary has one) and have Claude write a brief the detailer follows
+  (which side is the street, windows a storey on each face, doors, porch or room), so the procedural house comes
+  close to the real one. Photos too soft to measure from are good enough to count from; the detailer places
+  what is counted, and check.py stays the judge.
+
+## 2026-11-20: a brief per house, read off photos of its sides
+
+- photos.py draws the city's photo mesh square to each of a detailed house's four sides, nearest surface first,
+  with a ruler from 0 to 1 along the side and heights over the ground in feet (data/cambridge/evidence/<model>;
+  about 5 s a house once the mesh is cached). Needs pyproj (added). cambridge.py now records each model's own
+  position (model_lat, model_lon), from which the model files' offset is found.
+- Correction to the entry of 2026-11-19: the mesh and the models do not line up in height. The mesh stands
+  3.2 ft higher (measured at ten roofs: 3.2, 3.2, 3.4, 3.2, 3.2 where no chimney or tree is in the way), a
+  constant taken as a difference of height datum (DATUM in photos.py). In plan they do line up.
+- detail() takes a brief: the floors' heights over the ground as seen, and for each side and storey the
+  openings, each at a place on the side's ruler with a kind and a rough size. The detailer follows it where it
+  speaks and makes up the rest; an opening is moved up to 30 in. to clear the walls that meet its wall, and one
+  that finds no place is listed (house.missed). check.py judges the result as before.
+- First brief, written by Claude in the session from the four photos of 25 Grozier Rd: the photos show a
+  raised basement, two full storeys and a third under the roof, where the procedure alone had put three
+  storeys on the ground. From the brief: floors at 3.3, 13.3 and 23.3 ft, 27 of 36 seen openings placed (5 found
+  no place, 4 fell on no wall facing that side), the house passes every check. The photos are soft but rows,
+  counts and places of windows read clearly on three sides; the fourth is half behind a tree.
+- Mapillary tried as a second source of photos and dropped. Of four houses, two had no usable photo (one had a
+  single photo within 55 m; one had 87, all dashcam shots along the street), and where there were photos the
+  house stood off to one side, half hidden by cars and trees, and had to be found in the picture from the
+  camera's place and heading. The city's photo mesh gives every house the same four square views, lined up with
+  its model, so it is the one source of pictures (Karl: cleaner).
+
+## 2026-11-20: the houses review page, as it stands
+
+What it is for: looking at real houses next to what the detailer made of them, and telling the detailer's author
+what is wrong by marking it, so faults are fixed in the rules and checked again in place.
+
+- Run: `uv run python -m frameevolve.cambridge_view 20` (the number is how many houses, a spread over roof
+  types), then http://localhost:8770. One Python file serves it (cambridge_view.py, standard library), one HTML
+  file draws it (web/cambridge.html, Three.js from a CDN). The page is built afresh on every load: each house is
+  read (envelope.py), detailed (detail.py, with its brief if data/cambridge/briefs/<model>.json exists) and
+  checked (check.py), so a reload shows the code as it is now. Restart the server after editing Python.
+- A house on the page: the city's model as it was downloaded, and every surface of the detailed House (walls
+  with their openings cut out and windows glazed, floors with stair openings, ceilings, roof planes). The line
+  under the toolbar gives the assessor's record, what the detailer made (storeys, walls, openings, roof planes),
+  what was taken off the model (chimneys, dormers, low masses), and VALID or NOT VALID with the reasons from
+  check.py. Houses that fail are marked with a cross in the list.
+- Views, on the number keys: 1 the city's model; 2 the detailed house; 3 the inside walls with everything else
+  ghosted; 4 without the roof and ceilings; 5 without the top storey as well; 6 the next storey down, and so on.
+  Layers on R F O I (roofs, floors, outside walls, inside walls). [ and ] show one storey at a time, 0 all. V
+  steps round the four corner views, T looks from above. E shows the photos of the four sides (photos.py) where
+  they have been made.
+- Review: hold Shift and drag to mark on the view (or P for the pen), Z undoes a stroke, C clears. Enter goes to
+  the comment box, Enter again saves; S saves without a comment. G passes the house as good and jumps to the
+  next unreviewed one; N jumps without passing. Left and right, or J and K, step through the houses. The list
+  shows a tick for passed houses, a dot and a count for houses with open notes, and "n of 20 reviewed".
+- A note is two files in data/cambridge/notes: a picture of the view with the marks, the house, the view and
+  the comment written under it; and JSON (house, comment, view and layers, camera, status, reply). The fixer
+  reads the pictures, fixes the cause, and sets the status to fixed with a reply, which shows in green under the
+  note on the page; Done, Reopen and Delete are on each note. A pass is a note with status "ok" and no picture.
+- Used so far: five notes from Karl (walls through a flat roof, a gap and stacked strips at a roof's edge, a
+  nick at a gable's peak, an overhang at a gambrel's break, a slot between two roofs), each traced to a rule
+  and answered on the page.
+- Not tested by Claude in a browser (no browser at hand in the session): the server is tested with requests,
+  the page by Karl's use of it.
+
+## 2026-11-20: five houses briefed by agents from their photos
+
+- Method: one Claude Opus agent a house (medium effort, run in parallel from the session), given the assessor's
+  record, the four side photos, the brief format (brief.py's docstring) and a tool to try its brief:
+  `uv run python -m frameevolve.brief <model>` details the house from the brief, prints the floors, how many of
+  the brief's openings were placed, each that was not and why, and check.py's verdict, and draws each side of the
+  result on the photo's ruler (detailed_<side>.png) to hold against the photo. An agent took 1 to 4 minutes and
+  49,000 to 80,000 tokens.
+- Result (after the fixes below):
+
+  | house | floors read (ft over the ground) | brief's openings placed | valid |
+  |---|---|---|---|
+  | 95 Columbia St, three-decker, flat | 3.5, 13.3, 23.0 | 48 of 50 | yes |
+  | 25 Grozier Rd, two-family, gable | 2.5, 11.8, 21.0 | 31 of 33 | yes |
+  | 337 Huron Ave, two-family, gambrel | 3.5, 14.0, 23.0 | 24 of 25 | yes |
+  | 5 Fainwood Cir, single, hip | 4.5, 14.0 | 25 of 27 | yes |
+  | 22 Arlington St, single, mansard | 6.5, 16.5, 27.5 | 34 of 34 | no: 4% of the ceiling's load reaches no wall |
+
+- What the photos settled that the procedure had wrong: every one of the five stands on a raised basement
+  (ground floor 2.5 to 6.5 ft over the ground; the procedure's guess was 0 to 2 ft); the mansard has three
+  storeys, as the assessor says, not the four the procedure made of its height.
+- What the agents' reports made me fix in the tool: an opening that fell on no wall was dropped without a word;
+  the count of placed openings included ones the detailer made up; an opening was given to the wall nearest the
+  viewer whatever its storey, so windows over a lower wing or on a set-back storey were lost, as were those on a
+  bay's angled faces. Now an opening goes to the wall of its own storey nearest the viewer, walls up to 60
+  degrees askew included; one on a wall too short for the usual margins (a bay's face) sits in its middle; every
+  miss is listed with its reason. Also: an eave wall under a hip's corner had a saw-toothed top (the raised heel
+  was applied face by face).
+- Limits the agents named: a tree or a smear hides part of a side, and the brief cannot say "seen on half of this
+  side" (a listed storey means no openings where none are listed); dormers are taken off the envelope, so a
+  dormer's window has no wall; the floors are built at one even storey height, so a floor read at 14.0 ft may be
+  built at 13.2; the mesh shows the far side through a hole now and then.
+- The review page now builds each load with a fresh Python (a reload shows the code and briefs as they are),
+  and gives bearing walls inside a slight warm tint.
+- Karl, on what the set must be: buildable first; then, taken together, covering the design situations of
+  houses: bearing walls, beams over long spans, posts, large windows, rooms of double height, top-floor rooms
+  open to the roof, lofts. Not every house has each; the collection must.
+
+## 2026-11-20: the set must cover what houses ask of a framer
+
+- The detailer now gives a house, by seeded chance weighted by its age, some of the situations the set must
+  cover (noted in house.has): a bearing line on the ground storey opened into posts and a beam (openings of 8
+  to 16 ft between piers; 40% of bearing walls there, 10% above); a long span (bearing walls laid for 22 ft, not
+  16; 15% of houses, 30% from 1950 on); a wide window (6 to 9 ft) or a sliding door on the ground storey (20%,
+  60% for later houses); a porch open between corner posts (60% of one-storey masses under 260 sq ft); a room
+  of double height (an opening of 12 by 14 ft in the floor over the ground storey; 7%, 20% from 1960 on); a top
+  storey open to the roof (no ceiling, 12%) or with a loft (a ceiling over one side of the bearing wall, 12%).
+  A column is not a thing a House can say: posts are the piers left in a wall line.
+- dataset.py names a house's situations (those given, and those of its shape: storeys, roof forms, bearing
+  walls, knee walls, walls off the square, a lower roof against a higher wall, a stair) and chooses a set that
+  evens them out, rare ones first. On 600 houses: 361 valid and of at most 3 storeys (failing: loads 182, walls
+  52, rooms 30, stair 17, crash 14, roof 6, standing 4); 100 chosen (data/cambridge/chosen.json):
+
+  | situation | among 361 valid | among 100 chosen |
+  |---|---|---|
+  | bearing wall inside | 343 | 93 |
+  | stair | 341 | 89 |
+  | hip | 243 | 77 |
+  | flat roof | 227 | 71 |
+  | posts and a beam | 204 | 67 |
+  | walls off the square (a bay) | 148 | 50 |
+  | a lower roof against a higher wall | 146 | 56 |
+  | valley | 137 | 58 |
+  | gable | 106 | 47 |
+  | wide opening | 92 | 43 |
+  | open porch | 75 | 39 |
+  | knee walls | 67 | 34 |
+  | 3 storeys / 2 / 1 | 113 / 228 / 20 | 30 / 59 / 11 |
+  | steep roof sides (mansard, gambrel) | 28 | 24 |
+  | shed roof | 22 | 15 |
+  | loft | 19 | 14 |
+  | open to the roof | 18 | 15 |
+  | long span | 16 | 12 |
+  | double height | 6 | 6 |
+
+  Double height is thin (6): the opening has to fit clear of the stair and the bearing walls.
+- Not looked at by eye yet: none of the new situations has been reviewed on the page.
+- Review page: three notes from Karl said every house has a gap between roof and walls. It is the raised heel
+  (walls stop 9 in. under the roof plane, where rafters sit); I had answered the first with that explanation and
+  he reopened it. The page now draws a roof with its framing depth, so nothing shows as air; the data is as
+  before. Number keys now reset the layers and the storey filter.
+
+## 2026-11-20: thin roofs that end at the walls; photos cropped to the house
+
+- Karl, on the roofs: a roof is a thin surface, its depth is the framer's to decide, and the eaves must be
+  clean. So the detailer no longer bakes framing into the envelope: walls reach the roof plane (no raised heel
+  left under it), and a roof plane ends where its walls stand (no overhang pushed out). The pushed-out overhang
+  was also what made eaves untidy: where two eaves met at unequal pitches the edges ran on past each other, and
+  on a mansard a near-parallel pair of lines sent one corner 30 ft out (100 Oxford St). An eave, if wanted, is
+  to be added as geometry of its own, cleanly; not done. I had first drawn roofs with a depth on the page to
+  close the gap Karl saw under them; that was the wrong fix and is taken out.
+- check.py gains: no roof plane runs more than 30 in. out beyond the walls.
+- The side photos leave out whatever stands more than 18 in. in front of the house's own wall at that place
+  (trees, cars, the neighbour), column by column, and are cropped closer.
+- After these: 13 of 20 valid, 184 of 300 (61%). Among the 300 failing: loads 86, walls 24, rooms 16, stair 8,
+  roof 7, crash 7, standing 1. The five briefed houses: four valid as before; 22 Arlington St (mansard) now has
+  its set-back top storey's walls crossing partitions, a fault this change brought out and not yet fixed.
+- Review page: view 3 keeps the floors solid with the inside walls.
+
+## 2026-11-20: a general procedure and amendments a house
+
+- Karl's design, after the building code: one general procedure that covers most houses, and for each house an
+  annex of amendments saying what that house needs different: parameters for the procedure, additions and
+  subtractions, a step replaced, or a procedure of its own. Reason: no one algorithm fits every house, and the
+  logic of how a house was made should be kept so agents can add passes to it. A full script per house (my first
+  proposal) would have had to be rewritten for thousands of houses whenever the procedure improved.
+- Built (amend.py holds the format; detail.py applies it):
+
+  | kind | verbs |
+  |---|---|
+  | settings | set: floors_ft, span (long, standard), attic (ceiling, open, loft), windows, seed |
+  | changes | openings (one side's storey), porch, stair, void, wall, no_wall, open and close (a bearing wall into posts and a beam, or solid), door |
+  | a step replaced | interior (a storey's inside walls, all of them) |
+  | the last resort | "script": a Python file with build(env, record) |
+
+  Files are data/amendments/<model>.json, in git (they are the record of each house; the models are downloaded).
+  Each amendment may say by whom, from what and why. Amendments name places (a side's ruler, a plan point in
+  feet), never the procedure's names for walls, so they outlive changes to it; each reports what came of it
+  ("7 of 7 placed", "not applied: no wall inside within 3 ft of that place"), and check.py judges the house.
+- `uv run python -m frameevolve.amend <model>` tries a house's amendments: what came of each, what the
+  procedure chose where nothing was amended, the verdict, and drawings to hold against the photos (each side on
+  the photo's ruler, a plan a storey in feet). The brief of earlier today was the first two kinds; the five
+  briefs are now amendment files (9 to 12 amendments each), brief.py is gone.
+- tests/test_cambridge.py builds a city model of a plain gable house, reads, details, amends and checks it
+  (2 tests; the suite: 84 pass).
+- A fault the mansard brought out, fixed: a mass's inside walls were laid across a set-back storey that has
+  walls of its own. All five amended houses now pass every check; 184 of 300 unamended (61%).
+
+## 2026-11-20: a second pass of agents: the inside and the structure, by amendment
+
+- Method: again one Claude Opus agent a house (medium effort), now given the plan drawings, the photos, the
+  assessor's rooms, bedrooms and units, what its house type is like inside, and the rule that the house must end
+  valid. Each added amendments after the first pass's (3 to 7 each: a stair, an interior a storey, close) and
+  took 3 to 6 1/2 minutes and 77,000 to 96,000 tokens.
+- What every agent found wrong with the general procedure's plan: the stair in the middle of a room, far from the
+  entrance; storeys that should be alike (stacked flats) laid out differently; rooms as long strips (a
+  three-decker cut into four strips 8 ft deep by three bearing walls; a wing cut into corridors 6 ft wide) or one
+  room 40 ft long; bearing walls opened into posts and a beam in houses of 1862 to 1925.
+- Result: all five valid.
+
+  | house | what the pass made of it | rooms: record, made |
+  |---|---|---|
+  | 95 Columbia St, three-decker | one bearing wall down the middle; kitchen, dining, parlour south, three bedrooms north, a stair hall by the entry; the same on each storey | 18, 21 |
+  | 25 Grozier Rd, two-family | stair in a hall by the entry porch; both flats alike on a spine; four rooms under the roof | 14, about 18 |
+  | 337 Huron Ave, two-family | stair in a hall by the side door; the same flat on storeys 1 and 2; one room under the gambrel | 11, 11 |
+  | 5 Fainwood Cir, single | a centre hall 7 ft wide with a straight stair behind the front door; a cased opening between dining and living; a sleeping porch upstairs; a flat ceiling | 5, 5 or 6 a storey |
+  | 22 Arlington St, single, mansard | a side stair hall inside the west door; a solid spine on three storeys; bedrooms off a hall along it | 12, about 14 |
+
+- What their reports made me fix: a door amendment crashed (a name in detail() hid the function that cuts
+  openings); a wall end read off a plan to a tenth of a foot fell an inch outside the floor and the wall "stood
+  on no floor" (ends within 6 in. of a wall are now put on it); walls amended into a storey under a gambrel were
+  dropped without a word (they now stand as high as the roof lets them, and the amendment says how many were
+  built); "open" was said to be applied where no stretch of wall was long enough (it now says so), and now works
+  on the walls where two masses meet; the plans show those walls in their own colour, since "interior" does not
+  replace them; an opening seen on a set-back storey tries the wall behind when the wall in front is too low (the
+  mansard's dormer windows, 0 of 9 before, now placed); a seen opening may stand right beside a wall that meets
+  its wall, and doors are placed before windows; a mass's storey needs headroom somewhere (an entry box had a
+  "second storey" 2 ft high, and a door opening onto it).
+- What cannot be said yet, by their reports: which end of a stair is the bottom, or a landing; a door from one
+  named room to another (the procedure adds doors until every room is reached, so some bedrooms open through
+  others); windows in dormers (dormers are taken off). The rooms made run a little over the record's count.
+- After the fixes: the five amended houses valid; 185 of 300 unamended (62%); 84 tests pass.
+
+## 2026-11-23: the input houses page is part of the workbench
+
+- The workbench serves the houses page at /houses/ (server.py hands everything under it to
+  cambridge_view.respond), with "Input houses" in its top bar; the page's own server on port 8770 is gone. Its
+  3D view has the workbench's hand (view3d.js): no glide, two fingers on a trackpad orbit, Shift pans, a pinch
+  zooms, a mouse wheel zooms at the cursor, told apart the same way.
+- A fault worth knowing: the page is built by a new Python on every load, and from the second load on that
+  Python died at once (exit -11, a segmentation fault). The server's own process had by then loaded shapely,
+  numpy and matplotlib (through cambridge_view's imports), and on macOS a process with those loaded and threads
+  running cannot safely start another. The geometry libraries are now imported only inside build(), which runs
+  in the new Python; the server's process never loads them. A failed build now says its exit code on the page.
+- The branch is brought up to main (the IRC verifier work). 88 tests pass.
+- In progress, not finished: roofs and walls meeting exactly (Karl: "really high quality snapping or meeting
+  surfaces"). Roof faces are recut from their planes and the squared wall lines (envelope.recut), eaves of one
+  mass are put at one height (level_eaves), wall tops are read from the faces' own corners, and a new check,
+  "meeting", measures roof edge that lies along neither another roof plane's edge, a wall's top nor a wall's
+  face. It passes plain gables and fails most other houses for now: where a roof steps inside one mass (a
+  gablet over a hip end, 19 Whitney Ave) no wall stands at the step, and faces that step keep their old,
+  unsquared boundary. Next: square every face's outline with the same lines as the walls, let a face grow only
+  across its seams, and stand a wall at every step (on the ceiling where there is one).
