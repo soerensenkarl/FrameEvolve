@@ -553,4 +553,12 @@ body[data-tab=view3d] #stageTools .only3d { display: inline-flex; }
 body.page-other #stageTools, body.verifier-mode #stageTools, body.page-other #status { display: none; }
 .no3d { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); max-width: 460px; background: var(--panel);
   border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; font-size: 13px; line-height: 1.55; color: #3d3c38; z-index: 4; }
-#stageTools > .chk { padding: 0 2px; font-size: 12px; cursor: pointer; }
+/* the canvas toolbar: every control the same small segmented button */
+#stageTools .seg2 { margin: 0; }
+#stageTools .seg2 button, #stageTools .toggles label { font-size: 11.5px; padding: 2px 8px; margin: 0 0 0 -1px; border-radius: 0; line-height: 1.45; }
+#stageTools .seg2 > :first-child { border-radius: 5px 0 0 5px; margin-left: 0; }
+#stageTools .seg2 > :last-child { border-radius: 0 5px 5px 0; }
+#stageTools .toggles label { border: 1px solid var(--line); background: var(--panel); color: var(--muted); cursor: pointer; user-select: none; }
+#stageTools .toggles input { display: none; }
+#stageTools .toggles label:has(input:checked) { background: #e7effc; border-color: #c4d6f5; color: var(--text); position: relative; }
+#stageTools #showMenu summary { font-size: 11.5px; padding: 2px 4px; }
