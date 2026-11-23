@@ -31,7 +31,7 @@ ORDER = [
     physical.rule_errors, physical.pieces, physical.clashes, physical.floating, physical.spans, physical.rafters,
     analysis.loads, analysis.bracing,
     boards.backing, boards.openings, boards.insulation,
-    code.studs, code.header_checks, code.offsets, code.inline, code.notches, code.restraint,
+    code.studs, code.header_checks, code.offsets, code.inline, code.notches, code.restraint, code.splices, code.floor_openings, code.story_height,
     prefab.panels, prefab.site_work, prefab.cutting, prefab.erection,
     design.panel_count,
 ]

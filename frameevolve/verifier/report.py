@@ -46,6 +46,9 @@ CHECKS = {
     "notch": "a notch too deep, too long, or in the middle third of a joist's or rafter's span",
     "in line": "a joist or rafter lands on a top plate too far from a stud under it",
     "ridge": "a ridge board, hip or valley shallower than the cut ends of the rafters framing into it",
+    "story": "a story taller than 11 ft 7 in floor to floor",
+    "splice": "end joints of a double top plate closer together than 24 in",
+    "floor opening": "a floor opening without the header and trimmer joists it needs",
     "restraint": "a joist end, or deep roof framing at its bearing, with nothing to stop it rolling over",
     # prefab.py: built as panels in a shop, trucked and lifted into place
     "panel": "a prefab panel too big to truck, too heavy to lift, not flat, not one piece, or not framed round",

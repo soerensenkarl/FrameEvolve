@@ -1,7 +1,8 @@
-"""The IRC's prescriptive rules for light-frame houses (2021 IRC, chapters 5, 6 and 8): what a plan reviewer
-would fail beyond the physics. Studs by size and load, headers with their jacks and kings, bearing walls over the
-floor below, notches, in-line framing on a single top plate, ridge and valley depth, and lateral restraint.
-Each limit names its section.
+"""The IRC's prescriptive rules for light-frame houses (2021 IRC, chapters 3, 5, 6 and 8): what a plan reviewer
+would fail beyond the physics. Studs by size and load, story height, headers with their jacks and kings (exterior
+and interior tables), bearing walls over the floor below, notches and rafter tails, in-line framing on a single
+top plate, splices in a double one, floor openings, ridge and valley depth, and lateral restraint. Each limit
+names its section; irc_rules.md maps them to the rules they come from.
 """
 from __future__ import annotations
 
@@ -19,19 +20,36 @@ STUD_SPACING = {3.5: (24.0, 16.0, None), 5.5: (24.0, 24.0, 16.0)}
 NONBEARING_SPACING = 24.0   # Table R602.3(5): studs in a wall that carries nothing
 STUD_HEIGHT = 120.0         # Table R602.3(5): a bearing wall stud, 10 ft between points of lateral support
 NONBEARING_HEIGHT = {3.5: 168.0, 5.5: 240.0}   # Table R602.3(5): non-bearing 2x4 14 ft, 2x6 20 ft
-# Table R602.7(1), headers in an exterior bearing wall, 30 psf ground snow, 24 ft building width: (plies,
-# depth) -> (span, jack studs at each end), for a wall carrying roof and ceiling only, and for one carrying a
-# floor as well (the clear-span floor column, the stricter). One ply under a floor is not tabulated there: its
-# roof span times the table's two-ply ratio between the cases (0.73). Note f: 0.70 of the span for a 2x8 or
-# deeper header whose top is not braced (cripples on it rather than the top plate).
-HEADER_SPAN = {(1, 5.5): (37.0, 2), (1, 7.25): (47.0, 2), (1, 9.25): (56.0, 2), (1, 11.25): (65.0, 2),
-               (2, 3.5): (37.0, 1), (2, 5.5): (55.0, 1), (2, 7.25): (69.0, 1), (2, 9.25): (82.0, 2),
-               (2, 11.25): (97.0, 2), (3, 7.25): (87.0, 1), (3, 9.25): (103.0, 1), (3, 11.25): (121.0, 2),
-               (4, 7.25): (100.0, 1), (4, 9.25): (119.0, 1), (4, 11.25): (140.0, 1)}
-HEADER_SPAN_FLOOR = {(1, 5.5): (27.0, 2), (1, 7.25): (34.0, 2), (1, 9.25): (41.0, 2), (1, 11.25): (47.0, 2),
-                     (2, 3.5): (27.0, 1), (2, 5.5): (40.0, 2), (2, 7.25): (51.0, 2), (2, 9.25): (60.0, 2),
-                     (2, 11.25): (71.0, 2), (3, 7.25): (63.0, 2), (3, 9.25): (75.0, 2), (3, 11.25): (89.0, 2),
-                     (4, 7.25): (73.0, 1), (4, 9.25): (87.0, 2), (4, 11.25): (102.0, 2)}
+# Table R602.7(1), exterior bearing walls, 50 psf ground snow column (Cambridge 40 psf), 24 ft
+# building width: (plies, depth) -> (span, jack studs at each end). Roof and ceiling only; plus one clear-span
+# floor; plus two clear-span floors. One-ply headers under floors are tabulated (not extrapolated).
+# Note f: 0.70 of the span for a 2x8 or deeper header whose top is not braced (cripples on it).
+HEADER_SPAN = {(1, 5.5): (32.0, 2), (1, 7.25): (40.0, 2), (1, 9.25): (48.0, 2), (1, 11.25): (56.0, 3),
+               (2, 3.5): (31.0, 1), (2, 5.5): (47.0, 1), (2, 7.25): (60.0, 2), (2, 9.25): (71.0, 2),
+               (2, 11.25): (83.0, 2), (3, 7.25): (75.0, 1), (3, 9.25): (88.0, 2), (3, 11.25): (104.0, 2),
+               (4, 7.25): (86.0, 1), (4, 9.25): (102.0, 1), (4, 11.25): (120.0, 2)}
+HEADER_SPAN_FLOOR = {(1, 5.5): (25.0, 2), (1, 7.25): (32.0, 2), (1, 9.25): (38.0, 3), (1, 11.25): (45.0, 3),
+                     (2, 3.5): (25.0, 1), (2, 5.5): (38.0, 2), (2, 7.25): (48.0, 2), (2, 9.25): (57.0, 2),
+                     (2, 11.25): (67.0, 2), (3, 7.25): (60.0, 2), (3, 9.25): (71.0, 2), (3, 11.25): (84.0, 2),
+                     (4, 7.25): (69.0, 2), (4, 9.25): (82.0, 2), (4, 11.25): (96.0, 2)}
+HEADER_SPAN_2FLOORS = {(1, 5.5): (21.0, 2), (1, 7.25): (26.0, 3), (1, 9.25): (31.0, 3), (1, 11.25): (36.0, 4),
+                       (2, 3.5): (20.0, 1), (2, 5.5): (30.0, 2), (2, 7.25): (39.0, 2), (2, 9.25): (46.0, 2),
+                       (2, 11.25): (54.0, 3), (3, 7.25): (48.0, 2), (3, 9.25): (57.0, 2), (3, 11.25): (68.0, 2),
+                       (4, 7.25): (56.0, 2), (4, 9.25): (66.0, 2), (4, 11.25): (78.0, 2)}
+# Table R602.7(2), interior bearing walls, 24 ft building width: one floor, two floors. No one-ply rows.
+INTERIOR_SPAN_FLOOR = {(2, 3.5): (34.0, 1), (2, 5.5): (52.0, 1), (2, 7.25): (65.0, 1), (2, 9.25): (78.0, 2),
+                       (2, 11.25): (91.0, 2), (3, 7.25): (82.0, 1), (3, 9.25): (97.0, 1), (3, 11.25): (114.0, 2),
+                       (4, 7.25): (95.0, 1), (4, 9.25): (112.0, 1), (4, 11.25): (132.0, 1)}
+INTERIOR_SPAN_2FLOORS = {(2, 3.5): (23.0, 1), (2, 5.5): (35.0, 2), (2, 7.25): (44.0, 2), (2, 9.25): (52.0, 2),
+                         (2, 11.25): (62.0, 2), (3, 7.25): (55.0, 2), (3, 9.25): (66.0, 2), (3, 11.25): (77.0, 2),
+                         (4, 7.25): (64.0, 1), (4, 9.25): (76.0, 2), (4, 11.25): (89.0, 2)}
+OPENING_DOUBLE = 48.0      # R502.10: a floor opening header over 4 ft is doubled, trimmers too
+SPLICE_OFFSET = 24.0       # R602.3.2: end joints in the two plies of a double top plate 24" apart
+BLOCK_LENGTH = 36.0        # R602.3.2 exc. 2 covers "rafters or joists": shorter pieces are blocking
+STORY_HEIGHT = 139.0       # R301.3: wood-framed story height at most 11'-7"
+RAFTER_TAIL_MIN = 6.0      # a rafter running 6" or more past its bearing has a tail (overhang)
+TAIL_LENGTH = 24.0         # R802.7.1.1: a notched rafter cantilever at most 24" (measured level)
+PLATE_CUT = 0.5            # R602.6.1: a top plate cut more than half its width needs a 16 ga tie
 UNBRACED_HEADER = 0.70      # Table R602.7(1) note f
 # Table R602.7.5: full-height (king) studs at each end of a header in an exterior wall, by header span, for
 # winds under 140 mph, exposure B (Cambridge, MA, about 128 mph): (longest span, kings).
@@ -124,7 +142,11 @@ def header_checks(s: Site) -> list[Fault]:
                 continue
             done.add(o.id)
             m = s.by_id[mid]
-            table = HEADER_SPAN_FLOOR if floors_above(s.house, w) else HEADER_SPAN
+            fl = floors_above(s.house, w)
+            if w.role == "exterior" or fl == 0:
+                table, cite = (HEADER_SPAN, HEADER_SPAN_FLOOR, HEADER_SPAN_2FLOORS)[min(fl, 2)], "Table R602.7(1)"
+            else:
+                table, cite = (INTERIOR_SPAN_FLOOR, INTERIOR_SPAN_2FLOORS)[min(fl, 2) - 1], "Table R602.7(2)"
             span, nj = table.get((min(plies, 4), m.depth), (0.0, 2))
             cripples = any(vertical(s.by_id[n]) for n in s.g.carries[m.id] if n in s.by_id)
             if cripples and m.depth >= 7.25:
@@ -135,7 +157,7 @@ def header_checks(s: Site) -> list[Fault]:
                                 f"{plies}-ply {m.section} header over {o.kind} {o.id} on {w.id} spans {ftin(clear)}; "
                                 f"the limit is {ftin(span) if span else 'none, it is not in the table'}"
                                 f"{', its top braced only by cripples' if cripples and m.depth >= 7.25 else ''} "
-                                f"(Table R602.7(1))"))
+                                f"({cite})"))
             b = w.local_box(m)
             jacks = {"left": set(), "right": set()}
             for x in (mid, *[k for k, (oo, _) in headers(s, w).items() if oo is o]):
@@ -155,7 +177,7 @@ def header_checks(s: Site) -> list[Fault]:
                 for end, u in (("left", b.lo[0]), ("right", b.hi[0])):
                     k = kings(s, w, u, -1 if end == "left" else 1)
                     if k < need:
-                        out.append(s.at(m, w.world(u, w.height / 2, 0), "kings", False,
+                        out.append(s.at(m, w.world(u, w.height / 2, 0), "kings", True,
                                         f"{o.kind} {o.id} on {w.id}: {k} full-height stud(s) at its {end} end; a header "
                                         f"spanning {ftin(clear)} needs {need} (Table R602.7.5)"))
     return out
@@ -224,6 +246,8 @@ def inline(s: Site) -> list[Fault]:
             for x in s.g.carries[P.id]:
                 X = s.by_id.get(x)
                 if not X or X.surface == w.id or abs(dot(axis(X), w.dir)) > 0.5:
+                    continue
+                if X.length < BLOCK_LENGTH:     # the rule is for joists and rafters, not short blocking
                     continue
                 if double and (s.gaps.get(x) or 24.0) <= 16.0 + 0.5:
                     continue
@@ -296,6 +320,13 @@ def notches(s: Site) -> list[Fault]:
             t0, t1 = run[0][0] - step / 2, run[-1][0] + step / 2
             r = max(x for _, x in run)
             d = m.depth
+            if level(m) and not on_edge(m) and m.surface in walls:   # R602.6.1: a plate, cut across its width
+                w = walls[m.surface]
+                if bearing_wall(s, w) and r > PLATE_CUT * d + EPS:
+                    out.append(s.at(m, m.box.centre, "notch", False, f"{name(m)} is cut {inches(r)} into its "
+                                    f"{inches(d)} width, more than half; it needs a 16 ga steel tie across the cut "
+                                    f"(R602.6.1)"))
+                continue
             if vertical(m):
                 w = walls.get(m.surface)
                 bearing = w is not None and bearing_wall(s, w)
@@ -308,7 +339,22 @@ def notches(s: Site) -> list[Fault]:
             p = tuple(m.start[k] + axis(m)[k] * (t0 + t1) / 2 for k in range(3))
             if at_end or over:
                 tail = over and (min(over) - ends[0] > d or ends[-1] - max(over) > d)
-                if r > END_NOTCH * d + EPS:
+                sloped = not (level(m) and on_edge(m)) and not vertical(m)
+                beyond = 0.0
+                if sloped and over:    # a rafter's tail is the part past its bearing at its LOWER end
+                    beyond = (min(over) - ends[0]) if m.start[2] <= m.end[2] else (ends[-1] - max(over))
+                    tail = beyond > RAFTER_TAIL_MIN   # runs clearly past its seat: an overhang
+                if tail and sloped:    # R802.7.1.1: a notched rafter tail cantilevers at most 24"
+                    a = axis(m)
+                    reach = beyond * (a[0] ** 2 + a[1] ** 2) ** 0.5
+                    if reach > TAIL_LENGTH + EPS:
+                        out.append(s.at(m, p, "notch", True, f"{name(m)} is notched over its bearing and cantilevers "
+                                        f"{ftin(reach)} (measured level) past it; a notched rafter tail may "
+                                        f"cantilever at most {inches(TAIL_LENGTH)} (R802.7.1.1)"))
+                # R802.7.1.1: a rafter notched over its bearing with a tail need only keep 3 1/2"
+                if tail and sloped and d - r >= TAIL_DEPTH - EPS:
+                    continue
+                if r > END_NOTCH * d + EPS and not (tail and sloped):
                     out.append(s.at(m, p, "notch", True, f"{name(m)} is notched {inches(r)} deep "
                                     f"{'over its bearing' if over else 'at its end'}; at most a quarter of its "
                                     f"{inches(d)} depth, {inches(END_NOTCH * d)} (R502.8.1, R802.7.1)"))
@@ -381,4 +427,92 @@ def restraint(s: Site) -> list[Fault]:
                 p = tuple(m.start[k] + a[k] * t for k in range(3))
                 out.append(s.at(m, p, "restraint", False, f"{name(m)} has nothing to stop it rolling over at its "
                                 f"{where}: blocking, a rim or a header (R502.7, R802.8)"))
+    return out
+
+
+# ------------------------------------------------------------------------------- top plates, openings, stories
+
+def splices(s: Site) -> list[Fault]:
+    """R602.3.2: in a bearing wall with a double top plate, end joints in the upper and lower plates are
+    offset at least 24"."""
+    out = []
+    for w in s.house.walls:
+        if not bearing_wall(s, w):
+            continue
+        flat = [m for m in s.on.get(w.id, []) if level(m) and not on_edge(m)]
+        if not flat:
+            continue
+        top = max(w.local_box(m).hi[1] for m in flat)
+        layers = {}
+        for m in flat:
+            b = w.local_box(m)
+            if b.hi[1] >= top - 3.0 - EPS:
+                layers.setdefault(round(b.lo[1], 1), []).append(b)
+        if len(layers) < 2:
+            continue
+        lo, hi = sorted(layers)[-2:]
+
+        def joints(bs):
+            bs = sorted(bs, key=lambda b: b.lo[0])
+            return [(a.hi[0] + b.lo[0]) / 2 for a, b in zip(bs, bs[1:]) if b.lo[0] - a.hi[0] < 1.0
+                    and 6.0 < a.hi[0] < w.length - 6.0]
+        upper = joints(layers[hi])
+        for j in joints(layers[lo]):
+            near = min((abs(j - k) for k in upper), default=None)
+            if near is not None and near < SPLICE_OFFSET - EPS:
+                out.append(s.flag("splice", True, f"{w.id}: joints in the two top plates are {inches(near)} apart at "
+                                  f"u {ftin(j)}; they must be offset at least {inches(SPLICE_OFFSET)} (R602.3.2)",
+                                  w.id, j, top))
+    return out
+
+
+def floor_openings(s: Site) -> list[Fault]:
+    """R502.10: a floor opening is framed with header and trimmer joists; where the header spans more
+    than 4 ft, headers and trimmers are doubled."""
+    out = []
+    for f in s.house.floors:
+        if not f.openings:
+            continue
+        joists = [m for m in s.on.get(f.id, []) if level(m) and on_edge(m)]
+        if not joists:
+            continue
+        along_u = sum(abs(f.local_dir(axis(m))[0]) > 0.9 for m in joists) >= len(joists) / 2
+        for o in f.openings:
+            # edges: (name, fixed coordinate index, position, outward sign, extent lo, hi, runs along u?)
+            edges = [("u0", 0, o.u0, -1, o.v0, o.v1), ("u1", 0, o.u1, 1, o.v0, o.v1),
+                     ("v0", 1, o.v0, -1, o.u0, o.u1), ("v1", 1, o.v1, 1, o.u0, o.u1)]
+            header_span = (o.v1 - o.v0) if along_u else (o.u1 - o.u0)
+            for nm, k, pos, sgn, e0, e1 in edges:
+                header = (k == 0) == along_u     # joists along u butt into the edges at fixed u
+                plies = 0
+                for m in joists:
+                    b = f.local_box(m)
+                    j = 1 - k
+                    if b.lo[j] > e0 + 2.0 or b.hi[j] < e1 - 2.0:
+                        continue
+                    near = (pos - b.hi[k]) if sgn < 0 else (b.lo[k] - pos)
+                    if -0.5 <= near <= 1.5 * plies + 2.0 + EPS:
+                        plies += 1
+                need = 2 if header_span > OPENING_DOUBLE + EPS else 1
+                if plies < need:
+                    what = "header" if header else "trimmer"
+                    out.append(s.flag("floor opening", True, f"{f.id}: opening {o.id} ({ftin(o.u1 - o.u0)} x "
+                                      f"{ftin(o.v1 - o.v0)}) has {plies} {what} joist(s) along its {nm} edge; needs "
+                                      f"{need} (R502.10)", f.id, (o.u0 + o.u1) / 2, (o.v0 + o.v1) / 2))
+    return out
+
+
+def story_height(s: Site) -> list[Fault]:
+    """R301.3: a wood-framed story, from the top of its floor to the top of the floor above, is at most
+    11'-7". The top story is measured to the top of its walls (its ceiling framing is not added)."""
+    out = []
+    for w in s.house.walls:
+        if not s.on.get(w.id):
+            continue
+        top = w.base + w.height
+        above = [f.z for f in s.house.floors if f.role == "floor" and f.z > top - EPS]
+        h = (min(above) - w.base) if above and min(above) - top < 24.0 else w.height
+        if h > STORY_HEIGHT + EPS:
+            out.append(s.flag("story", True, f"{w.id}: the story is {ftin(h)} high, floor to floor; a wood-framed "
+                              f"story may be at most {ftin(STORY_HEIGHT)} (R301.3)", w.id, w.length / 2, w.height / 2))
     return out
