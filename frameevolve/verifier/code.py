@@ -52,7 +52,7 @@ TAIL_LENGTH = 24.0         # R802.7.1.1: a notched rafter cantilever at most 24"
 PLATE_CUT = 0.5            # R602.6.1: a top plate cut more than half its width needs a 16 ga tie
 UNBRACED_HEADER = 0.70      # Table R602.7(1) note f
 # Table R602.7.5: full-height (king) studs at each end of a header in an exterior wall, by header span, for
-# winds under 140 mph, exposure B (Cambridge, MA, about 128 mph): (longest span, kings).
+# winds under 140 mph, exposure B (Cambridge, MA, 120 mph): (longest span, kings).
 KINGS = ((48.0, 1), (96.0, 2), (168.0, 3), (216.0, 4))
 INLINE = 1.0                # R602.3.2 exception: on a single top plate, joists and rafters within 1" of a stud
 INLINE_DOUBLE = 5.0         # R602.3.3: framing over 16" o.c. on a double 2x4 top plate, within 5" of a stud
@@ -517,4 +517,146 @@ def story_height(s: Site) -> list[Fault]:
             out.append(s.flag("story", True, f"{w.id}: the story is {ftin(h)} high, "
                               f"{'floor to floor' if to_floor else 'floor to the top of its walls'}; a wood-framed "
                               f"story may be at most {ftin(STORY_HEIGHT)} (R301.3)", w.id, w.length / 2, w.height / 2))
+    return out
+
+
+# ---------------------------------------------------------------------------------------------- bracing
+
+# R602.10, wall bracing by the IRC's prescriptive method, for wind: Method CS-WSP (R602.10.7, continuous wood
+# structural panel sheathing on every exterior wall of the storey, above and below openings too, as boards.backing
+# already asks; gypsum board inside), exposure B, 120 mph ultimate design wind speed (Cambridge, 780 CMR Table
+# R301.2(2)). Only exterior walls are counted as bracing; interior walls are not designated as braced wall lines.
+# Table R602.10.3(1), 120 mph, Methods CS-WSP column: the total braced length (ft) a braced wall line needs, by braced
+# wall line spacing (ft), for the storeys above the one braced (0: one storey or the top one; 1: the first of two or
+# second of three; 2: the first of three). Linear interpolation is permitted (note a).
+BRACE_SPACINGS = (10.0, 20.0, 30.0, 40.0, 50.0, 60.0)
+BRACE_REQUIRED = {0: (2.0, 3.5, 5.0, 6.5, 8.0, 9.5), 1: (3.5, 7.0, 9.5, 12.5, 15.5, 18.5),
+                  2: (5.5, 10.0, 14.5, 18.5, 23.0, 27.0)}
+# Table R602.10.3(2) adjustment factors, multiplied together (note b): roof eave-to-ridge height (ft) by storeys
+# above; story height (ft); braced wall lines in the plan direction. Exposure B and gypsum board inside: 1.0.
+EAVE_TO_RIDGE = {0: ((5.0, 0.70), (10.0, 1.00), (15.0, 1.30), (20.0, 1.60)),
+                 1: ((5.0, 0.85), (10.0, 1.00), (15.0, 1.15), (20.0, 1.30)),
+                 2: ((5.0, 0.90), (10.0, 1.00), (15.0, 1.10))}   # over 15 ft with two floors: not permitted
+STORY_FACTOR = ((8.0, 0.90), (9.0, 0.95), (10.0, 1.00), (11.0, 1.05), (12.0, 1.10))
+LINES_FACTOR = ((2, 1.00), (3, 1.30), (4, 1.45), (5, 1.60))
+# Table R602.10.5, Method CS-WSP: the shortest braced wall panel that counts, inches, by the clear height of the
+# tallest opening beside it (inches, rows) and the wall's height (8 to 12 ft, columns); None: not permitted.
+PANEL_WALLS = (8.0, 9.0, 10.0, 11.0, 12.0)
+PANEL_MIN = {64: (24, 27, 30, 33, 36), 68: (26, 27, 30, 33, 36), 72: (27, 27, 30, 33, 36), 76: (30, 29, 30, 33, 36),
+             80: (32, 30, 30, 33, 36), 84: (35, 32, 32, 33, 36), 88: (38, 35, 33, 33, 36), 92: (43, 37, 35, 35, 36),
+             96: (48, 41, 38, 36, 36), 100: (None, 44, 40, 38, 38), 104: (None, 49, 43, 40, 39),
+             108: (None, 54, 46, 43, 41), 112: (None, None, 50, 45, 43), 116: (None, None, 55, 48, 45),
+             120: (None, None, 60, 52, 48), 124: (None, None, None, 56, 51), 128: (None, None, None, 61, 54),
+             132: (None, None, None, 66, 58), 136: (None, None, None, None, 62), 140: (None, None, None, None, 66),
+             144: (None, None, None, None, 72)}
+BESIDE = 12.0               # an opening within this of a panel's edge is beside it
+LINE_OFFSET = 48.0          # R602.10.1.2: walls within 4 ft of a braced wall line belong to it
+LINE_SPACING = 720.0        # Table R602.10.1.3: braced wall lines at most 60 ft apart (wind, under 140 mph)
+PANEL_FROM_END = 120.0      # R602.10.2.2: a panel begins within 10 ft of each end of a braced wall line...
+PANEL_GAP = 240.0           # ... and panels are at most 20 ft apart, edge to edge
+SHORT_LINE = 192.0          # R602.10.2.3: a line of 16 ft or less has two panels or one of 48" or more;
+ONE_PANEL = 48.0            # a longer line, two panels
+
+
+def _table(pts, x: float) -> float:
+    """Linear interpolation in ((x, y), ...), held at the ends."""
+    if x <= pts[0][0]:
+        return pts[0][1]
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        if x <= x1:
+            return y0 + (y1 - y0) * (x - x0) / (x1 - x0)
+    return pts[-1][1]
+
+
+def panel_min(w, a: float, b: float) -> float | None:
+    """Table R602.10.5, Method CS-WSP: the shortest panel that counts from u = a to b on wall w, for the tallest
+    opening beside it (none: the 64" row) and the wall's height (the next column up). None: not permitted."""
+    col = next((i for i, h in enumerate(PANEL_WALLS) if w.height / 12 <= h + EPS), len(PANEL_WALLS) - 1)
+    tall = max((o.v1 - o.v0 for o in w.openings if abs(o.u1 - a) <= BESIDE or abs(o.u0 - b) <= BESIDE), default=0.0)
+    row = next((r for r in PANEL_MIN if tall <= r + EPS), None)
+    return PANEL_MIN[row][col] if row is not None else None
+
+
+def eave_to_ridge(house) -> float:
+    """The tallest roof's rise from its eave to its highest point, inches."""
+    out = 0.0
+    for r in house.roofs:
+        if r.outline:
+            out = max(out, max(v for _, v in r.outline) * r.slope / (1 + r.slope ** 2) ** 0.5)
+    return out
+
+
+def bracing(s: Site) -> list[Fault]:
+    """R602.10: in each storey and each plan direction, exterior walls in line (within 4 ft) form braced wall lines.
+    Each line needs braced wall panels (analysis.braced: runs of full-height studs no more than 24" apart, clear of
+    openings, at least Table R602.10.5's length for Method CS-WSP) adding up to Table R602.10.3(1)'s length for its spacing to the
+    next line, times the factors of Table R602.10.3(2); a panel within 10 ft of each end and no more than 20 ft
+    between panels (R602.10.2.2); two panels on a line, or on a line of 16 ft or less one of 48" (R602.10.2.3);
+    lines no more than 60 ft apart (Table R602.10.1.3)."""
+    from frameevolve.verifier.analysis import braced
+    out = []
+    bases = sorted({round(w.base) for w in s.house.walls})
+    rise = eave_to_ridge(s.house) / 12
+    for i, base in enumerate(bases):
+        above = min(len(bases) - 1 - i, 2)
+        ext = [w for w in s.house.walls if round(w.base) == base and w.role == "exterior" and w.length > EPS]
+        for k in (0, 1):     # walls running along x, then along y
+            par = sorted((w for w in ext if abs(w.dir[k]) > 0.9), key=lambda w: (w.start[1 - k] + w.end[1 - k]) / 2)
+            lines: list[list] = []
+            for w in par:
+                p = (w.start[1 - k] + w.end[1 - k]) / 2
+                if lines and p - lines[-1][0] <= LINE_OFFSET:
+                    lines[-1][1].append(w)
+                else:
+                    lines.append([p, [w]])
+            if len(lines) < 2:
+                continue
+            n = len(lines)
+            for j, (p, ws) in enumerate(lines):
+                spacing = max(abs(lines[x][0] - p) for x in (j - 1, j + 1) if 0 <= x < n)
+                height = max(w.height for w in ws) / 12
+                factor = (_table(EAVE_TO_RIDGE[above], rise) * _table(STORY_FACTOR, height)
+                          * _table(LINES_FACTOR, n))
+                need = 12 * factor * _table(tuple(zip(BRACE_SPACINGS, BRACE_REQUIRED[above])), spacing / 12)
+                lo = min(min(w.start[k], w.end[k]) for w in ws)
+                hi = max(max(w.start[k], w.end[k]) for w in ws)
+                panels = []
+                for w in ws:
+                    for a, b in braced(s, w):
+                        least = panel_min(w, a, b)
+                        if least is not None and b - a >= least - EPS:
+                            x0, x1 = w.start[k] + w.dir[k] * a, w.start[k] + w.dir[k] * b
+                            panels.append((min(x0, x1), max(x0, x1)))
+                panels.sort()
+                have = sum(b - a for a, b in panels)
+                axis_name, across = "xy"[k], "yx"[k]
+                problems = []
+                if spacing > LINE_SPACING + EPS:
+                    problems.append(f"it is {ftin(spacing)} from the next line, over the 60 ft allowed "
+                                    f"(Table R602.10.1.3)")
+                if have < need - EPS:
+                    problems.append(f"its braced wall panels add up to {ftin(have)}, short of the {ftin(need)} "
+                                    f"required (Table R602.10.3(1) for lines {ftin(spacing)} apart with {above} "
+                                    f"storeys above, times {factor:.2f} for the roof, the story height and {n} lines, "
+                                    f"Table R602.10.3(2))")
+                if panels:
+                    if panels[0][0] - lo > PANEL_FROM_END + EPS or hi - panels[-1][1] > PANEL_FROM_END + EPS:
+                        problems.append(f"its panels start {ftin(panels[0][0] - lo)} and end "
+                                        f"{ftin(hi - panels[-1][1])} from the line's ends; at most 10 ft "
+                                        f"(R602.10.2.2)")
+                    gap = max((b[0] - a[1] for a, b in zip(panels, panels[1:])), default=0.0)
+                    if gap > PANEL_GAP + EPS:
+                        problems.append(f"two of its panels are {ftin(gap)} apart, over 20 ft (R602.10.2.2)")
+                    short = hi - lo <= SHORT_LINE + EPS and panels[0][1] - panels[0][0] >= ONE_PANEL - EPS
+                    if len(panels) < 2 and not short:
+                        problems.append("it has one braced wall panel; a line needs two, or on a line of 16 ft "
+                                        "or less one of 48\" (R602.10.2.3)")
+                if problems:
+                    w = max(ws, key=lambda w: w.length)
+                    out.append(s.flag("bracing", True,
+                                      f"storey {i + 1}, the braced wall line along {axis_name} at {across} = "
+                                      f"{ftin(p)}: " + "; ".join(problems) + f" (a panel: full-height studs no more "
+                                      f"than 24\" apart, clear of openings, as long as Table R602.10.5 asks for "
+                                      f"the openings beside it, Method CS-WSP)", w.id, w.length / 2, w.height / 2, [],
+                                      sorted({m.rule for x in ws for m in s.on.get(x.id, []) if vertical(m)})))
     return out

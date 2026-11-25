@@ -82,3 +82,40 @@ read on examples against the code text.
   than `seed`.
 - For Karl, from running the dataset here: 160 of 600 valid (his run: 361); failing `meeting` 295 (the check in
   progress) and 133 crashes, mostly a StopIteration at model.py:319, a few shapely TopologyExceptions.
+
+## 2026-11-24: settled loads, rafter checks, uplift, IRC bracing (branch `irc-inputs-and-checks`)
+
+- Loads settled. Cambridge is 40 psf ground snow and 120 mph ultimate wind (780 CMR 10th edition, Table R301.2(2),
+  read from mass.gov and UpCodes copies; the official text governs). Wind in `analysis.py` 10 -> 11 psf (115 -> 120 mph,
+  by V squared); the kings comment said 128 mph. Beams in walls (`WALL_BEAM_CLEAR`) were still on the 30 psf header
+  column: now 50 psf, like the headers. Rafter spans now from the 20 psf dead-load column of Table R802.4.1(5), because
+  the analysis carries 15 psf of roof dead load (audit E5, the last of the five errors).
+- New in `physical.rafter`:
+  - raised ties: a tie above the wall top cuts the rafter's allowed span by Table R802.4.1(9), interpolated;
+  - rafter seats bear 1 1/2" on what they rest on (R802.6). A corner grazing a stud beside a full seat is not a seat;
+  - `uplift` (soft): over 200 lb per rafter by Table R802.11 at 120 mph, exposure B, a rated connector is needed;
+    the model can't show one, so this is a reminder.
+- Bracing is now the IRC's (R602.10, `code.bracing`), replacing the SDPWS check whose shear values were never
+  verified. Exterior walls within 4 ft form braced wall lines per storey and direction; panels are runs of full-height
+  studs no more than 24" apart, clear of openings. Method CS-WSP (continuous sheathing), not WSP: every exterior wall
+  is sheathed already, and WSP's 48" minimum failed a panel of 38" beside a window that CS-WSP allows. Checked: length
+  by Table R602.10.3(1) with the factors of Table R602.10.3(2), panel length by the opening beside it (Table
+  R602.10.5), a panel within 10 ft of each end, at most 20 ft apart, two per line, lines at most 60 ft apart. Not
+  checked: CS-WSP corner conditions (R602.10.7), interior braced wall lines. `analysis.holds` and the shear values
+  stay, for `loads.py`'s picture of the wind; they no longer score anything.
+- Roof openings not added: no house, generated or real, has one.
+
+Hard faults on the 100 real houses, the same frames:
+
+| check | minimal | seed | advanced |
+|---|---|---|---|
+| bracing | 663 -> 666 | 3 -> 464 | 243 -> 516 |
+| span (rafters) | unchanged | unchanged | 1,203 -> 1,357 |
+| bearing (rafter seats) | unchanged | unchanged | 46 -> 65 |
+| uplift (soft) | 0 | 0 | 0 -> 359, 16 houses |
+
+- The new bracing faults are mostly short jog walls: bump-outs and porch walls 5 to 9 ft long, more than 4 ft off
+  the main wall, filled by one window or door. By R602.10.1.2 each is its own braced wall line and needs panels; a
+  designer would use a portal frame (Method PFH) or engineering there. Real by the letter; they come from the house
+  shapes more than the grammar.
+- seed's rafters never bear on a plate in the contact graph, so seats and uplift find nothing on seed.

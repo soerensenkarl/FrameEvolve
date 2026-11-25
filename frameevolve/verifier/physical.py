@@ -18,8 +18,9 @@ from frameevolve.verifier.site import Site, axis, column, level, name, nominal, 
 
 MAX_CLEAR_FLAT = 24.0    # a plate laid flat, between supports: the 24" module
 # A beam on edge in a wall (not a header over an opening; those are in code.py), clear span by depth: IRC Table
-# R602.7(1), two plies carrying roof and ceiling, 24 ft building width, 30 psf ground snow.
-WALL_BEAM_CLEAR = {3.5: 37.0, 5.5: 55.0, 7.25: 69.0, 9.25: 82.0, 11.25: 97.0}
+# R602.7(1), two plies carrying roof and ceiling, 24 ft building width, 50 psf ground snow column (Cambridge 40 psf,
+# 780 CMR Table R301.2(2)), as the headers in code.py.
+WALL_BEAM_CLEAR = {3.5: 31.0, 5.5: 47.0, 7.25: 60.0, 9.25: 71.0, 11.25: 83.0}
 # Floor joist clear span: IRC Table R502.3.1(2), 40 psf live, 10 psf dead, L/360.
 JOIST_CLEAR = {5.5: {12: 123.0, 16: 112.0, 19.2: 105.0, 24: 97.0}, 7.25: {12: 162.0, 16: 147.0, 19.2: 138.0, 24: 123.0},
                9.25: {12: 207.0, 16: 185.0, 19.2: 169.0, 24: 151.0}, 11.25: {12: 247.0, 16: 214.0, 19.2: 195.0, 24: 175.0}}
@@ -28,13 +29,28 @@ CEILING_CLEAR = {3.5: {12: 142.0, 16: 129.0, 19.2: 122.0, 24: 113.0}, 5.5: {12: 
                  7.25: {12: 295.0, 16: 268.0, 19.2: 252.0, 24: 225.0}, 9.25: {12: 312.0, 16: 312.0, 19.2: 308.0, 24: 275.0},
                  11.25: {12: 312.0, 16: 312.0, 19.2: 308.0, 24: 275.0}}
 # Rafter span, measured level: IRC Table R802.4.1(5), 50 psf ground snow (the table above Cambridge's 40 psf),
-# ceiling not attached to the rafters, 10 psf dead, L/180.
-RAFTER_RUN = {3.5: {12: 92.0, 16: 80.0, 19.2: 73.0, 24: 65.0}, 5.5: {12: 135.0, 16: 117.0, 19.2: 107.0, 24: 95.0},
-              7.25: {12: 171.0, 16: 148.0, 19.2: 135.0, 24: 121.0}, 9.25: {12: 209.0, 16: 181.0, 19.2: 165.0, 24: 148.0},
-              11.25: {12: 242.0, 16: 210.0, 19.2: 191.0, 24: 171.0}}
+# ceiling not attached to the rafters, L/180, Spruce-Pine-Fir No. 2, 20 psf dead load column: the analysis takes 15 psf
+# of roof dead load (analysis.ROOF_LOAD), which the 10 psf column does not cover.
+RAFTER_RUN = {3.5: {12: 85.0, 16: 74.0, 19.2: 67.0, 24: 60.0}, 5.5: {12: 125.0, 16: 108.0, 19.2: 99.0, 24: 88.0},
+              7.25: {12: 158.0, 16: 137.0, 19.2: 125.0, 24: 112.0}, 9.25: {12: 193.0, 16: 167.0, 19.2: 153.0, 24: 137.0},
+              11.25: {12: 224.0, 16: 194.0, 19.2: 177.0, 24: 158.0}}
 MAX_OVERHANG = 2.0       # a loaded member past its last support
 MIN_BEARING = 1.5        # IRC R502.6, R802.6: the ends of joists, beams and rafters bear 1 1/2" on wood
 MIN_BEARING_FLAT = 0.75  # a plate laid flat: half a stud
+# Table R802.4.1(9): with ceiling joists or rafter ties above the top of the walls the rafters rest on, rafter spans
+# are multiplied by a factor, by the tie's height over the ridge's (both above the wall top): (ratio, factor).
+RAISED_TIE = ((1 / 7.5, 1.00), (1 / 6, 0.90), (1 / 5, 0.83), (1 / 4, 0.76), (1 / 3, 0.67))
+# Table R802.11, exposure B, 120 mph (Cambridge, 780 CMR Table R301.2(2)): uplift per rafter, lb, by spacing, then roof
+# span (ft): (under 5:12, 5:12 or steeper). Over 200 lb a rafter needs a designed connector, not nails (R802.11).
+UPLIFT = {12: {12: (70, 64), 18: (89, 81), 24: (108, 98), 28: (121, 109), 32: (134, 120), 36: (146, 132),
+               42: (166, 149), 48: (185, 166)},
+          16: {12: (93, 85), 18: (118, 108), 24: (144, 130), 28: (161, 145), 32: (178, 160), 36: (194, 176),
+               42: (221, 198), 48: (246, 221)},
+          24: {12: (140, 128), 18: (178, 162), 24: (216, 196), 28: (242, 218), 32: (268, 240), 36: (292, 264),
+               42: (332, 298), 48: (370, 332)}}
+UPLIFT_NAILED = 200.0    # R802.11 exception 1: up to this, the nailing of Table R602.3(1) holds the rafter down
+SEAT_GROUP = 6.0         # bearing contacts this close together in plan are one seat
+TOUCH = 0.25             # less than this beside a full seat is a graze, not a seat
 LAP = 3.0                # IRC R802.5.2.1: ceiling joists lapped at least 3", or butted over a bearing (connector)
 
 
@@ -267,6 +283,80 @@ def rafters(s: Site) -> list[Fault]:
     return out + ridges(s, cut_ends)
 
 
+def raised_tie(s: Site, m: Member, tied: list[str], rests: list[float], ridge: float) -> tuple[float, str]:
+    """Table R802.4.1(9): the factor on rafter m's span for its lowest tie's height above the top of the wall it
+    rests on, over the ridge's; between the tabulated ratios, interpolated. With the ratio, for the message."""
+    if not tied or not rests:
+        return 1.0, ""
+    wall = min(s.point(m, t)[2] for t in rests)
+    if ridge - wall <= EPS:
+        return 1.0, ""
+    r = max(0.0, min(s.by_id[n].box.lo[2] for n in tied) - wall) / (ridge - wall)
+    pts = RAISED_TIE
+    if r <= pts[0][0]:
+        return 1.0, ""
+    for (r0, f0), (r1, f1) in zip(pts, pts[1:]):
+        if r <= r1:
+            return f0 + (f1 - f0) * (r - r0) / (r1 - r0), f"{r:.2f}"
+    return pts[-1][1], f"{r:.2f}"   # above a third: the thrust check flags it
+
+
+def seats(s: Site, m: Member, roofs: set[str]) -> list[Fault]:
+    """R802.6: each rafter bears at least 1 1/2" on what it rests on (a wall plate or a beam), measured along the
+    rafter at each seat; contacts close together in plan are one seat. Members of the roof it lies along (a rake
+    plate) are not seats."""
+    out, groups = [], []
+    for n, area in s.g.bears[m.id].items():
+        o = s.by_id.get(n)
+        if o is None or n not in s.held or o.surface in roofs or abs(dot(axis(o), axis(m))) > 0.95:
+            continue
+        c = s.g.at[(m.id, n)]
+        for gp in groups:
+            if math.hypot(gp[0][0] - c[0], gp[0][1] - c[1]) <= SEAT_GROUP:
+                gp[1].append((n, area))
+                break
+        else:
+            groups.append((c, [(n, area)]))
+    lengths = [sum(a for _, a in contacts) / m.width for _, contacts in groups]
+    seated = any(x >= MIN_BEARING - EPS for x in lengths)
+    for (c, contacts), length in zip(groups, lengths):
+        if seated and length < TOUCH:
+            continue      # a corner grazing a stud or plate beside a real seat, not a seat itself
+        if length < MIN_BEARING - EPS:
+            ms = [s.by_id[n] for n, _ in contacts]
+            out.append(s.at(m, c, "bearing", True,
+                            f"{name(m)} bears only {inches(length)} on {', '.join(name(x) for x in ms)}, minimum "
+                            f"{inches(MIN_BEARING)} (IRC R802.6)", ms))
+    return out
+
+
+def uplift(s: Site, m: Member, spacing: float | None, span_ft: float) -> list[Fault]:
+    """R802.11, Table R802.11: the wind uplift on rafter m, by its spacing, the roof's span (twice the rafter's run
+    for a roof with an opposite slope) and pitch, interpolated between spans. Over 200 lb it needs a connector to
+    the wall, which the model cannot show: soft, a reminder that one is required."""
+    roof = s.surfs.get(m.surface)
+    if spacing is None or not isinstance(roof, Roof):
+        return []
+    col = min((c for c in UPLIFT if c >= spacing - EPS), default=None)
+    if col is None:
+        return []
+    k = 1 if roof.pitch >= 5.0 - EPS else 0
+    rows = sorted(UPLIFT[col].items())
+    if span_ft <= rows[0][0]:
+        force = rows[0][1][k]
+    elif span_ft >= rows[-1][0]:
+        force = rows[-1][1][k] * span_ft / rows[-1][0]
+    else:
+        (a, fa), (b, fb) = next((x, y) for x, y in zip(rows, rows[1:]) if x[0] <= span_ft <= y[0])
+        force = fa[k] + (fb[k] - fa[k]) * (span_ft - a) / (b - a)
+    if force <= UPLIFT_NAILED + EPS:
+        return []
+    return [s.at(m, m.start if m.start[2] < m.end[2] else m.end, "uplift", False,
+                 f"{name(m)}: wind lifts it about {force:.0f} lb (a {span_ft:.0f} ft roof span at {roof.pitch:.1f}:12, "
+                 f"{col}\" on centre, 120 mph, Table R802.11), over the {UPLIFT_NAILED:.0f} lb nails hold, so it needs a "
+                 f"rated connector to the wall (R802.11)")]
+
+
 def spans_house(s: Site, m: Member, line: list[Member]) -> bool:
     """Whether a tie line reaches from where rafter m bears across the house in plan, as far as the mirror of
     its bearing beyond the ridge, less a foot: where the opposite eave wall is on a gable, even where a valley
@@ -312,13 +402,19 @@ def rafter(s: Site, m: Member, tied: list[str], across: bool | None, roofs: set[
     spacing = s.gaps.get(m.id)
     col = column(spacing)
     limit = RAFTER_RUN.get(m.depth, {}).get(col) if col else None
+    lo, hi = m.box.lo[2], m.box.hi[2]
+    factor, raised = raised_tie(s, m, tied, rests, hi)
     for t0, t1 in zip(sup, sup[1:]):
-        if limit is None or (t1 - t0) * run > limit + EPS:
+        if limit is None or (t1 - t0) * run > limit * factor + EPS:
             out.append(s.at(m, s.point(m, (t0 + t1) / 2), "span", True,
                             f"{name(m)} spans {ftin((t1 - t0) * run)} level between supports, limit "
-                            + (f"{ftin(limit)} for a {m.section} rafter at {col:g}\" on centre" if limit else
+                            + ((f"{ftin(limit * factor)} for a {m.section} rafter at {col:g}\" on centre"
+                                + (f" ({ftin(limit)} x {factor:.2f}: its tie is {raised} of the way up to the ridge, "
+                                   f"Table R802.4.1(9))" if factor < 1 else "")) if limit else
                                f"none: no table for {m.section} rafters {inches(spacing or 0)} apart")))
-    lo, hi = m.box.lo[2], m.box.hi[2]
+    out += seats(s, m, roofs)
+    if rests:
+        out += uplift(s, m, spacing, (max(sup) - min(rests)) * run * (2 if across is not None else 1) / 12)
     if any(s.point(m, t)[2] >= lo + 2 * (hi - lo) / 3 for t in rests):
         return out           # it rests on something high up (a gable wall, a beam)
     ev = s.surfs[m.surface].ev

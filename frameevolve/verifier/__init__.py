@@ -5,11 +5,11 @@ It asks what a building inspector, an engineer and a panel shop would ask of a t
   physical.py   Can it stand?      Rule errors, stock length, openings, clashes, support down to the ground,
                                    spans and bearing by the IRC tables, rafter thrust and its ties.
   analysis.py   Will it hold?      A simple structural analysis: loads followed down through the frame,
-                                   bending, compression and crushing against what the wood allows; and the
-                                   wind, as racking each wall must have the braced length to hold.
+                                   bending, compression and crushing against what the wood allows.
   boards.py     Can it be skinned? Backing for every board, heads and sills at openings, room for insulation.
   code.py       Would it pass?     The IRC's prescriptive rules: studs, headers, notches, in-line framing,
-                                   bearing walls over the floor below, ridges, lateral restraint.
+                                   bearing walls over the floor below, ridges, lateral restraint, wall
+                                   bracing (R602.10).
   prefab.py     Can it be built?   Prefab panels small and light enough to truck and lift, pieces a standard
                                    automated saw can cut, and an order of erection that works.
   design.py     Is it good?        Design objectives, as soft faults: as few panels as a truck and crane allow.
@@ -29,9 +29,9 @@ from frameevolve.verifier.site import Site
 # Every check, in the order the report reads.
 ORDER = [
     physical.rule_errors, physical.pieces, physical.clashes, physical.floating, physical.spans, physical.rafters,
-    analysis.loads, analysis.bracing,
+    analysis.loads,
     boards.backing, boards.openings, boards.insulation,
-    code.studs, code.header_checks, code.offsets, code.inline, code.notches, code.restraint, code.splices, code.floor_openings, code.story_height,
+    code.studs, code.header_checks, code.offsets, code.inline, code.notches, code.restraint, code.splices, code.floor_openings, code.story_height, code.bracing,
     prefab.panels, prefab.site_work, prefab.cutting, prefab.erection,
     design.panel_count,
 ]

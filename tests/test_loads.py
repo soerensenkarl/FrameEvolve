@@ -93,12 +93,12 @@ def test_the_wind_racks_the_walls_along_it_and_lower_storeys_more():
 
 
 def test_a_wall_with_studs_too_far_apart_is_not_braced(tmp_path):
-    from frameevolve.verifier import analysis
+    from frameevolve.verifier import code
     from frameevolve.verifier.site import Site
     house = houses.generate(1)
     src = open("grammars/seed.py").read()
-    assert not analysis.bracing(Site(house, build("grammars/seed.py", house)))
+    assert not code.bracing(Site(house, build("grammars/seed.py", house)))
     g = tmp_path / "wide.py"
     g.write_text(src.replace("SPACING = 24", "SPACING = 48"))
-    faults = analysis.bracing(Site(house, build(g, house)))
+    faults = code.bracing(Site(house, build(g, house)))
     assert faults and all(f.check == "bracing" and f.hard for f in faults)
