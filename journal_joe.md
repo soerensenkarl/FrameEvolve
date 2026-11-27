@@ -52,3 +52,33 @@ Open, for the team: design ground snow and wind speed (115 mph in `analysis.py`,
 R602.10 prescriptive bracing or the SDPWS check with verified values; crushing and restraint hard or soft;
 whether `advanced` should follow the IRC tables; `minimal` scores better than `seed` because it places fewer
 members. Next: rafter seat bearing, the raised-tie span reduction, roof openings, uplift, then bracing.
+
+## 2026-11-24: the IRC checks on real houses (branch `irc-real-houses`)
+
+Ran the verifier on the 100 Cambridge houses `python -m frameevolve.dataset 600 100` chose on this machine, with
+the three hand-written grammars (2 min for all 300 frames, 8 at a time; no crash). Every flagged IRC check was
+read on examples against the code text.
+
+| grammar | hard faults, 100 real houses | a house | a generated house (h000-h019) |
+|---|---|---|---|
+| minimal | 69,572 | 696 | 444 |
+| seed | 99,421 | 994 | 792 |
+| advanced | 54,186 | 542 | 334 |
+
+- One misfire, fixed: every flat roof was a hard `ridge` fault ("0.0:12 ... must be designed beams", R802.4.4).
+  The rule is for ridges, hips and valleys, and a flat or shed roof has none; it now applies only to a roof plane
+  with a seam. advanced 106 -> 34, seed 129 -> 17; what is left are low-slope roofs that do meet at a ridge or hip.
+- Read and kept as real:
+  - `thrust` on low-slope roofs (877 on advanced, 49 houses): rafters at 1.7 to 3.4:12 leaning on a ridge with
+    nothing tying them. Shed rafters resting on the high wall are already exempt.
+  - `studs` (3,558): on three-storey houses the ground storey's 2x4 walls carry two floors, which Table
+    R602.3(5) does not allow, and 2x6 at 24" must be 16". The generated houses never asked this; real ones do.
+  - `story` (63, 21 houses): walls of 11'-10" to 14'-1" in the detailed houses (detail.py's storey heights or
+    walls up to a flat roof). The message now says "floor to the top of its walls" for a top storey.
+  - `floor opening`: advanced 0, seed 501 (stair openings without headers and trimmers), as on the generated set.
+- The grammar's, not the verifier's: `notch` (3,051 on advanced: rafters cut through where roofs meet at odd
+  angles), `floating` (2,803) and `rule error` (445). advanced cannot frame much of the real geometry yet.
+- The gap between seed and advanced narrows on real houses, 1.8x against 2.4x, and `minimal` still scores better
+  than `seed`.
+- For Karl, from running the dataset here: 160 of 600 valid (his run: 361); failing `meeting` 295 (the check in
+  progress) and 133 crashes, mostly a StopIteration at model.py:319, a few shapely TopologyExceptions.

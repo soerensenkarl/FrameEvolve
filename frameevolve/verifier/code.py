@@ -390,9 +390,9 @@ def ridges(s: Site, cut_ends: dict[str, tuple[float, Member]]) -> list[Fault]:
                             f"{name(R)} is {inches(R.depth)} deep; the rafters framing into it, like {name(m)}, have "
                             f"a {inches(need)} plumb cut, and it must be at least that deep (R802.3, R802.4.3)", [m]))
     for r in s.house.roofs:
-        if r.pitch < MIN_PITCH and s.on.get(r.id):
+        if r.pitch < MIN_PITCH and s.on.get(r.id) and r.seams:   # a flat or shed roof has no ridge, hip or valley
             m = s.on[r.id][0]
-            out.append(s.at(m, m.box.centre, "ridge", True, f"roof {r.id} is {r.pitch}:12; under 3:12 its ridge, "
+            out.append(s.at(m, m.box.centre, "ridge", True, f"roof {r.id} is {r.pitch:.1f}:12; under 3:12 its ridge, "
                             f"hips and valleys must be designed beams (R802.4.4)"))
     return out
 
@@ -511,8 +511,10 @@ def story_height(s: Site) -> list[Fault]:
             continue
         top = w.base + w.height
         above = [f.z for f in s.house.floors if f.role == "floor" and f.z > top - EPS]
-        h = (min(above) - w.base) if above and min(above) - top < 24.0 else w.height
+        to_floor = bool(above) and min(above) - top < 24.0
+        h = (min(above) - w.base) if to_floor else w.height
         if h > STORY_HEIGHT + EPS:
-            out.append(s.flag("story", True, f"{w.id}: the story is {ftin(h)} high, floor to floor; a wood-framed "
+            out.append(s.flag("story", True, f"{w.id}: the story is {ftin(h)} high, "
+                              f"{'floor to floor' if to_floor else 'floor to the top of its walls'}; a wood-framed "
                               f"story may be at most {ftin(STORY_HEIGHT)} (R301.3)", w.id, w.length / 2, w.height / 2))
     return out
