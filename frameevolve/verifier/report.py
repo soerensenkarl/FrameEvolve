@@ -26,12 +26,12 @@ CHECKS = {
     "span": "a joist, rafter or beam spans further than the IRC table allows for its size and spacing",
     "overhang": "a loaded member runs too far past its last support",
     "bearing": "a member bears on too little of its support",
+    "uplift": "a rafter the wind lifts harder than nails hold (over 200 lb), so it needs a rated connector to the wall",
     "thrust": "a rafter with no tie in the lower third of its rise reaching across to the opposite rafters, so it "
               "pushes its wall out",
     # analysis.py: a simple structural analysis of the loads
     "strength": "the loads on a member stress it past what the wood allows (bending, compression, buckling)",
     "crushing": "a member presses into the one under it harder than the wood across the grain allows",
-    "bracing": "a wall with too little braced length (full height, studded, clear of openings) for its share of the wind",
     "deflection": "a joist, rafter or beam sags more than the code allows under its loads",
     # boards.py: the skins
     "backing": "sheathing, subfloor, drywall or ceiling with nothing behind it",
@@ -46,6 +46,11 @@ CHECKS = {
     "notch": "a notch too deep, too long, or in the middle third of a joist's or rafter's span",
     "in line": "a joist or rafter lands on a top plate too far from a stud under it",
     "ridge": "a ridge board, hip or valley shallower than the cut ends of the rafters framing into it",
+    "bracing": "a braced wall line with too little braced panel length for the wind (IRC R602.10), or panels too far "
+               "from its ends or apart",
+    "story": "a story taller than 11 ft 7 in floor to floor",
+    "splice": "end joints of a double top plate closer together than 24 in",
+    "floor opening": "a floor opening without the header and trimmer joists it needs",
     "restraint": "a joist end, or deep roof framing at its bearing, with nothing to stop it rolling over",
     # prefab.py: built as panels in a shop, trucked and lifted into place
     "panel": "a prefab panel too big to truck, too heavy to lift, not flat, not one piece, or not framed round",

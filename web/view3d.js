@@ -39,7 +39,7 @@ export function setup3d() {
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = false;      // as in Rhino: the view stops when the mouse does, no glide
   // as in Rhino: left clicks select, right drag orbits (Shift: pans), middle drag pans, Cmd/Ctrl + right drag
-  // zooms about the view's centre; wheel and trackpad are handled in bindViewInput
+  // zooms about the view's centre; the wheel zooms at the cursor (bindViewInput)
   // OrbitControls itself pans when Shift is held over a rotate button (and would rotate if the button were set to pan)
   controls.mouseButtons = { LEFT: -1, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
   controls.enableZoom = false;
@@ -111,23 +111,20 @@ function bindViewInput(canvas) {
     if (zoomDrag) { zoomDrag = null; return; }
     if (!down || down[2] !== 0 || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
     if (measure.on) return measureClick(e);
-    const id = pick(e).hit?.object.userData.id;
-    if (!clickMember(id)) select(id ? { kind: "member", id } : null);   // the panels and assembly views take a click themselves
+    const { ray, hit } = pick(e), id = hit?.object.userData.id;
+    const mark = st.view === "faults" ? ray.intersectObjects(markGroup.children.filter((x) => x.visible), false)[0] : null;
+    if (!clickMember(id, mark?.object.userData.fault)) select(id ? { kind: "member", id } : null);   // the panels, assembly and faults views take a click themselves
   });
-  // wheel and trackpad, as in Rhino: a mouse wheel zooms at the cursor (Shift: pans); on a trackpad two fingers
-  // orbit (Shift: pan) and pinch zooms, never a two-finger zoom. A wheel notch is counted in lines, or is a whole
-  // multiple of a notch's step: 4.000244140625 px in Chrome on a Mac, 100 or 120 elsewhere. Anything else is a
-  // trackpad. A gesture keeps what it was until it rests, so a trackpad's momentum is never read as a wheel.
+  // a mouse wheel zooms at the cursor; on a trackpad two fingers orbit and a pinch zooms; Shift pans.
+  // Telling them apart: a trackpad sends whole pixels, and its legacy wheelDelta is exactly -3 times them; a mouse
+  // wheel sends lines, fractions of a pixel, or a wheelDelta in steps of 120. A gesture keeps what it was until
+  // it rests, so a trackpad's momentum is never read as a wheel.
   let gesture = null, lastWheel = 0;
-  const NOTCH = 4.000244140625;
-  const notch = (d) => d > 0 && (Math.abs(d / NOTCH - Math.round(d / NOTCH)) < 1e-9
-    || (Number.isInteger(d) && (d % 100 === 0 || d % 120 === 0)));
+  const precise = (d, legacy) => d === 0 || (Number.isInteger(d) && (legacy === undefined || legacy === -3 * d));
   const fromTrackpad = (e) => {
     const now = performance.now();
-    if (!gesture || now - lastWheel > 250) {
-      const mouse = e.deltaMode !== 0 || (e.deltaX === 0 && notch(Math.abs(e.deltaY))) || (e.shiftKey && notch(Math.abs(e.deltaX)));
-      gesture = mouse ? "mouse" : "pad";
-    }
+    if (!gesture || now - lastWheel > 250)
+      gesture = e.deltaMode === 0 && precise(e.deltaY, e.wheelDeltaY) && precise(e.deltaX, e.wheelDeltaX) ? "pad" : "mouse";
     lastWheel = now;
     return gesture === "pad";
   };
@@ -136,8 +133,8 @@ function bindViewInput(canvas) {
     const px = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1;
     const dx = e.deltaX * px, dy = e.deltaY * px;
     if (e.ctrlKey) zoomAt(Math.exp(dy * 0.01), e);                       // pinch
-    else if (fromTrackpad(e)) e.shiftKey ? panBy(dx, dy) : orbitBy(dx * 0.006, dy * 0.006);
     else if (e.shiftKey) panBy(dx, dy);
+    else if (fromTrackpad(e)) orbitBy(dx * 0.006, dy * 0.006);
     else if (dy) zoomAt(Math.exp(Math.sign(dy) * Math.min(0.25, Math.max(0.1, Math.abs(dy) * 0.0015))), e);   // a notch: 10 to 25%
     controls.update();
   }, { passive: false });
@@ -416,11 +413,12 @@ export function renderMarks() {
   const hardMat = new THREE.MeshBasicMaterial({ color: 0xd8342c, depthTest: false, transparent: true });
   const softMat = new THREE.MeshBasicMaterial({ color: 0xe08a00, depthTest: false, transparent: true });
   const ball = new THREE.SphereGeometry(0.06, 16, 12);
-  for (const f of st.data.faults) {
+  for (const [i, f] of st.data.faults.entries()) {
     if (!f.at || f.check === "backing" || (only && f.check !== only)) continue;
     const s = new THREE.Mesh(ball, f.hard ? hardMat : softMat);
     s.position.set(...f.at.map((x) => x * S));
     s.userData.surface = f.surface;
+    s.userData.fault = i;
     s.renderOrder = 10;
     markGroup.add(s);
   }
@@ -570,14 +568,17 @@ export function look3d() {
   const show = $("#showFaults").checked && done && st.fault == null && st.view !== "assembly" && !(st.view === "panels" && rel);
   gapGroup.visible = markGroup.visible = show;
   for (const o of [...gapGroup.children, ...markGroup.children]) o.visible = shown3d(o.userData.surface);
-  // the house's surfaces: strong on the bare house, faint once framing exists
+  // the frame can be hidden to see the house's surfaces alone; they are strong on the bare house or with the
+  // frame hidden, faint once framing shows
+  const frame = $("#showFrame").checked;
+  group.visible = frame;
   const on = $("#showSurfaces").checked;
   for (const s of surfs) {
     const active = isActive(s.surface);
     const vis = on && shown3d(s.surface);
     s.mesh.visible = s.line.visible = s.label.visible = vis;
-    s.mesh.material.opacity = st.at === 0 ? 0.32 : active ? 0.2 : done ? 0.06 : 0.1;
-    s.line.material.opacity = st.at === 0 ? 0.9 : active ? 0.8 : done ? 0.3 : 0.45;
+    s.mesh.material.opacity = st.at === 0 || !frame ? 0.32 : active ? 0.2 : done ? 0.06 : 0.1;
+    s.line.material.opacity = st.at === 0 || !frame ? 0.9 : active ? 0.8 : done ? 0.3 : 0.45;
     s.label.element.classList.toggle("active", active);
     s.label.element.classList.toggle("faint", done && st.at > 0);
     for (const o of s.opLabels) {

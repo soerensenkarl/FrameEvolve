@@ -1,13 +1,14 @@
 // The right-hand panes about one frame: the Inspect tab (a member and its contacts, a rule with its
 // before/after demo on the toy house, or a panel), the Report tab, and the timeline under the view (the strip
 // of build steps, or of the assembly, and stepping). The Verifier is a tab of its own, in verifier.js.
-import { $, esc, ftin, inch, pill, PAST, st, finished, trigger, stepNo, current, stopPlay, api, dirty,
+import { $, esc, ftin, inch, pill, PAST, st, chosenFault, finished, trigger, stepNo, current, stopPlay, api, dirty,
   showTip, hideTip, panelOf, panelColour } from "./state.js";
 import { select, renderRules } from "./app.js";
 import { look3d } from "./view3d.js";
 import { renderElev, renderCaption, scrollElevTo, memberSvg, outlinePath, surfPath, openingRect,
   bearerPoly, teeSvg, targetShape } from "./elevations.js";
 import { jumpToRule } from "./editor.js";
+import { evidence } from "./verifier.js";
 import { asmTrack, panelHtml, choosePanel, asmGo, setView } from "./views.js";
 
 export function chip(id) {
@@ -28,6 +29,16 @@ function ruleSource(name) {
 export function renderInspect() {
   const el = $("#inspect");
   const sel = st.sel;
+  const f = chosenFault();
+  if (!sel && f) {      // a fault chosen in the faults view or the Verifier tab: what is wrong, and who is in it
+    const ev = evidence(f).text;
+    el.innerHTML = `<h3><span class="tag ${f.hard ? "" : "soft"}">${f.hard ? "hard" : "soft"}</span> ${esc(f.check)}</h3>
+      <p>${esc(f.message)}.</p>${ev !== `${esc(f.message)}.` ? `<p>${ev}</p>` : ""}
+      <p>${f.members.filter((id) => st.byId[id]).map(chip).join("")}</p>
+      <p class="empty">${esc(st.data.checks[f.check] || "")}. Click the member again for its next fault; the
+        Verifier tab lists them all.</p>`;
+    return;
+  }
   if (!sel) {
     el.innerHTML = `<p class="empty">Click a member in the 3D view or an elevation to see what it touches,
       or a rule on the left to see what it does.</p>

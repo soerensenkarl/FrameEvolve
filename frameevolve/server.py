@@ -573,9 +573,25 @@ class Handler(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length") or 0)
         return json.loads(self.rfile.read(n) or b"{}")
 
+    def houses(self, method: str, path: str) -> None:
+        """The input houses page and its notes (cambridge_view.py), under /houses/."""
+        from frameevolve import cambridge_view
+        status, body, kind = cambridge_view.respond(method, path[len("/houses/"):], self.body() if method in ("POST", "PUT") else None)
+        self.send(status, body, kind)
+
+    def do_DELETE(self):
+        path = unquote(urlparse(self.path).path)
+        return self.houses("DELETE", path) if path.startswith("/houses/") else self.send(404, {"error": "not found"})
+
     def do_GET(self):
         path = unquote(urlparse(self.path).path)
         try:
+            if path.startswith("/houses/"):
+                return self.houses("GET", path)
+            if path == "/houses":
+                self.send_response(301)
+                self.send_header("Location", "/houses/")
+                return self.end_headers()
             if path == "/":
                 return self.send(200, (WEB / "index.html").read_bytes(), "text/html")
             if path.startswith("/web/"):
@@ -645,6 +661,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
+        if path.startswith("/houses/"):
+            return self.houses("POST", path)
         try:
             b = self.body()
             if path == "/api/build":
@@ -693,6 +711,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_PUT(self):
         path = urlparse(self.path).path
         try:
+            if path.startswith("/houses/"):
+                return self.houses("PUT", path)
             if path.startswith("/api/grammar/"):
                 name = path.split("/")[-1]
                 if RUN_GRAMMAR.match(name):
