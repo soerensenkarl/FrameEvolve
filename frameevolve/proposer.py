@@ -78,12 +78,14 @@ as prefab panels: wall panels, floor cassettes and roof panels built flat in a s
 trucked to site and lifted into place one after another, bottom up.
 
 The builder applies the grammar to a house. A deterministic verifier then checks the frame and scores it as
-(hard faults, soft faults, cost), compared in that order. It checks what an inspector, an engineer and a panel
+(missing, hard faults, soft faults, cost), compared in that order. Missing counts the hard faults that say
+something the house needs is not there (nothing behind a board, nothing over an opening, a member not held up, a
+rule that crashed): leaving framing out never scores better than placing it imperfectly. It checks what an inspector, an engineer and a panel
 shop would: that the frame stands, carries its loads, meets the IRC's rules, and can be built as panels small
 and light enough to truck and lift, from pieces the saw can cut, in an order where every panel lands on what is
 already up and can be lowered straight down. Cost counts timber, pieces (three times as much for one nailed on
-site as for one built into a panel) and crane lifts. The goal is a grammar that gives every house zero hard
-faults, then as few soft faults as possible, then the lowest cost. Your edit is kept only if it beats the
+site as for one built into a panel) and crane lifts. The goal is a grammar that gives every house nothing
+missing and zero hard faults, then as few soft faults as possible, then the lowest cost. Your edit is kept only if it beats the
 parent on the houses shown.
 
 What the verifier checks:
@@ -370,14 +372,14 @@ class Draft:
         path.write_text(self.src)
         cache = self.context.get("cache")
         res = evaluate(path, [Path(h) for h in self.context["house_paths"]], cache=Path(cache) if cache else None)
-        total = [sum(r["score"][j] for r in res.values()) for j in range(3)]
-        return (f"Check {self.checks} of {self.limit}. Total over these houses: {total[0]} hard, {total[1]} soft, "
-                f"cost {total[2]:.1f} (parent: {self.context['parent_batch']}).\n\n"
+        total = [sum(r["score"][j] for r in res.values()) for j in range(4)]
+        return (f"Check {self.checks} of {self.limit}. Total over these houses: {_score(total)} "
+                f"(parent: {_score(self.context['parent_batch'])}).\n\n"
                 + "\n\n".join(r["text"] for r in res.values()))
 
 
 def _score(s) -> str:
-    return f"{s[0]} hard, {s[1]} soft, cost {s[2]:.1f}"
+    return f"{s[3]} missing, {s[0]} hard, {s[1]} soft, cost {s[2]:.1f}"
 
 
 def overviews_text(overviews: dict[str, str]) -> str:
@@ -439,7 +441,7 @@ def inspirations_text(insp: list[dict]) -> str:
 def prompt(context: dict, images: bool, out: Path) -> tuple[str, list[dict]]:
     """The system prompt and the first message's content (text, then the pictures). Saved to prompt.md."""
     reports = "\n\n".join(context["reports"].values())
-    scores = "\n".join(f"  {h}: {s[0]} hard, {s[1]} soft, cost {s[2]:.1f}" for h, s in context["parent_scores"].items())
+    scores = "\n".join(f"  {h}: {_score(s)}" for h, s in context["parent_scores"].items())
     pb = context["parent_batch"]
     text = (f"The parent grammar is {context['parent']}. Its scores on every training house:\n{scores}\n\n"
             f"These houses are this round's test: {', '.join(context['houses'])}. The parent's total on them is "

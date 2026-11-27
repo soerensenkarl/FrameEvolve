@@ -31,10 +31,10 @@ def make_run(tmp_path, seed_src, n=3, minibatch=2, **kw):
 
 def test_pareto_keeps_every_grammar_that_is_best_somewhere():
     """A grammar that is best on one house stays, even with a poor average."""
-    cs = [Candidate("A", None, 0, {"h1": [0, 0, 9], "h2": [0, 0, 6], "h3": [0, 0, 5], "h4": [0, 0, 4]}),
-          Candidate("B", None, 0, {"h1": [0, 0, 7], "h2": [0, 0, 8], "h3": [0, 0, 8], "h4": [0, 0, 3]}),
-          Candidate("C", None, 0, {"h1": [0, 0, 8], "h2": [0, 0, 7], "h3": [0, 0, 6], "h4": [0, 0, 5]}),
-          Candidate("D", None, 0, {"h1": [1, 0, 1], "h2": [1, 0, 1], "h3": [1, 0, 1], "h4": [1, 0, 1]})]
+    cs = [Candidate("A", None, 0, {"h1": [0, 0, 9, 0], "h2": [0, 0, 6, 0], "h3": [0, 0, 5, 0], "h4": [0, 0, 4, 0]}),
+          Candidate("B", None, 0, {"h1": [0, 0, 7, 0], "h2": [0, 0, 8, 0], "h3": [0, 0, 8, 0], "h4": [0, 0, 3, 0]}),
+          Candidate("C", None, 0, {"h1": [0, 0, 8, 0], "h2": [0, 0, 7, 0], "h3": [0, 0, 6, 0], "h4": [0, 0, 5, 0]}),
+          Candidate("D", None, 0, {"h1": [1, 0, 1, 0], "h2": [1, 0, 1, 0], "h3": [1, 0, 1, 0], "h4": [1, 0, 1, 0]})]
     wins = pareto(cs, ["h1", "h2", "h3", "h4"])
     assert wins == {"A": ["h2", "h3"], "B": ["h1", "h4"]}   # D is cheap but has a hard fault everywhere
 
@@ -143,7 +143,7 @@ def test_parent_is_drawn_from_a_pareto_set_of_several(tmp_path):
     """With several grammars in the Pareto set, every iteration still finds its parent."""
     seed = (ROOT / "grammars/seed.py").read_text().replace("SPACING = 24", "SPACING = 16")
     run = make_run(tmp_path, seed)
-    run.add(Candidate("c001", "c000", 0, {h: [s[0], s[1], s[2] - (1 if i == 0 else -1)]
+    run.add(Candidate("c001", "c000", 0, {h: [s[0], s[1], s[2] - (1 if i == 0 else -1), s[3]]
                                            for i, (h, s) in enumerate(run.cands[0].scores.items())}))
     run.grammar("c001").write_text(seed)
     assert len(run.pareto()) == 2
@@ -154,8 +154,8 @@ def test_parent_is_drawn_from_a_pareto_set_of_several(tmp_path):
 
 def test_pareto_drops_a_grammar_dominated_by_another_on_the_front():
     """B ties A where A is best and is better elsewhere: A is a near-copy and is not drawn (GEPA, Algorithm 2)."""
-    cs = [Candidate("A", None, 0, {"h1": [0, 0, 5], "h2": [0, 0, 9]}),
-          Candidate("B", None, 0, {"h1": [0, 0, 5], "h2": [0, 0, 6]})]
+    cs = [Candidate("A", None, 0, {"h1": [0, 0, 5, 0], "h2": [0, 0, 9, 0]}),
+          Candidate("B", None, 0, {"h1": [0, 0, 5, 0], "h2": [0, 0, 6, 0]})]
     assert pareto(cs, ["h1", "h2"]) == {"B": ["h1", "h2"]}
 
 
@@ -218,7 +218,7 @@ def test_proposer_sees_rejected_children_and_inspirations(tmp_path):
     run = make_run(tmp_path, seed)
     s0 = run.cands[0].scores
     hs = list(s0)
-    run.add(Candidate("c001", "c000", 0, {h: [s[0], s[1], s[2] + (-1 if h == hs[0] else 1)] for h, s in s0.items()},
+    run.add(Candidate("c001", "c000", 0, {h: [s[0], s[1], s[2] + (-1 if h == hs[0] else 1), s[3]] for h, s in s0.items()},
                       "cheaper on the first house"))
     run.grammar("c001").write_text(seed.replace("T = 1.5", "T = 1.5  # rival"))
     run.log({"iteration": 1, "parent": "c000", "accepted": False, "error": "too big: chatty has 20 code lines",
@@ -238,3 +238,10 @@ def test_proposer_sees_rejected_children_and_inspirations(tmp_path):
     _, content = prompt(ctx, False, tmp_path)
     text = content[0]["text"]
     assert "not kept" in text and "added a chatty rule" in text and "## c001" in text and "# rival" in text
+
+
+def test_leaving_framing_out_never_ranks_better():
+    """Missing comes first: a frame with fewer hard faults but more of them missing framing ranks worse."""
+    from frameevolve.search import better
+    sparse, fuller = [50, 0, 100.0, 40], [80, 0, 200.0, 5]      # [hard, soft, cost, missing]
+    assert better(fuller, sparse) and not better(sparse, fuller)

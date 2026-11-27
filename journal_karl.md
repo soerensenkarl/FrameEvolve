@@ -814,3 +814,16 @@ what is wrong by marking it, so faults are fixed in the rules and checked again 
   gablet over a hip end, 19 Whitney Ave) no wall stands at the step, and faces that step keep their old,
   unsquared boundary. Next: square every face's outline with the same lines as the walls, let a face grow only
   across its seams, and stand a wall at every step (on the ceiling where there is one).
+
+## 2026-11-27: missing first
+
+- Joe showed the score rewards leaving framing out: the deliberately bad grammar beat the seed on all 100 real
+  houses (scoring_proposal). Decided: a frame is ranked by (missing, hard, soft, cost). Missing counts the hard
+  faults that say something the house needs is not there: rule error, floating, backing, head, sill, floor
+  opening (report.MISSING). `opening` (a member in a window) is a wrong placement, not missing.
+- Not taken from the proposal: dividing the other faults by members placed. It can be gamed by padding and makes
+  the score a fraction; with missing first it is not needed. On h000-h019, per house: seed beats minimal 20 of 20
+  (was 0), advanced beats seed 20 of 20, advanced beats minimal 20 of 20 (was 19).
+- The score is stored as [hard, soft, cost, missing], so what reads hard, soft and cost by position is unchanged;
+  search.rank puts it in order. Runs scored before read as none missing. The proposer is told the order.
+- Earlier runs are not comparable with new ones (the verifier changed too: Joe's IRC work is merged).
