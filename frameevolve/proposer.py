@@ -110,7 +110,7 @@ whole frame in 3D or chosen walls, floors and roofs square on, coloured by rule,
 you built: a frame can score well and still be wrong to the eye. To know the frame exactly, read it: frame gives
 the whole house as built, or every member of one surface with where it is, what it rests on and touches, and its
 faults; trace shows what one rule did, firing by firing; raw gives the house file, or a surface's members, as they
-are stored. check_grammar builds and verifies the draft on all
+are stored. verifier lets you read the verifier's own code, so you know each limit before you hit it. check_grammar builds and verifies the draft on all
 the houses shown and returns the full reports; it can be used a limited number of times. When you are done, reply with one or two
 sentences saying what you changed and why."""
 
@@ -158,6 +158,9 @@ class Draft:
                 "builds on it as the frame stores them, one JSON per line (world coordinates in inches, cuts and notches "
                 "as planes, panel). With old and new, of a variation.",
                 {"house": (str, None), "part": (str, "house"), "surface": (str, ""), "old": (str, ""), "new": (str, "")}),
+        "verifier": ("Read the verifier itself: the code that scores your frames, with every limit and the building "
+                     "code section it comes from. With no module: what it asks, in order, and its modules. With a "
+                     "module name (e.g. 'analysis'): that module's source.", {"module": (str, "")}),
         "record_lesson": ("Write down one short lesson for the proposers after you in this search: something you "
                           "tried and what it did, or something you learned about the verifier or the builder. One "
                           "sentence or two under 300 characters, specific enough to act on. Up to three per proposal.", {"lesson": (str, None)}),
@@ -264,6 +267,16 @@ class Draft:
         if part != "frame" or not surface:
             return "Not read: part is 'house', or 'frame' with a surface id."
         return self.describe(house, old, new, ["--raw", "--surface", surface])
+
+    def verifier(self, module: str = "") -> str:
+        import frameevolve.verifier as v
+        folder = Path(v.__file__).parent
+        names = sorted(f.stem for f in folder.glob("*.py") if f.stem != "__init__")
+        if not module:
+            return f"{inspect.getdoc(v)}\n\nModules: {', '.join(names)}."
+        if module not in names:
+            return f"Not read: no module {module}. Modules: {', '.join(names)}."
+        return (folder / f"{module}.py").read_text()
 
     def record_lesson(self, lesson: str) -> str:
         lesson = " ".join(lesson.split())[:500]
