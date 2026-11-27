@@ -281,6 +281,7 @@ document.addEventListener("click", (e) => {        // the show menu closes when 
   const menu = $("#showMenu");
   if (menu.open && !menu.contains(e.target)) menu.open = false;
 });
+$("#showFrame").addEventListener("change", look3d);
 $("#showSurfaces").addEventListener("change", () => { remember("surfaces", $("#showSurfaces").checked ? "1" : "0"); look3d(); renderElev(); });
 $("#showGuides").addEventListener("change", () => { remember("guides", $("#showGuides").checked ? "1" : "0"); look3d(); renderElev(); });
 

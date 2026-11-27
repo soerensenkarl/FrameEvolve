@@ -4,11 +4,11 @@
 // the switch, the left column's list for each view (the rules stay in app.js), the panel inspector, and the
 // assembly's state, track and caption. view3d.js paints from `asmState` and `related`.
 import { $, esc, ftin, pill, st, SITE, finished, stopPlay, remember, panelColour, kindName, runsMode } from "./state.js";
-import { select, renderRules } from "./app.js";
+import { select, renderRules, showTab } from "./app.js";
 import { look3d, frameMembers } from "./view3d.js";
 import { renderElev, renderCaption } from "./elevations.js";
 import { renderTimeline, renderInspect } from "./inspect.js";
-import { setOnly } from "./verifier.js";
+import { setOnly, chooseFault } from "./verifier.js";
 
 const VIEWS = ["build", "panels", "assembly", "faults"];
 
@@ -170,9 +170,21 @@ export function choosePanel(name, zoom) {
   if (!again && name && zoom) frameMembers(st.data.members.filter((m) => m.panel === name && !m.removed).map((m) => m.id));
 }
 
-export function clickMember(id) {
-  // a click on a member in 3D: the panels view picks its panel, the assembly view goes to the step it goes up in.
+export function clickMember(id, mark = null) {
+  // a click on a member in 3D: the panels view picks its panel, the assembly view goes to the step it goes up in,
+  // the faults view explains a fault it is in (a fault marker: that fault; again: its next fault).
   // False when the view leaves the click to the usual selection.
+  if (st.view === "faults") {
+    const fs = st.data.faults;
+    const mine = mark != null ? [mark] : fs.map((f, i) => i)
+      .filter((i) => fs[i].members.includes(id) && (!st.only || fs[i].check === st.only))
+      .sort((a, b) => fs[b].hard - fs[a].hard);
+    if (!mine.length) return false;
+    const next = mine[(mine.indexOf(st.fault) + 1) % mine.length];
+    if (next !== st.fault) chooseFault(next);
+    showTab("inspect");
+    return true;
+  }
   if (st.view === "panels") { choosePanel(st.byId[id]?.panel || null, false); return true; }
   if (st.view === "assembly" && index().memberAt.has(id)) { stopPlay(); asmGo(index().memberAt.get(id)); return true; }
   return false;
