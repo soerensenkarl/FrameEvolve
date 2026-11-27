@@ -53,7 +53,7 @@ from frameevolve.model import House
 
 ROOT = Path(__file__).resolve().parents[1]
 SEED_GRAMMAR = "grammars/seed.py"   # where a run starts unless told otherwise
-FAILED = [10**6, 10**6, 1e12]   # the score of a grammar that crashed or timed out
+FAILED = [10**6, 10**6, 1e12, 10**6]   # the score of a grammar that crashed or timed out
 INSPIRATIONS = 2                # other Pareto grammars shown to the proposer
 REJECTED = 3                    # earlier children of the parent that were not kept, shown to the proposer
 NOTEBOOK = 24                   # lessons from earlier iterations of the run, newest, shown to the proposer
@@ -84,7 +84,7 @@ class Candidate:
     id: str
     parent: str | None
     iteration: int
-    scores: dict[str, list]              # house id: [hard, soft, cost]
+    scores: dict[str, list]              # house id: [hard, soft, cost, missing]
     note: str = ""
     created: float = field(default_factory=time.time)
 
@@ -93,9 +93,8 @@ class Candidate:
 
 
 def total(scores: dict, houses) -> list:
-    """Scores summed over houses: [hard, soft, cost]."""
-    return [sum(scores[h][0] for h in houses), sum(scores[h][1] for h in houses),
-            round(sum(scores[h][2] for h in houses), 2)]
+    """Scores summed over houses: [hard, soft, cost, missing]."""
+    return [round(sum(scores[h][j] for h in houses), 2) for j in range(4)]
 
 
 @lru_cache(maxsize=None)
@@ -188,9 +187,14 @@ def evaluate(grammar: Path, houses: list[Path], timeout: float = 120, cache: Pat
     return {house_id(h): out[house_id(h)] for h in houses}
 
 
+def rank(score: list) -> tuple:
+    """A score in the order it is compared: missing first, then hard faults, soft faults and cost."""
+    return (score[3], score[0], score[1], score[2])
+
+
 def dominates(a: Candidate, b: Candidate, houses: list[str]) -> bool:
     """a is at least as good as b on every house and better on one."""
-    pairs = [(tuple(a.scores[h]), tuple(b.scores[h])) for h in houses]
+    pairs = [(rank(a.scores[h]), rank(b.scores[h])) for h in houses]
     return all(x <= y for x, y in pairs) and any(x < y for x, y in pairs)
 
 
@@ -198,23 +202,23 @@ def pareto(cands: list[Candidate], houses: list[str]) -> dict[str, list[str]]:
     """For every candidate in the Pareto set, the houses it is best on (ties all count). Candidates that are best
     somewhere but dominated by another such candidate are dropped first (GEPA, Algorithm 2), so near-copies do
     not crowd the draw."""
-    best = {h: min(tuple(c.scores[h]) for c in cands) for h in houses}
-    front = [c for c in cands if any(tuple(c.scores[h]) == best[h] for h in houses)]
+    best = {h: min(rank(c.scores[h]) for c in cands) for h in houses}
+    front = [c for c in cands if any(rank(c.scores[h]) == best[h] for h in houses)]
     front = [c for c in front if not any(dominates(o, c, houses) for o in front if o is not c)]
     wins: dict[str, list[str]] = {}
     for h in houses:
         for c in front:
-            if tuple(c.scores[h]) == best[h]:
+            if rank(c.scores[h]) == best[h]:
                 wins.setdefault(c.id, []).append(h)
     return wins
 
 
 def better(a: list, b: list) -> bool:
-    return tuple(a) < tuple(b)
+    return rank(a) < rank(b)
 
 
 def batch_total(res: dict, ids: list[str]) -> list:
-    return [round(sum(res[h]["score"][j] for h in ids), 2) for j in range(3)]
+    return [round(sum(res[h]["score"][j] for h in ids), 2) for j in range(4)]
 
 
 def overview(grammar: Path, house: Path) -> str:
@@ -249,6 +253,8 @@ class Run:
         f = self.path / "candidates.jsonl"
         if f.exists():
             self.cands = [Candidate(**json.loads(l)) for l in f.read_text().splitlines() if l.strip()]
+            for c in self.cands:      # a run scored before missing was counted reads as none missing
+                c.scores = {h: [*x, 0][:4] for h, x in c.scores.items()}
         self.iteration = len(self.iterations())
 
     @staticmethod

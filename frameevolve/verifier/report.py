@@ -4,8 +4,10 @@ A fault names its check, whether it is hard, says what is wrong in words a frame
 surface, u and v on it, and a world point), the members involved, and the rules that placed them. A missing
 member has no rule to blame, and the report says so.
 
-A frame's score is (hard faults, soft faults, cost), compared in that order: fewer hard faults first, then
-fewer soft faults, then cheaper.
+A frame is ranked by (missing, hard faults, soft faults, cost), in that order. Missing counts the hard faults
+that say something the house needs is not there (MISSING): they come first so that a grammar cannot score better
+by leaving framing out, since a header that is not there cannot be undersized. The score is stored as
+[hard, soft, cost, missing]; search.rank puts it in order.
 """
 from __future__ import annotations
 
@@ -14,6 +16,9 @@ from dataclasses import asdict, dataclass, field
 
 from frameevolve.geometry import Vec
 from frameevolve.graph import Graph
+
+# The checks whose hard faults mean something the house needs is missing, not that something placed is wrong.
+MISSING = {"rule error", "floating", "backing", "head", "sill", "floor opening"}
 
 # Every check, what it means. The modules that run them say how; hard or soft is set where each fault is made.
 CHECKS = {
@@ -94,8 +99,12 @@ class Report:
         return sum(not f.hard for f in self.faults)
 
     @property
-    def score(self) -> tuple[int, int, float]:
-        return (self.hard, self.soft, self.metrics["cost"])
+    def missing(self) -> int:
+        return sum(f.hard and f.check in MISSING for f in self.faults)
+
+    @property
+    def score(self) -> tuple[int, int, float, int]:
+        return (self.hard, self.soft, self.metrics["cost"], self.missing)
 
     def to_dict(self) -> dict:
         return {"house": self.house, "hard": self.hard, "soft": self.soft, "score": list(self.score),
@@ -104,7 +113,7 @@ class Report:
     def text(self, examples: int = 2) -> str:
         """The report in words: what a person or the proposer reads."""
         m = self.metrics
-        out = [f"House {self.house}: {m['members']} members, {self.hard} hard faults, {self.soft} soft faults.",
+        out = [f"House {self.house}: {m['members']} members, {self.hard} hard faults ({self.missing} of them something missing), {self.soft} soft faults.",
                f"Cost {m['cost']:.1f} (linear feet of 2x4 equivalent): {m['bought_ft']:.1f} ft of lumber bought, "
                f"{m['waste_ft']:.1f} ft wasted ({m['waste_pct']:.0f}%), {m['members']} pieces"
                + (f", {m['site_pieces']} of them built on site, {m['panels']} panels to lift." if 'panels' in m else ".")]
