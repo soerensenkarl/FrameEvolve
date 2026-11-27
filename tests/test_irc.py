@@ -47,3 +47,20 @@ def test_a_ten_foot_wall_under_a_floor_is_a_legal_story():
 def test_a_twelve_foot_story_fails():
     faults = code.story_height(wall_with_double_plate(120.0, 144.0, height=135.0))
     assert faults and all(f.check == "story" for f in faults)
+
+
+def test_a_braced_panel_beside_a_taller_opening_must_be_longer():
+    """Table R602.10.5, Method CS-WSP: on a 10 ft wall, 30" beside a 48" window, 32" beside an 82" door; a 10 ft
+    opening on an 8 ft wall's column is not permitted."""
+    from frameevolve.model import Opening
+    wall = Wall("w", (0.0, 0.0), (240.0, 0.0), 120.0,
+                openings=[Opening("o1", "window", 40.0, 88.0, 36.0, 84.0), Opening("o2", "door", 140.0, 176.0, 0.0, 82.0)])
+    assert code.panel_min(wall, 0.0, 40.0) == 30
+    assert code.panel_min(wall, 88.0, 140.0) == 32
+    assert code.panel_min(Wall("x", (0.0, 0.0), (96.0, 0.0), 96.0, openings=[Opening("o", "door", 0.0, 36.0, 0.0, 100.0)]),
+                          36.0, 96.0) is None
+
+
+def test_bracing_tables_interpolate():
+    assert code._table(tuple(zip(code.BRACE_SPACINGS, code.BRACE_REQUIRED[0])), 25.0) == 4.25
+    assert code._table(code.STORY_FACTOR, 7.0) == 0.90 and code._table(code.LINES_FACTOR, 7) == 1.60

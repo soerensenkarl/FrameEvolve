@@ -70,9 +70,10 @@ PSF = 1 / 144            # pounds per square foot to pounds per square inch
 FLOOR_LOAD = (10.0, 40.0, 0.0)
 CEILING_LOAD = (5.0, 10.0, 0.0)
 ROOF_LOAD = (15.0, 0.0, 30.0)
-# Wind, ASD: ASCE 7 ch. 28 (envelope procedure, simplified), about 115 mph, exposure B, on the house's projected
-# vertical area, times 0.6 for allowable stress design; 16 psf x 0.6 is the code's floor (28.3.4).
-WIND = 10.0
+# Wind, ASD: ASCE 7 ch. 28 (envelope procedure, simplified), exposure B, on the house's projected vertical area, times
+# 0.6 for allowable stress design; 16 psf x 0.6 is the code's floor (28.3.4). Cambridge's ultimate design wind speed
+# is 120 mph (780 CMR 10th ed., Table R301.2(2)); the 10 psf taken at 115 mph, scaled by (120 / 115)^2.
+WIND = 11.0
 # Racking, SDPWS Table 4.3A and 4.3C, ASD (nominal / 2), wind: 7/16" wood structural panels, 8d nails at 6" on
 # the edges, on Spruce-Pine-Fir (x 0.92), for an exterior wall; 1/2" gypsum board on both faces of a partition.
 SHEAR_WALL = 308.0       # lb per ft of braced exterior wall

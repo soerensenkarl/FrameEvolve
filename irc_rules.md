@@ -70,21 +70,21 @@ Each rule is a test on member geometry and the contact graph. **H** means hard (
 | # | Rule (what the checker tests) | Principle | H/S | Main IRC source | Before | Now |
 |---|---|---|---|---|---|---|
 | 1 | **Load path.** Every member has a chain of bearing contacts to the foundation; nothing floats or clashes | P1 | H | R301.1 | ✔ | unchanged |
-| 2 | **Bearing.** Every joist, rafter and beam end bears at least 1 1/2" on wood. A bearing wall above a floor sits within one joist depth of the support below | P1 | H | R502.6, R802.6, R502.4 | partly (rafter seats skipped) | unchanged (rafter seats still to do) |
+| 2 | **Bearing.** Every joist, rafter and beam end bears at least 1 1/2" on wood. A bearing wall above a floor sits within one joist depth of the support below | P1 | H | R502.6, R802.6, R502.4 | partly (rafter seats skipped) | **done:** rafter seats bear 1 1/2" (branch `irc-inputs-and-checks`) |
 | 3 | **Continuous studs.** Studs run in one piece from bottom plate to top plate; cripple walls use studs at least as large as those above | P1 | H | R602.3, R602.9 | partly | unchanged |
-| 4 | **Member capacity.** Every joist, rafter, ceiling joist, beam and header carries its share of dead + live + snow load: span within the IRC table, or NDS stress check where no table applies. Crushing across the grain is an NDS check the IRC doesn't require for prescriptive framing | P2 | H (crushing S) | R502.3.1, R802.4.1, R802.5.1, R602.7, R301.4–R301.6 | ✔ (snow load inconsistent; crushing hard) | **crushing made soft** (team decision) |
+| 4 | **Member capacity.** Every joist, rafter, ceiling joist, beam and header carries its share of dead + live + snow load: span within the IRC table, or NDS stress check where no table applies. Crushing across the grain is an NDS check the IRC doesn't require for prescriptive framing | P2 | H (crushing S) | R502.3.1, R802.4.1, R802.5.1, R602.7, R301.4–R301.6 | ✔ (snow load inconsistent; crushing hard) | **crushing made soft** (team decision); rafter spans from the 20 psf dead-load column to match the analysis's 15 psf (E5); beams in walls on the 50 psf column |
 | 5 | **Studs by load.** Stud size, spacing and height match the floors they carry; story height is at most 11'-7". Gable-end studs that carry the rake rafter count as bearing (10 ft limit) | P2, P6 | H | Table R602.3(5), R301.3 | ✔ (story height missing) | **story height done** (new `story` check, `tests/test_irc.py`); gable studs confirmed as real faults |
 | 6 | **Deflection.** Sag within L/360 floors, L/240 ceilings, L/180 roofs | P2 | S | R301.7 | ✔ | unchanged |
 | 7 | **Wall openings.** Each opening in a bearing wall has a header sized by table (exterior or interior walls; 0, 1 or 2 floors above; the design snow column), the required jack studs and the required king studs | P3 | H | R602.7(1), R602.7(2), Table R602.7.5 | partly (errors E1–E4; kings soft) | **done:** 50 psf column, single-ply rows, two-floor rows, interior table, kings hard |
-| 8 | **Floor and roof openings.** Every opening has header and trimmer joists; doubled when the header spans over 4 ft | P3 | H | R502.10, R802.9 | missing | **done for floors** (new `floor opening` check); roofs still to do |
-| 9 | **Wall bracing.** Each storey has enough braced wall length in each direction for the design wind; panels at least 48" long, within 10 ft of each end of a braced wall line, at most 20 ft apart | P4 | H | R602.10 | substitute (SDPWS racking) | not tried |
-| 10 | **Rafter ties.** Every rafter pair is tied in the lower third of the roof height by ceiling joists or ties continuous across the house (laps of at least 3"); otherwise the ridge is a beam | P5 | H | R802.5.2 | ✔ | unchanged (raised-tie span reduction still to do) |
+| 8 | **Floor and roof openings.** Every opening has header and trimmer joists; doubled when the header spans over 4 ft | P3 | H | R502.10, R802.9 | missing | **done for floors** (new `floor opening` check); roofs: no house has a roof opening yet, so not added |
+| 9 | **Wall bracing.** Each storey has enough braced wall length in each direction for the design wind; panels at least 48" long, within 10 ft of each end of a braced wall line, at most 20 ft apart | P4 | H | R602.10 | substitute (SDPWS racking) | **done:** IRC prescriptive bracing, Method CS-WSP at 120 mph, replaces the SDPWS check |
+| 10 | **Rafter ties.** Every rafter pair is tied in the lower third of the roof height by ceiling joists or ties continuous across the house (laps of at least 3"); otherwise the ridge is a beam | P5 | H | R802.5.2 | ✔ | **raised-tie span reduction done** (Table R802.4.1(9)) |
 | 11 | **Ridge, hips, valleys.** As deep as the rafter cut; under 3:12 they are beams. (The 2" thickness rule is always met: every member is 1 1/2" thick) | P5 | H | R802.3, R802.4.3, R802.4.4 | ✔ | unchanged |
 | 12 | **Restraint.** Joist and rafter ends are held by a rim, blocking or header; bridging where joists are deep | P6 | S→H | R502.7, R502.7.1, R802.8 | ✔ soft | unchanged (still soft) |
 | 13 | **Top plates.** A double top plate has its end joints at least 24" apart. On a single top plate, joists and rafters land within 1" of a stud; blocking (pieces under 36") is exempt | P7 | H | R602.3.2, R602.3.3 | partly (in-line only; blocking flagged) | **done:** new `splice` check (tested on a hand-built wall: joints 12" apart fail, 24" pass); blocking exempt |
 | 14 | **Cantilevers.** Floor joists cantilever no more than their nominal depth; rafter tails no more than 24" | P1, P2 | H | R502.3.3, R802.7.1.1 | too strict (2") | **done:** floor joists up to their nominal depth; notched rafter tails up to 24" (a tail is the part past the bearing at the lower end, 6" or more) |
 | 15 | **Cuts.** Notches and holes in joists, rafters, studs and top plates within the IRC fractions. A rafter notched over its bearing with a tail keeps 3 1/2" (no 1/4 limit) | P8 | H | R502.8, R802.7, R602.6, R602.6.1 | ✔ (birdsmouths over-flagged; top plates, holes missing) | **birdsmouth fixed; top plates done** (a cut over half the width is a soft fault, "needs a 16 ga tie"); holes out of scope until modelled |
-| 16 | **Uplift demand.** Rafters whose uplift exceeds 200 lb are flagged "connector required" | P9 | S | R802.11 | missing | not tried |
+| 16 | **Uplift demand.** Rafters whose uplift exceeds 200 lb are flagged "connector required" | P9 | S | R802.11 | missing | **done:** soft `uplift`, Table R802.11 at 120 mph, exposure B |
 
 **Effect on the hand-written grammars (hard faults, h000–h019):**
 - Careful grammar: 8,005 → 6,687.
@@ -100,18 +100,14 @@ Kept outside the IRC score, as buildability (still in the verifier, reported sep
 
 ## Open decisions
 
-1. **Design ground snow load** for the site. It's probably 40 psf for Cambridge, which puts the headers in the 50 psf column. Confirm with the Massachusetts code (780 CMR).
-2. **Design wind speed.** The verifier currently uses 115 mph in one place and 128 mph in another.
-3. **Bracing (rule 9):** the IRC prescriptive method, or the existing engineered check with verified values.
-4. **Restraint (rule 12):** hard or soft.
-5. **Crushing (rule 4):** soft (as now) or hard.
-6. **Reference grammar:** the hand-written "careful" grammar uses advanced-framing practice (single-ply headers, single top plates), which the IRC's prescriptive tables only partly allow. Make it IRC-prescriptive, or treat those parts as engineered?
+Settled 2026-11-24: Cambridge is 40 psf ground snow and 120 mph ultimate wind speed (780 CMR 10th edition, Table R301.2(2); confirm against the official text for a permit). Bracing is the IRC prescriptive method (R602.10, Method CS-WSP). Rafter spans use the 20 psf dead-load column.
+
+1. **Restraint (rule 12):** hard or soft.
+2. **Crushing (rule 4):** soft (as now) or hard.
+3. **Reference grammar:** the hand-written "careful" grammar uses advanced-framing practice (single-ply headers, single top plates), which the IRC's prescriptive tables only partly allow. Make it IRC-prescriptive, or treat those parts as engineered?
 
 ## Still to do
-- Rule 2: rafter seat bearing. Medium effort.
-- Rule 10: raised-tie span reduction. Medium.
-- Rule 8: roof openings. Medium; first check whether the generator makes any.
-- Rule 16: uplift. Medium; needs the wind-speed decision.
-- Rule 9: prescriptive bracing. Large; needs the wind-speed and bracing-method decisions.
+- Rule 8: roof openings, once the houses have skylights or roof openings.
+- Rule 9: the CS-WSP corner conditions (R602.10.7) and interior braced wall lines are not checked.
 - Rule 15: holes. Out of scope until the model has holes.
 - Unit tests for the rafter-tail and top-plate-cut checks.
